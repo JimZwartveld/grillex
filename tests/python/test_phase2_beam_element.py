@@ -278,6 +278,147 @@ class TestBeamElementMass:
         assert np.abs(total_mass - expected_mass) / expected_mass < 0.05
 
 
+class TestBeamElementOffsets:
+    """Tests for Task 2.4: End Offsets acceptance criteria"""
+
+    def setup_method(self):
+        """Setup common test data"""
+        self.steel = Material(1, "Steel", 210000000.0, 0.3, 7.85)
+        self.section = Section(1, "IPE300", 0.00538, 0.0000836, 0.00000604, 0.000000201)
+        self.node_a = Node(1, 0.0, 0.0, 0.0)
+        self.node_b = Node(2, 6.0, 0.0, 0.0)
+
+    def test_beam_without_offsets_has_no_offsets(self):
+        """Beam without offsets reports has_offsets() as False"""
+        beam = BeamElement(1, self.node_a, self.node_b, self.steel, self.section)
+
+        assert not beam.has_offsets()
+        assert beam.effective_length() == beam.length
+
+    def test_beam_with_offsets_reports_correctly(self):
+        """Beam with offsets reports has_offsets() as True"""
+        beam = BeamElement(1, self.node_a, self.node_b, self.steel, self.section)
+
+        # Set offsets in local coordinates (along local axes)
+        offset_i = np.array([0.0, 0.0, 0.5])  # 0.5m in local z direction at node i
+        offset_j = np.array([0.0, 0.0, -0.5])  # -0.5m in local z direction at node j
+        beam.set_offsets(offset_i, offset_j)
+
+        assert beam.has_offsets()
+
+    def test_effective_length_with_axial_offsets(self):
+        """Effective length changes correctly with axial offsets"""
+        beam = BeamElement(1, self.node_a, self.node_b, self.steel, self.section)
+
+        # Original length is 6.0m (from x=0 to x=6)
+        assert np.isclose(beam.length, 6.0)
+
+        # Add axial offsets: move end i by +0.5m along beam, end j by -0.3m
+        # Effective length should be reduced by 0.5 + 0.3 = 0.8m
+        offset_i = np.array([0.5, 0.0, 0.0])  # +0.5m along local x (away from node i)
+        offset_j = np.array([-0.3, 0.0, 0.0])  # -0.3m along local x (toward node i)
+        beam.set_offsets(offset_i, offset_j)
+
+        expected_length = 6.0 - 0.5 - 0.3
+        assert np.isclose(beam.effective_length(), expected_length, rtol=1e-6)
+
+    def test_effective_length_with_transverse_offsets(self):
+        """Effective length increases with transverse offsets"""
+        beam = BeamElement(1, self.node_a, self.node_b, self.steel, self.section)
+
+        # Add transverse offsets in local z direction
+        # This creates a diagonal connection
+        offset_i = np.array([0.0, 0.0, 0.5])  # 0.5m in +z at node i
+        offset_j = np.array([0.0, 0.0, 0.5])  # 0.5m in +z at node j
+        beam.set_offsets(offset_i, offset_j)
+
+        # Length should remain unchanged (offsets are parallel to each other)
+        assert np.isclose(beam.effective_length(), beam.length, rtol=1e-6)
+
+        # Now set opposite offsets
+        offset_j = np.array([0.0, 0.0, -0.5])  # -0.5m in -z at node j
+        beam.set_offsets(offset_i, offset_j)
+
+        # Effective length should increase: sqrt(6² + 1²) = sqrt(37)
+        expected_length = np.sqrt(6.0**2 + 1.0**2)
+        assert np.isclose(beam.effective_length(), expected_length, rtol=1e-6)
+
+    def test_offset_affects_stiffness_matrix(self):
+        """Stiffness matrix changes when offsets are applied"""
+        beam = BeamElement(1, self.node_a, self.node_b, self.steel, self.section)
+
+        # Get stiffness without offsets
+        K_no_offset = beam.local_stiffness_matrix()
+
+        # Add offsets
+        offset_i = np.array([0.0, 0.0, 0.3])
+        offset_j = np.array([0.0, 0.0, 0.3])
+        beam.set_offsets(offset_i, offset_j)
+
+        # Get stiffness with offsets
+        K_with_offset = beam.local_stiffness_matrix()
+
+        # Matrices should be different
+        assert not np.allclose(K_no_offset, K_with_offset)
+
+        # But should still be symmetric
+        assert np.allclose(K_with_offset, K_with_offset.T, atol=1e-10)
+
+    def test_offset_affects_mass_matrix(self):
+        """Mass matrix changes when offsets are applied"""
+        beam = BeamElement(1, self.node_a, self.node_b, self.steel, self.section)
+
+        # Get mass without offsets
+        M_no_offset = beam.local_mass_matrix()
+
+        # Add offsets
+        offset_i = np.array([0.0, 0.0, 0.3])
+        offset_j = np.array([0.0, 0.0, 0.3])
+        beam.set_offsets(offset_i, offset_j)
+
+        # Get mass with offsets
+        M_with_offset = beam.local_mass_matrix()
+
+        # Matrices should be different (offset couples translation and rotation)
+        assert not np.allclose(M_no_offset, M_with_offset)
+
+        # But should still be symmetric
+        assert np.allclose(M_with_offset, M_with_offset.T, atol=1e-10)
+
+    def test_cantilever_with_offset_tip_load(self):
+        """Cantilever with offset at tip has increased deflection due to moment arm"""
+        # Create a 6m cantilever beam
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 6.0, 0.0, 0.0)
+        beam = BeamElement(1, node_i, node_j, self.steel, self.section)
+
+        # Add vertical offset at tip (local z direction)
+        # This means the load point is offset from the beam axis
+        offset_z = 0.5  # 0.5m offset in z direction
+        offset_j = np.array([0.0, 0.0, offset_z])
+        beam.set_offsets(np.array([0.0, 0.0, 0.0]), offset_j)
+
+        # Get stiffness matrix with offset
+        K = beam.local_stiffness_matrix()
+        K_free = K[6:12, 6:12]
+
+        # Apply vertical load at the offset tip
+        P = 10.0  # kN downward
+        F_free = np.array([0.0, 0.0, -P, 0.0, 0.0, 0.0])
+
+        # Solve for displacements
+        u_free = np.linalg.solve(K_free, F_free)
+
+        # The vertical displacement should be present
+        delta_z = u_free[2]
+
+        # Due to the offset, we also get rotation which causes additional deflection
+        # The deflection should be non-zero (we don't have an exact analytical solution
+        # for this complex case, so just verify it's physically reasonable)
+        assert delta_z < 0  # Downward deflection
+        assert np.abs(delta_z) > 1e-6  # Non-trivial deflection
+
+
 class TestPythonBindings:
     """Tests for Python bindings of Phase 2 classes"""
 

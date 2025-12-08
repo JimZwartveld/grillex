@@ -203,6 +203,13 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Compute 12x12 local mass matrix")
         .def("global_mass_matrix", &grillex::BeamElement::global_mass_matrix,
              "Compute 12x12 global mass matrix")
+        .def("set_offsets", &grillex::BeamElement::set_offsets,
+             py::arg("offset_i"), py::arg("offset_j"),
+             "Set end offsets in local coordinates [m]")
+        .def("has_offsets", &grillex::BeamElement::has_offsets,
+             "Check if element has any offsets")
+        .def("effective_length", &grillex::BeamElement::effective_length,
+             "Compute effective beam length accounting for offsets [m]")
         .def("__repr__", [](const grillex::BeamElement &e) {
             return "<BeamElement id=" + std::to_string(e.id) +
                    " nodes=[" + std::to_string(e.node_i->id) + "," +

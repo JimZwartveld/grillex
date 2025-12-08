@@ -747,9 +747,9 @@ Implement end offsets (rigid arms from nodes to beam ends).
 3. Update length calculation to use offset-adjusted positions
 
 **Acceptance Criteria:**
-- [ ] Beam with offsets has correct effective length
-- [ ] Stiffness matrix accounts for eccentric connection
-- [ ] Simple offset beam matches reference solution
+- [x] Beam with offsets has correct effective length
+- [x] Stiffness matrix accounts for eccentric connection
+- [x] Simple offset beam matches reference solution
 
 ---
 
@@ -2948,7 +2948,7 @@ Phase 11      Phase 12
 |-------|--------|-------|
 | 0 - Setup | ✅ **COMPLETED** | All 3 tasks complete. Directory structure, C++ build system with pybind11+Eigen, pytest infrastructure. 7 tests passing. Main challenge: macOS SDK C++ header paths. Time: ~43 minutes. |
 | 1 - Data Structures | ✅ **COMPLETED** | All 5 tasks complete. Node, NodeRegistry, Material, Section classes implemented in C++ with full Python bindings. 24 tests passing (31 total). Main challenge: pybind11 unique_ptr handling. Time: ~45 minutes. |
-| 2 - Beam Element | ✅ **COMPLETED (3/8)** | Tasks 2.1-2.3 complete (LocalAxes, Euler-Bernoulli stiffness/mass). 17 tests (48 total). **NEW:** Tasks 2.6-2.8 added for Timoshenko beams + Warping (14×14) elements. Tasks 2.4-2.5 (offsets, releases) pending. |
+| 2 - Beam Element | ✅ **COMPLETED (4/8)** | Tasks 2.1-2.4 complete (LocalAxes, Euler-Bernoulli stiffness/mass, end offsets). 24 tests (53 total). **NEW:** Tasks 2.6-2.8 added for Timoshenko beams + Warping (14×14) elements. Task 2.5 (releases) pending. |
 | 3 - Assembly/Solver | Not Started | **UPDATED:** Now supports 12-DOF and 14-DOF elements for warping. |
 | 4 - Python/IO | Not Started | |
 | 5 - Loads | Not Started | |

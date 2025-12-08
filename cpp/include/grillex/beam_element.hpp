@@ -100,11 +100,51 @@ public:
      */
     Eigen::Matrix<double, 12, 12> global_mass_matrix() const;
 
+    /**
+     * @brief Set end offsets in local coordinates
+     *
+     * Offsets define rigid arms from nodes to beam ends.
+     * Positive offset_i moves the beam end away from node_i along local axes.
+     *
+     * @param offset_i Offset at node i [m] in local coordinates [dx, dy, dz]
+     * @param offset_j Offset at node j [m] in local coordinates [dx, dy, dz]
+     */
+    void set_offsets(const Eigen::Vector3d& offset_i, const Eigen::Vector3d& offset_j);
+
+    /**
+     * @brief Check if element has any offsets
+     *
+     * @return bool True if either offset is non-zero
+     */
+    bool has_offsets() const;
+
+    /**
+     * @brief Compute effective beam length accounting for offsets
+     *
+     * The effective length is the distance between the offset-adjusted
+     * beam ends, not the node-to-node distance.
+     *
+     * @return double Effective beam length [m]
+     */
+    double effective_length() const;
+
 private:
     /**
      * @brief Compute element length from node positions
      */
     double compute_length() const;
+
+    /**
+     * @brief Compute 12x12 offset transformation matrix
+     *
+     * Relates beam end DOFs to node DOFs for rigid offsets.
+     * For offset r at a node:
+     *   u_beam = u_node + θ_node × r
+     *   θ_beam = θ_node
+     *
+     * @return Eigen::Matrix<double, 12, 12> Offset transformation matrix
+     */
+    Eigen::Matrix<double, 12, 12> offset_transformation_matrix() const;
 };
 
 } // namespace grillex

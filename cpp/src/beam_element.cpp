@@ -97,6 +97,13 @@ Eigen::Matrix<double, 12, 12> BeamElement::local_stiffness_matrix() const {
     K(9, 3) = -k_torsion;
     K(9, 9) = k_torsion;
 
+    // Apply offset transformation if offsets are present
+    // Apply offset transformation if offsets are present
+    if (has_offsets()) {
+        Eigen::Matrix<double, 12, 12> T_offset = offset_transformation_matrix();
+        K = T_offset.transpose() * K * T_offset;
+    }
+
     return K;
 }
 
@@ -198,6 +205,12 @@ Eigen::Matrix<double, 12, 12> BeamElement::local_mass_matrix() const {
     M(9, 3) = m_torsion;
     M(9, 9) = 2.0 * m_torsion;
 
+    // Apply offset transformation if offsets are present
+    if (has_offsets()) {
+        Eigen::Matrix<double, 12, 12> T_offset = offset_transformation_matrix();
+        M = T_offset.transpose() * M * T_offset;
+    }
+
     return M;
 }
 
@@ -207,6 +220,79 @@ Eigen::Matrix<double, 12, 12> BeamElement::global_mass_matrix() const {
 
     // M_global = T^T * M_local * T
     return T.transpose() * M_local * T;
+}
+
+void BeamElement::set_offsets(const Eigen::Vector3d& offset_i, const Eigen::Vector3d& offset_j) {
+    this->offset_i = offset_i;
+    this->offset_j = offset_j;
+}
+
+bool BeamElement::has_offsets() const {
+    return offset_i.norm() > 1e-12 || offset_j.norm() > 1e-12;
+}
+
+double BeamElement::effective_length() const {
+    if (!has_offsets()) {
+        return length;
+    }
+
+    // Compute beam end positions in global coordinates
+    // Node positions
+    Eigen::Vector3d pos_i = node_i->position();
+    Eigen::Vector3d pos_j = node_j->position();
+
+    // Transform offsets from local to global coordinates
+    Eigen::Vector3d offset_i_global = local_axes.to_global(offset_i);
+    Eigen::Vector3d offset_j_global = local_axes.to_global(offset_j);
+
+    // Beam end positions
+    Eigen::Vector3d beam_end_i = pos_i + offset_i_global;
+    Eigen::Vector3d beam_end_j = pos_j + offset_j_global;
+
+    // Effective length is distance between beam ends
+    return (beam_end_j - beam_end_i).norm();
+}
+
+Eigen::Matrix<double, 12, 12> BeamElement::offset_transformation_matrix() const {
+    Eigen::Matrix<double, 12, 12> T = Eigen::Matrix<double, 12, 12>::Identity();
+
+    if (!has_offsets()) {
+        return T;  // No transformation needed
+    }
+
+    // Build skew-symmetric matrices for cross products
+    // For offset r, the skew-symmetric matrix [r×] is:
+    //   [ 0   -rz   ry ]
+    //   [ rz   0   -rx ]
+    //   [-ry   rx   0  ]
+
+    // Transformation for end i
+    if (offset_i.norm() > 1e-12) {
+        Eigen::Matrix3d r_i_skew;
+        r_i_skew <<       0.0,     -offset_i(2),  offset_i(1),
+                     offset_i(2),       0.0,     -offset_i(0),
+                    -offset_i(1),  offset_i(0),      0.0;
+
+        // Upper-left 6×6 block for node i
+        // [I  -[r×]]
+        // [0   I  ]
+        T.block<3, 3>(0, 3) = -r_i_skew;  // Coupling between translations and rotations
+    }
+
+    // Transformation for end j
+    if (offset_j.norm() > 1e-12) {
+        Eigen::Matrix3d r_j_skew;
+        r_j_skew <<       0.0,     -offset_j(2),  offset_j(1),
+                     offset_j(2),       0.0,     -offset_j(0),
+                    -offset_j(1),  offset_j(0),      0.0;
+
+        // Lower-right 6×6 block for node j
+        // [I  -[r×]]
+        // [0   I  ]
+        T.block<3, 3>(6, 9) = -r_j_skew;  // Coupling between translations and rotations
+    }
+
+    return T;
 }
 
 } // namespace grillex
