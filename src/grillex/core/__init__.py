@@ -1,3 +1,5 @@
 """Core data structures and model classes for Grillex."""
 
-__all__ = []
+from .data_types import Node, NodeRegistry, Material, Section
+
+__all__ = ['Node', 'NodeRegistry', 'Material', 'Section']

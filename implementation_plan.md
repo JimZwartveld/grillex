@@ -276,9 +276,9 @@ Create the C++ Node class representing a point in the structural model.
 3. Add Eigen dependency to CMakeLists.txt (use FetchContent)
 
 **Acceptance Criteria:**
-- [ ] Node can be constructed with id and coordinates
-- [ ] Position can be retrieved as Eigen::Vector3d
-- [ ] DOF arrays are correctly initialized
+- [x] Node can be constructed with id and coordinates
+- [x] Position can be retrieved as Eigen::Vector3d
+- [x] DOF arrays are correctly initialized
 
 ---
 
@@ -318,10 +318,10 @@ Create a registry that manages nodes and handles node merging based on tolerance
    - Otherwise create new node with next_id
 
 **Acceptance Criteria:**
-- [ ] Creating node at (0,0,0) twice returns same node
-- [ ] Creating node at (0,0,1e-9) with tolerance 1e-6 returns existing node
-- [ ] Creating node at (0,0,1) with tolerance 1e-6 creates new node
-- [ ] Node IDs are sequential and unique
+- [x] Creating node at (0,0,0) twice returns same node
+- [x] Creating node at (0,0,1e-9) with tolerance 1e-6 returns existing node
+- [x] Creating node at (0,0,1) with tolerance 1e-6 creates new node
+- [x] Node IDs are sequential and unique
 
 ---
 
@@ -355,9 +355,9 @@ Create a Material class for storing material properties.
 2. Implement with automatic G calculation: G = E / (2 * (1 + nu))
 
 **Acceptance Criteria:**
-- [ ] Material can be constructed with standard properties
-- [ ] G is correctly computed from E and nu
-- [ ] All units are documented in header comments
+- [x] Material can be constructed with standard properties
+- [x] G is correctly computed from E and nu
+- [x] All units are documented in header comments
 
 ---
 
@@ -395,9 +395,9 @@ Create Section class for beam cross-section properties.
 2. Implement with sensible defaults for optional parameters
 
 **Acceptance Criteria:**
-- [ ] Section can be constructed with basic properties
-- [ ] Optional properties default to 0 or computed values
-- [ ] Section can store fibre distances for stress calculation
+- [x] Section can be constructed with basic properties
+- [x] Optional properties default to 0 or computed values
+- [x] Section can store fibre distances for stress calculation
 
 ---
 
@@ -437,9 +437,76 @@ Expose Node, NodeRegistry, Material, and Section to Python via pybind11.
 2. Create `grillex/core/data_types.py` that imports and re-exports from `_grillex_cpp`
 
 **Acceptance Criteria:**
-- [ ] `from grillex.core import Node, Material, Section` works
-- [ ] Can create instances from Python
-- [ ] Properties are accessible
+- [x] `from grillex.core import Node, Material, Section` works
+- [x] Can create instances from Python
+- [x] Properties are accessible
+
+### Execution Notes (Completed 2025-12-08)
+
+**Steps Taken:**
+1. Created C++ header and implementation files for all core data structures:
+   - `cpp/include/grillex/node.hpp` and `cpp/src/node.cpp`
+   - `cpp/include/grillex/node_registry.hpp` and `cpp/src/node_registry.cpp`
+   - `cpp/include/grillex/material.hpp` and `cpp/src/material.cpp`
+   - `cpp/include/grillex/section.hpp` and `cpp/src/section.cpp`
+
+2. Updated `cpp/CMakeLists.txt` to include new source files in the build
+
+3. Created comprehensive Python bindings in `cpp/bindings/bindings.cpp`:
+   - Added pybind11/eigen.h for Eigen::Vector3d support
+   - Exposed all four classes with full property access
+   - Added __repr__ methods for user-friendly output
+   - Used lambda for NodeRegistry.all_nodes() to handle unique_ptr vector
+
+4. Created Python wrapper module `src/grillex/core/data_types.py`
+   - Re-exports C++ classes for clean Python API
+   - Updated `src/grillex/core/__init__.py` for easy imports
+
+5. Created comprehensive test suite `tests/python/test_phase1_data_structures.py`:
+   - 24 tests covering all acceptance criteria
+   - Tests organized by task (Node, NodeRegistry, Material, Section, Bindings)
+   - All tests passing ✓
+
+**Problems Encountered:**
+- **Issue**: pybind11 could not cast vector of unique_ptr directly
+  - **Error**: `binding reference of type 'unique_ptr<...>' to value of type 'const unique_ptr<...>' drops 'const' qualifier`
+  - **Solution**: Used lambda in binding to convert unique_ptr vector to list of raw pointers
+  ```cpp
+  .def("all_nodes", [](const grillex::NodeRegistry &reg) {
+      py::list result;
+      for (const auto& node : reg.all_nodes()) {
+          result.append(node.get());
+      }
+      return result;
+  }, ...)
+  ```
+
+**Verification:**
+- All 31 tests passing (24 new Phase 1 tests + 7 existing)
+- Build successful with no warnings
+- All acceptance criteria met:
+  - Node class: construction, position vector, DOF initialization ✓
+  - NodeRegistry: node merging, tolerance handling, sequential IDs ✓
+  - Material: construction, automatic G computation, documented units ✓
+  - Section: construction, optional parameters, fibre distances ✓
+  - Python bindings: imports work, instance creation, property access ✓
+
+**Code Coverage:** 98% (45 statements, 1 miss)
+
+**Key Design Decisions:**
+1. Used raw pointers for node references (lifetime managed by NodeRegistry)
+2. Automatic shear modulus calculation in Material constructor
+3. Comprehensive docstrings with units in C++ headers
+4. Python-friendly __repr__ methods for all classes
+
+**Files Created:**
+- C++ Headers: 4 files in `cpp/include/grillex/`
+- C++ Source: 4 files in `cpp/src/`
+- Python Wrapper: `src/grillex/core/data_types.py`
+- Tests: `tests/python/test_phase1_data_structures.py`
+- Updated: `cpp/CMakeLists.txt`, `cpp/bindings/bindings.cpp`, `src/grillex/core/__init__.py`
+
+**Time Taken:** ~45 minutes
 
 ---
 
@@ -2340,8 +2407,8 @@ Phase 11      Phase 12
 | Phase | Status | Notes |
 |-------|--------|-------|
 | 0 - Setup | ✅ **COMPLETED** | All 3 tasks complete. Directory structure, C++ build system with pybind11+Eigen, pytest infrastructure. 7 tests passing. Main challenge: macOS SDK C++ header paths. Time: ~43 minutes. |
-| 1 - Data Structures | Not Started | Ready to begin. Depends on Phase 0. |
-| 2 - Beam Element | Not Started | |
+| 1 - Data Structures | ✅ **COMPLETED** | All 5 tasks complete. Node, NodeRegistry, Material, Section classes implemented in C++ with full Python bindings. 24 tests passing (31 total). Main challenge: pybind11 unique_ptr handling. Time: ~45 minutes. |
+| 2 - Beam Element | Not Started | Ready to begin. Depends on Phase 1. |
 | 3 - Assembly/Solver | Not Started | |
 | 4 - Python/IO | Not Started | |
 | 5 - Loads | Not Started | |
