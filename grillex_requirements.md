@@ -15,10 +15,13 @@ The Python front-end shall provide modelling APIs, YAML I/O, orchestration of an
 **R-ARCH-004**  
 C++ functionality shall be exposed to Python via pybind11 (or equivalent), keeping a stable Python API independent of C++ internals.
 
-**R-ARCH-005**  
+**R-ARCH-005**
 The architecture shall be extensible to support new element types, design codes, and post-processing routines without breaking existing APIs.
 
-**R-ARCH-006**  
+**R-ARCH-006**
+The system shall provide a unified factory/interface for creating beam elements with different formulations (Euler-Bernoulli, Timoshenko, warping) to support polymorphic behavior and backward compatibility.
+
+**R-ARCH-007**
 The system shall target offshore / heavy-lift structural problems (beams, plates, grillages, cargo on barges, etc.).
 
 ---
@@ -53,23 +56,26 @@ The system shall support point-mass elements representing a 6×6 mass/inertia ma
 
 ## R-DOF – DOFs, Warping & Constraints
 
-**R-DOF-001**  
-Global DOFs shall be node-based and include UX, UY, UZ, RX, RY and RZ (6 DOFs per node).
+**R-DOF-001**
+Global DOFs shall be node-based and include UX, UY, UZ, RX, RY and RZ (6 DOFs per node) as standard.
 
-**R-DOF-002**  
-Only nodal DOFs UX, UY, UZ, RX, RY and RZ shall receive global DOF numbers and appear in global matrices.
+**R-DOF-002**
+All active nodal DOFs (standard 6 DOFs plus optional 7th warping DOF) shall receive global DOF numbers and appear in global matrices.
 
-**R-DOF-003**  
-The warping DOF (7th DOF per beam formulation) shall be treated as an element-internal DOF and shall not receive a global DOF number.
+**R-DOF-003** *(UPDATED)*
+Nodes may optionally have a 7th DOF representing warping displacement (rate of twist, φ') when connected to warping-capable beam elements.
 
-**R-DOF-004**  
-Element-level warping DOFs shall be condensed or eliminated such that only their effect on nodal DOFs 1–6 appears in the assembled global matrices.
+**R-DOF-004** *(UPDATED)*
+The warping DOF shall be treated as a nodal quantity (not element-internal) to ensure warping continuity at beam connections and allow proper application of warping boundary conditions (restrained vs. free).
 
-**R-DOF-005**  
+**R-DOF-005**
 The system shall maintain a global DOF map from node/DOF indices to global equation numbers.
 
-**R-DOF-006**  
+**R-DOF-006**
 The system shall support fixed DOFs, prescribed displacements, and general constraints via multi-point constraints (MPC).
+
+**R-DOF-007** *(NEW)*
+The system shall support nodes with either 6 DOFs (standard) or 7 DOFs (with warping) in the same model, with element matrices sized accordingly (12×12 or 14×14).
 
 ---
 
@@ -122,28 +128,37 @@ The node-merging tolerance shall be configurable and shall be used consistently 
 
 ## R-ELEM – Elements (Beams, Plates, Springs, Masses)
 
-**R-ELEM-001**  
+**R-ELEM-001**
 Beam elements shall support 3D behaviour including axial, bending about two local axes, and torsion.
 
-**R-ELEM-002**  
+**R-ELEM-002**
 Beam elements shall have consistent mass matrices suitable for inertial and dynamic loading.
 
-**R-ELEM-003**  
+**R-ELEM-003**
 Beam elements shall support end offsets relative to their connection nodes, and their length shall be computed from offset-adjusted end positions.
 
-**R-ELEM-004**  
+**R-ELEM-004**
 Beam stiffness and mass matrices shall correctly incorporate end offsets.
 
-**R-ELEM-005**  
-Beam elements shall support end releases (e.g. bending moments, torsion) implemented via DOF transformations or reduced stiffness blocks, not via artificial low stiffness.
+**R-ELEM-005**
+Beam elements shall support end releases (bending moments, torsion) implemented via static condensation or DOF transformations, not via artificial low stiffness.
 
-**R-ELEM-006**  
+**R-ELEM-006** *(NEW)*
+Beam elements shall support Timoshenko beam formulation which includes shear deformation effects via shear correction factors, particularly important for deep beams (length/depth < 10).
+
+**R-ELEM-007** *(NEW)*
+Beam elements shall optionally support warping torsion for thin-walled open sections, implemented as 14×14 element matrices with a 7th DOF (warping displacement φ') at each node to capture bimoment effects and warping-induced normal stresses.
+
+**R-ELEM-008** *(NEW)*
+Beam elements shall support comprehensive end releases for all DOFs including translations (axial, shear), rotations (bending, torsion), and warping, applicable to any combination of element ends.
+
+**R-ELEM-009** *(RENUMBERED)*
 Plate/shell elements shall support out-of-plane bending and optionally in-plane membrane behaviour.
 
-**R-ELEM-007**  
+**R-ELEM-010** *(RENUMBERED)*
 Spring elements shall support translational and rotational stiffness between two nodes and optionally include geometric eccentricities.
 
-**R-ELEM-008**  
+**R-ELEM-011** *(RENUMBERED)*
 Point-mass elements shall represent mass and inertia with a 6×6 mass matrix attached to a node.
 
 ---
@@ -238,20 +253,23 @@ The architecture shall not preclude extension to eigenvalue, modal/dynamic, or n
 
 ## R-RES – Results & Internal Actions
 
-**R-RES-001**  
+**R-RES-001**
 For each LoadCase (or combination), the system shall provide a ResultCase containing nodal displacements, reactions, and element end forces.
 
-**R-RES-002**  
+**R-RES-002**
 Beam internal actions (N, V, M, T, and bimoment where applicable) shall be computed using pre-solved differential equations / shape functions rather than simple interpolation.
 
-**R-RES-003**  
+**R-RES-003**
 For each beam element and each internal action component, the ResultCase shall store the location(s) and value(s) of minimum and maximum along the element.
 
-**R-RES-004**  
+**R-RES-004**
 The API shall allow querying internal actions at arbitrary positions along an element, e.g. `get_actions(element_id, x)`.
 
-**R-RES-005**  
-The system shall support explicit “check locations” on beams where internal actions are extracted for design code checks.
+**R-RES-005**
+The system shall support explicit "check locations" on beams where internal actions are extracted for design code checks.
+
+**R-RES-006** *(NEW)*
+For warping-capable beam elements (14-DOF), the system shall compute and report bimoment (B), warping normal stresses (σ_w = -B·ω/Iw), and total normal stresses including warping contributions (σ_total = N/A ± My·z/Iy ± Mz·y/Iz ± B·ω/Iw) at specified locations along the element.
 
 ---
 
