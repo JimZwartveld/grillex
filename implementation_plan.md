@@ -754,21 +754,56 @@ Implement end offsets (rigid arms from nodes to beam ends).
 ---
 
 ### Task 2.5: Implement End Releases
-**Requirements:** R-ELEM-005
-**Dependencies:** Task 2.2
+**Requirements:** R-ELEM-005, R-ELEM-008 (new)
+**Dependencies:** Task 2.2, Task 2.7 (for warping releases)
 **Difficulty:** High
 
 **Description:**
-Implement end releases (hinges) for beam DOFs.
+Implement end releases for all beam DOFs: translations, rotations, and warping.
+
+**Release Types and Use Cases:**
+| DOF | Release Name | Physical Meaning | Use Case |
+|-----|--------------|------------------|----------|
+| UX (axial) | Axial release | Sliding connection | Expansion joint, roller |
+| UY, UZ (shear) | Shear release | Shear-free connection | Rare, special connections |
+| RX (torsion) | Torsion release | Torsion hinge | Torsionally flexible joint |
+| RY, RZ (bending) | Moment release | Bending hinge | Pin connection, simple support |
+| WARP | Warping release | Warping-free connection | Fork support, bolted splice |
 
 **Steps:**
-1. Add release flags to BeamElement:
+1. Add comprehensive release flags to BeamElement:
    ```cpp
    struct EndRelease {
-       bool release_my_i = false;  // Moment about y at end i
-       bool release_mz_i = false;  // Moment about z at end i
-       bool release_mx_i = false;  // Torsion at end i
+       // Translation releases (rare but sometimes needed)
+       bool release_ux_i = false;  // Axial at end i (sliding joint)
+       bool release_uy_i = false;  // Shear y at end i
+       bool release_uz_i = false;  // Shear z at end i
+
+       // Rotation releases (common)
+       bool release_rx_i = false;  // Torsion at end i
+       bool release_ry_i = false;  // Moment about y at end i
+       bool release_rz_i = false;  // Moment about z at end i
+
+       // Warping release (for 14-DOF elements)
+       bool release_warp_i = false;  // Warping at end i (free to warp)
+
        // Same for end j
+       bool release_ux_j = false;
+       bool release_uy_j = false;
+       bool release_uz_j = false;
+       bool release_rx_j = false;
+       bool release_ry_j = false;
+       bool release_rz_j = false;
+       bool release_warp_j = false;
+
+       // Convenience methods
+       void release_moment_i() { release_ry_i = release_rz_i = true; }
+       void release_moment_j() { release_ry_j = release_rz_j = true; }
+       void release_all_rotations_i() { release_rx_i = release_ry_i = release_rz_i = true; }
+       void release_pin_i() { release_ry_i = release_rz_i = release_rx_i = true; }  // True pin
+
+       // Get indices of released DOFs (0-11 for 12-DOF, 0-13 for 14-DOF)
+       std::vector<int> get_released_indices(bool has_warping) const;
    };
    EndRelease releases;
    ```
@@ -779,29 +814,305 @@ Implement end releases (hinges) for beam DOFs.
    [K_rr  K_rc] {u_r}   {F_r}
    [K_cr  K_cc] {u_c} = {F_c}
 
-   Where c = condensed (released) DOFs
+   Where:
+   - r = retained DOFs (not released)
+   - c = condensed DOFs (released)
 
+   Condensed stiffness:
    K_reduced = K_rr - K_rc * K_cc^(-1) * K_cr
+
+   Condensed load (for fixed-end forces):
+   F_reduced = F_r - K_rc * K_cc^(-1) * F_c
    ```
 
-3. Apply condensation before returning stiffness matrix
+3. Handle warping releases for 14-DOF elements:
+   ```cpp
+   // For warping release: remove DOF 6 (node i) or 13 (node j) from element
+   if (releases.release_warp_i && has_warping) {
+       released_indices.push_back(6);  // Warping DOF at node i
+   }
+   if (releases.release_warp_j && has_warping) {
+       released_indices.push_back(13); // Warping DOF at node j
+   }
+   ```
+
+4. Apply condensation before returning stiffness matrix:
+   ```cpp
+   Eigen::MatrixXd local_stiffness_matrix() const {
+       Eigen::MatrixXd K = compute_full_stiffness();  // 12x12 or 14x14
+
+       if (releases.has_any_release()) {
+           K = apply_static_condensation(K, releases.get_released_indices(has_warping));
+       }
+       return K;
+   }
+   ```
 
 **Acceptance Criteria:**
 - [ ] Simply supported beam (moment releases at both ends) gives correct deflection
 - [ ] Pinned-fixed beam gives correct reactions
 - [ ] Released DOFs don't appear in global equations (conceptually)
+- [ ] Axial release creates sliding connection (no axial force transfer)
+- [ ] Torsion release creates torsion hinge (no torque transfer)
+- [ ] Warping release at beam end gives B=0 (bimoment-free connection)
+- [ ] Multiple simultaneous releases work correctly
+- [ ] Condensation preserves matrix symmetry
+
+---
+
+### Task 2.6: Implement Timoshenko Beam Element
+**Requirements:** R-ELEM-006 (new)
+**Dependencies:** Task 2.2
+**Difficulty:** Medium
+
+**Description:**
+Extend beam element to support Timoshenko beam theory, which includes shear deformation effects.
+
+**Background:**
+Euler-Bernoulli beams assume plane sections remain plane AND perpendicular to the neutral axis.
+Timoshenko beams relax this - the rotation θ is independent of the slope dv/dx.
+
+The key difference is the shear correction factor:
+```
+φ = 12EI / (κAGL²)
+
+where:
+- κ = shear correction factor (depends on cross-section shape)
+    - Rectangle: κ = 5/6
+    - Circle: κ = 6/7
+    - I-section: κ ≈ A_web / A
+- G = shear modulus
+- A = cross-sectional area
+- L = element length
+```
+
+**Steps:**
+1. Add shear area properties to Section class (already have Asy, Asz)
+
+2. Create `BeamFormulation` enum:
+   ```cpp
+   enum class BeamFormulation {
+       EulerBernoulli,  // No shear deformation
+       Timoshenko       // With shear deformation
+   };
+   ```
+
+3. Modify `local_stiffness_matrix()` to accept formulation parameter:
+   ```cpp
+   Eigen::Matrix<double, 12, 12> local_stiffness_matrix(
+       BeamFormulation formulation = BeamFormulation::EulerBernoulli) const;
+   ```
+
+4. For Timoshenko, modify bending stiffness coefficients:
+   ```
+   Standard Euler-Bernoulli terms:
+   k_1 = 12EI/L³
+   k_2 = 6EI/L²
+   k_3 = 4EI/L
+   k_4 = 2EI/L
+
+   Timoshenko modification (multiply by reduction factor):
+   φ_y = 12EI_y / (κA_sy * G * L²)
+   φ_z = 12EI_z / (κA_sz * G * L²)
+
+   Modified terms (for bending about z):
+   k_1' = k_1 / (1 + φ)
+   k_2' = k_2 / (1 + φ)
+   k_3' = (4 + φ)EI / ((1 + φ)L)
+   k_4' = (2 - φ)EI / ((1 + φ)L)
+   ```
+
+5. Update mass matrix similarly for consistent Timoshenko mass
+
+**Acceptance Criteria:**
+- [ ] For very slender beams (L/d > 20), Timoshenko ≈ Euler-Bernoulli
+- [ ] For deep beams (L/d < 5), Timoshenko gives smaller deflections
+- [ ] Shear locking is avoided (φ → 0 recovers Euler-Bernoulli)
+- [ ] Known benchmark: simply supported beam with uniform load
+
+---
+
+### Task 2.7: Implement Warping Element (7th DOF)
+**Requirements:** R-ELEM-007 (new), R-DOF-007 (new)
+**Dependencies:** Task 2.2
+**Difficulty:** Very High
+
+**Description:**
+Implement 14×14 beam element with warping DOF for thin-walled open sections.
+
+**Background - Why Warping Matters:**
+For thin-walled open sections (I-beams, channels, angles), torsion causes warping
+of the cross-section out of its plane. If warping is restrained (e.g., at a fixed
+support), additional stresses develop called "bimoments."
+
+The 7th DOF represents the rate of twist φ' (or warping displacement).
+
+**DOF Architecture Decision:**
+After careful analysis, the 7th DOF should be **nodal** (not element-specific):
+1. Warping displacement should be continuous at beam connections
+2. Boundary conditions (warping restrained/free) apply at nodes
+3. Standard assembly process works without architectural changes
+4. Elements without warping simply use 12×12 (backward compatible)
+
+```
+DOF ordering per node: [UX, UY, UZ, RX, RY, RZ, WARP]
+                         0    1    2   3   4   5    6
+
+14×14 element matrix:
+[K_11  K_12] where K_11, K_12, K_21, K_22 are 7×7 blocks
+[K_21  K_22]
+```
+
+**Steps:**
+1. Extend Node class for optional 7th DOF:
+   ```cpp
+   class Node {
+   public:
+       // Existing: 6 DOFs
+       std::array<bool, 7> dof_active = {true, true, true, true, true, true, false};
+       std::array<int, 7> global_dof_numbers = {-1, -1, -1, -1, -1, -1, -1};
+
+       // Enable warping DOF for this node
+       void enable_warping_dof();
+   };
+   ```
+
+2. Add warping properties to Section class:
+   ```cpp
+   class Section {
+   public:
+       // Existing properties...
+       double Iw;  // Warping constant [m⁶] - already exists
+
+       // New: indicates if section requires warping analysis
+       bool requires_warping = false;
+
+       // Sectorial coordinate for warping stress calculation
+       double omega_max = 0.0;  // Maximum sectorial coordinate [m²]
+   };
+   ```
+
+3. Create WarpingBeamElement class (or extend BeamElement):
+   ```cpp
+   class WarpingBeamElement : public BeamElement {
+   public:
+       // 14×14 stiffness matrix including warping terms
+       Eigen::Matrix<double, 14, 14> local_stiffness_matrix_warping() const;
+
+       // 14×14 mass matrix including warping inertia
+       Eigen::Matrix<double, 14, 14> local_mass_matrix_warping() const;
+
+       // 14×14 transformation matrix
+       Eigen::Matrix<double, 14, 14> transformation_matrix_warping() const;
+   };
+   ```
+
+4. Implement the 14×14 warping stiffness matrix:
+   ```
+   The additional terms involve:
+   - GJ: St. Venant torsional stiffness (existing)
+   - EIw: Warping stiffness = E × Iw
+
+   Torsion-warping coupling terms (rows/cols 4 and 7, 11 and 14):
+
+   For pure torsion without warping (existing):
+   K_torsion = GJ/L * [1  -1]
+                      [-1  1]
+
+   With warping (expanded to 4×4 for θx_i, φ'_i, θx_j, φ'_j):
+   K_tw = [GJ/L + 12EIw/L³    6EIw/L²      -GJ/L - 12EIw/L³   6EIw/L²   ]
+          [6EIw/L²            4EIw/L       -6EIw/L²           2EIw/L    ]
+          [-GJ/L - 12EIw/L³   -6EIw/L²     GJ/L + 12EIw/L³    -6EIw/L²  ]
+          [6EIw/L²            2EIw/L       -6EIw/L²           4EIw/L    ]
+   ```
+
+5. Update transformation matrix to 14×14:
+   ```cpp
+   // Block diagonal with 4 blocks: 3×3, 3×3, 3×3, 3×3 for translations/rotations
+   // Plus identity for warping DOFs (warping transforms as scalar)
+   Eigen::Matrix<double, 14, 14> transformation_matrix_warping() const {
+       Eigen::Matrix<double, 14, 14> T = Eigen::Matrix<double, 14, 14>::Zero();
+       Eigen::Matrix3d R = local_axes.rotation_matrix;
+
+       T.block<3,3>(0, 0) = R;   // Node i translations
+       T.block<3,3>(3, 3) = R;   // Node i rotations
+       T(6, 6) = 1.0;            // Node i warping (scalar, no transformation)
+       T.block<3,3>(7, 7) = R;   // Node j translations
+       T.block<3,3>(10, 10) = R; // Node j rotations
+       T(13, 13) = 1.0;          // Node j warping (scalar, no transformation)
+
+       return T;
+   }
+   ```
+
+**Acceptance Criteria:**
+- [ ] 14×14 stiffness matrix is symmetric
+- [ ] For Iw = 0 (no warping capacity), reduces to standard 12×12 behavior
+- [ ] Cantilever I-beam with torque: warping-restrained end has higher stiffness
+- [ ] Bimoment at fixed end matches analytical solution
+- [ ] Warping DOF can be released (fork support) or fixed (built-in support)
+
+---
+
+### Task 2.8: Unified Beam Element Factory
+**Requirements:** R-ARCH-006 (new)
+**Dependencies:** Tasks 2.2, 2.6, 2.7
+**Difficulty:** Medium
+
+**Description:**
+Create a unified factory/interface for creating beam elements with different formulations.
+
+**Steps:**
+1. Create configuration struct:
+   ```cpp
+   struct BeamConfig {
+       BeamFormulation formulation = BeamFormulation::EulerBernoulli;
+       bool include_warping = false;
+       bool include_shear_deformation = false;  // Alias for Timoshenko
+   };
+   ```
+
+2. Create factory function:
+   ```cpp
+   // Returns element that computes appropriate matrix size
+   std::unique_ptr<BeamElementBase> create_beam_element(
+       int id, Node* node_i, Node* node_j,
+       Material* mat, Section* sec,
+       const BeamConfig& config = BeamConfig{});
+   ```
+
+3. Abstract base class for polymorphic behavior:
+   ```cpp
+   class BeamElementBase {
+   public:
+       virtual Eigen::MatrixXd local_stiffness_matrix() const = 0;
+       virtual Eigen::MatrixXd local_mass_matrix() const = 0;
+       virtual Eigen::MatrixXd transformation_matrix() const = 0;
+       virtual int num_dofs() const = 0;  // 12 or 14
+       virtual ~BeamElementBase() = default;
+   };
+   ```
+
+**Acceptance Criteria:**
+- [ ] Factory correctly creates Euler-Bernoulli, Timoshenko, or Warping elements
+- [ ] num_dofs() returns correct value (12 or 14)
+- [ ] Existing code continues to work with default config
 
 ---
 
 ## Phase 3: Assembly & Solver
 
+**⚠️ UPDATED FOR WARPING DOF SUPPORT ⚠️**
+
+The following tasks have been updated to handle both 12-DOF and 14-DOF elements.
+
 ### Task 3.1: Implement DOF Numbering System
-**Requirements:** R-DOF-005, R-DOF-001, R-DOF-002
-**Dependencies:** Task 1.2
+**Requirements:** R-DOF-005, R-DOF-001, R-DOF-002, R-DOF-007 (warping)
+**Dependencies:** Task 1.2, Task 2.7 (for warping support)
 **Difficulty:** Medium
 
 **Description:**
-Create the global DOF numbering system.
+Create the global DOF numbering system with support for optional 7th DOF (warping).
 
 **Steps:**
 1. Create `cpp/include/grillex/dof_handler.hpp`:
@@ -809,46 +1120,76 @@ Create the global DOF numbering system.
    class DOFHandler {
    public:
        // Assign global DOF numbers to all nodes
+       // Handles both 6-DOF and 7-DOF nodes automatically
        void number_dofs(NodeRegistry& registry);
 
        // Get total number of DOFs
        int total_dofs() const;
 
        // Get global DOF number for a node/local_dof pair
+       // local_dof: 0-5 for standard, 6 for warping
        int get_global_dof(int node_id, int local_dof) const;
 
        // Get location array for an element (maps local to global DOFs)
-       std::vector<int> get_location_array(const BeamElement& elem) const;
+       // Handles both 12-DOF and 14-DOF elements
+       std::vector<int> get_location_array(const BeamElementBase& elem) const;
+
+       // Check if any node has warping DOF active
+       bool has_warping_dofs() const;
 
    private:
        int total_dofs_ = 0;
+       bool has_warping_ = false;
        std::map<std::pair<int,int>, int> dof_map_;  // (node_id, local_dof) -> global_dof
    };
    ```
 
-2. Numbering algorithm:
+2. Updated numbering algorithm for 7 DOFs:
    ```
    global_dof_counter = 0
    for each node in registry:
-       for local_dof in [0..5]:  // UX, UY, UZ, RX, RY, RZ
+       for local_dof in [0..6]:  // UX, UY, UZ, RX, RY, RZ, WARP
            if node.dof_active[local_dof]:
                dof_map[(node.id, local_dof)] = global_dof_counter++
+               if local_dof == 6:
+                   has_warping_ = true
+   ```
+
+3. Location array generation for variable-size elements:
+   ```cpp
+   std::vector<int> get_location_array(const BeamElementBase& elem) const {
+       int n_dofs = elem.num_dofs();  // 12 or 14
+       int dofs_per_node = n_dofs / 2;  // 6 or 7
+       std::vector<int> loc(n_dofs);
+
+       // Node i DOFs
+       for (int d = 0; d < dofs_per_node; ++d) {
+           loc[d] = get_global_dof(elem.node_i->id, d);
+       }
+       // Node j DOFs
+       for (int d = 0; d < dofs_per_node; ++d) {
+           loc[dofs_per_node + d] = get_global_dof(elem.node_j->id, d);
+       }
+       return loc;
+   }
    ```
 
 **Acceptance Criteria:**
 - [ ] Each active DOF gets a unique global number
-- [ ] Location arrays correctly map element DOFs to global DOFs
+- [ ] Location arrays correctly map element DOFs to global DOFs (12 or 14)
 - [ ] Inactive DOFs are not numbered
+- [ ] 7th DOF (warping) numbered only when active on node
+- [ ] Mixed models (some elements 12-DOF, some 14-DOF) work correctly
 
 ---
 
 ### Task 3.2: Implement Global Matrix Assembly
 **Requirements:** R-ASM-001, R-ASM-002
-**Dependencies:** Tasks 2.2, 2.3, 3.1
+**Dependencies:** Tasks 2.2, 2.3, 3.1, (2.7 for warping support)
 **Difficulty:** Medium
 
 **Description:**
-Implement sparse matrix assembly for K and M.
+Implement sparse matrix assembly for K and M. Must handle variable-size element matrices (12×12 or 14×14).
 
 **Steps:**
 1. Create `cpp/include/grillex/assembler.hpp`:
@@ -858,71 +1199,109 @@ Implement sparse matrix assembly for K and M.
        Assembler(DOFHandler& dof_handler);
 
        // Assemble global stiffness matrix
+       // Handles mixed 12-DOF and 14-DOF elements automatically
        Eigen::SparseMatrix<double> assemble_stiffness(
-           const std::vector<BeamElement*>& elements) const;
+           const std::vector<BeamElementBase*>& elements) const;
 
        // Assemble global mass matrix
        Eigen::SparseMatrix<double> assemble_mass(
-           const std::vector<BeamElement*>& elements) const;
+           const std::vector<BeamElementBase*>& elements) const;
 
    private:
        DOFHandler& dof_handler_;
 
        // Add element matrix to global using location array
+       // Works with any size element matrix via Eigen::MatrixXd
        void add_element_matrix(
-           Eigen::SparseMatrix<double>& global,
+           std::vector<Eigen::Triplet<double>>& triplets,
            const Eigen::MatrixXd& element,
            const std::vector<int>& loc_array) const;
    };
    ```
 
-2. Use triplet list for efficient sparse assembly:
+2. Use triplet list for efficient sparse assembly (handles variable sizes):
    ```cpp
    std::vector<Eigen::Triplet<double>> triplets;
-   for each element:
-       K_e = element.global_stiffness_matrix()
-       loc = dof_handler.get_location_array(element)
-       for i, j in K_e:
-           if loc[i] >= 0 and loc[j] >= 0:
-               triplets.push_back({loc[i], loc[j], K_e(i,j)})
-   K_global.setFromTriplets(triplets)
+   for (auto* elem : elements) {
+       // Returns 12×12 or 14×14 depending on element type
+       Eigen::MatrixXd K_e = elem->global_stiffness_matrix();
+
+       // Returns vector of size 12 or 14
+       std::vector<int> loc = dof_handler.get_location_array(*elem);
+
+       // Add all non-zero entries
+       for (int i = 0; i < K_e.rows(); ++i) {
+           for (int j = 0; j < K_e.cols(); ++j) {
+               if (loc[i] >= 0 && loc[j] >= 0 && K_e(i,j) != 0.0) {
+                   triplets.push_back({loc[i], loc[j], K_e(i,j)});
+               }
+           }
+       }
+   }
+   K_global.setFromTriplets(triplets);
    ```
 
 **Acceptance Criteria:**
 - [ ] Assembled matrix is sparse
 - [ ] Assembled matrix is symmetric
-- [ ] Single element assembly matches element stiffness matrix
+- [ ] Single 12-DOF element assembly matches element stiffness matrix
+- [ ] Single 14-DOF element assembly matches element stiffness matrix
+- [ ] Mixed assembly (12-DOF and 14-DOF elements) works correctly
 
 ---
 
 ### Task 3.3: Implement Boundary Conditions
-**Requirements:** R-DOF-006
+**Requirements:** R-DOF-006, R-DOF-007 (warping BCs)
 **Dependencies:** Task 3.2
 **Difficulty:** Medium
 
 **Description:**
-Implement fixed DOFs and prescribed displacements.
+Implement fixed DOFs and prescribed displacements. Support warping-specific boundary conditions.
+
+**Warping Boundary Condition Types:**
+- **Warping restrained (WARP=0):** Fixed end, built-in support - warping is prevented
+- **Warping free (WARP unrestrained):** Fork support, simple support - free to warp
+- **Warping continuous:** At beam connections (automatic - not a BC)
 
 **Steps:**
 1. Create `cpp/include/grillex/boundary_condition.hpp`:
    ```cpp
+   // DOF index constants for clarity
+   enum DOFIndex {
+       UX = 0, UY = 1, UZ = 2,
+       RX = 3, RY = 4, RZ = 5,
+       WARP = 6  // Warping DOF (7th DOF)
+   };
+
    struct FixedDOF {
        int node_id;
-       int local_dof;  // 0=UX, 1=UY, etc.
-       double value = 0.0;  // Prescribed displacement
+       int local_dof;  // 0-5 for standard, 6 for warping
+       double value = 0.0;  // Prescribed value
    };
 
    class BCHandler {
    public:
+       // Add single fixed DOF
        void add_fixed_dof(int node_id, int local_dof, double value = 0.0);
 
-       // Apply BCs using penalty method or matrix reduction
+       // Convenience: fix all DOFs at a node (full fixity)
+       void fix_node(int node_id);
+
+       // Convenience: fix all DOFs including warping at a node
+       void fix_node_with_warping(int node_id);
+
+       // Convenience: pin support (fix translations only)
+       void pin_node(int node_id);
+
+       // Convenience: fork support (fix translations, free rotations and warping)
+       void fork_support(int node_id);
+
+       // Apply BCs using penalty method
        void apply_to_system(
            Eigen::SparseMatrix<double>& K,
            Eigen::VectorXd& F,
            const DOFHandler& dof_handler) const;
 
-       // Get list of fixed global DOFs
        std::vector<int> get_fixed_global_dofs(const DOFHandler& dof_handler) const;
 
    private:
@@ -930,19 +1309,37 @@ Implement fixed DOFs and prescribed displacements.
    };
    ```
 
-2. Implement using big number (penalty) method for simplicity:
+2. Implement convenience methods:
+   ```cpp
+   void BCHandler::fix_node_with_warping(int node_id) {
+       for (int dof = 0; dof <= 6; ++dof) {  // Include warping
+           add_fixed_dof(node_id, dof, 0.0);
+       }
+   }
+
+   void BCHandler::fork_support(int node_id) {
+       // Fix translations only (UX, UY, UZ)
+       // Leave rotations (RX, RY, RZ) and warping (WARP) free
+       add_fixed_dof(node_id, UX, 0.0);
+       add_fixed_dof(node_id, UY, 0.0);
+       add_fixed_dof(node_id, UZ, 0.0);
+   }
+   ```
+
+3. Penalty method implementation (unchanged, works for any DOF):
    ```
    For fixed DOF at global index i with value u_prescribed:
    K(i,i) = K(i,i) + BIG_NUMBER
    F(i) = BIG_NUMBER * u_prescribed
    ```
 
-3. Alternative: implement matrix partitioning (more accurate but complex)
-
 **Acceptance Criteria:**
 - [ ] Fixed DOFs result in zero (or prescribed) displacement
 - [ ] Reactions can be recovered from K * u - F
 - [ ] System remains solvable after BC application
+- [ ] Warping DOF (index 6) can be fixed or left free
+- [ ] Fork support correctly leaves warping free
+- [ ] Built-in support with warping correctly restrains warping
 
 ---
 
@@ -1649,6 +2046,81 @@ Compute N, V, M along the beam length using shape functions.
 - [ ] Simply supported beam with UDL: M_max = wL²/8 at midspan
 - [ ] Cantilever with tip load: M_max = PL at support
 - [ ] Extreme values are found correctly
+
+---
+
+### Task 7.2b: Implement Warping Results (Bimoments)
+**Requirements:** R-RES-006 (new), R-ELEM-007
+**Dependencies:** Task 7.1, Task 2.7
+**Difficulty:** High
+
+**Description:**
+Compute warping-related results for elements with 7th DOF: bimoment, warping stress, warping displacement.
+
+**Background:**
+For thin-walled open sections under torsion with warping restraint:
+- **Bimoment (B):** The generalized force conjugate to warping displacement
+- **Warping normal stress:** σ_w = -B × ω / Iω (where ω is sectorial coordinate)
+- **Total normal stress:** σ = N/A ± My×z/Iy ± Mz×y/Iz ± B×ω/Iω
+
+**Steps:**
+1. Extend EndForces struct for warping elements:
+   ```cpp
+   struct EndForces {
+       double N;   // Axial force
+       double Vy;  // Shear in y
+       double Vz;  // Shear in z
+       double Mx;  // Torsion (St. Venant)
+       double My;  // Bending about y
+       double Mz;  // Bending about z
+       double B;   // Bimoment [kN·m²] - NEW for warping elements
+   };
+   ```
+
+2. Add warping-specific internal actions:
+   ```cpp
+   struct WarpingInternalActions : InternalActions {
+       double B;           // Bimoment [kN·m²]
+       double Tw;          // Warping torsion component
+       double sigma_w_max; // Maximum warping stress [kN/m²]
+   };
+
+   WarpingInternalActions get_warping_internal_actions(double x) const;
+   ```
+
+3. Implement bimoment calculation:
+   ```
+   For warping element with DOFs [θx_i, φ'_i, θx_j, φ'_j]:
+
+   Local displacements from global:
+   u_local = T_warping * u_global  (14×1 vector)
+
+   Bimoment at ends:
+   B_i = EIw × (φ''_i)
+   B_j = EIw × (φ''_j)
+
+   From element equations:
+   [Mx_i]   [GJ/L + 12EIw/L³   6EIw/L²    ...] [θx_i ]
+   [B_i ] = [6EIw/L²          4EIw/L     ...] [φ'_i ]
+   [...]    [...                              ] [...]
+   ```
+
+4. Warping stress calculation:
+   ```cpp
+   double compute_warping_stress(double x, double omega) const {
+       // omega = sectorial coordinate at point of interest
+       // For I-sections: omega varies across the flange width
+       WarpingInternalActions actions = get_warping_internal_actions(x);
+       return -actions.B * omega / section->Iw;
+   }
+   ```
+
+**Acceptance Criteria:**
+- [ ] Bimoment at warping-restrained end matches analytical solution
+- [ ] Warping-free end has B = 0
+- [ ] Total normal stress = axial + bending + warping components
+- [ ] For Iw = 0, bimoment results are zero (degenerates correctly)
+- [ ] Sign convention consistent with standard references
 
 ---
 
@@ -2476,12 +2948,12 @@ Phase 11      Phase 12
 |-------|--------|-------|
 | 0 - Setup | ✅ **COMPLETED** | All 3 tasks complete. Directory structure, C++ build system with pybind11+Eigen, pytest infrastructure. 7 tests passing. Main challenge: macOS SDK C++ header paths. Time: ~43 minutes. |
 | 1 - Data Structures | ✅ **COMPLETED** | All 5 tasks complete. Node, NodeRegistry, Material, Section classes implemented in C++ with full Python bindings. 24 tests passing (31 total). Main challenge: pybind11 unique_ptr handling. Time: ~45 minutes. |
-| 2 - Beam Element | ✅ **COMPLETED (3/5)** | Tasks 2.1-2.3 complete (LocalAxes, stiffness matrix, mass matrix). 17 tests passing (48 total). Tasks 2.4-2.5 (offsets, releases) deferred. Cantilever deflection validated. Time: ~60 minutes. |
-| 3 - Assembly/Solver | Not Started | |
+| 2 - Beam Element | ✅ **COMPLETED (3/8)** | Tasks 2.1-2.3 complete (LocalAxes, Euler-Bernoulli stiffness/mass). 17 tests (48 total). **NEW:** Tasks 2.6-2.8 added for Timoshenko beams + Warping (14×14) elements. Tasks 2.4-2.5 (offsets, releases) pending. |
+| 3 - Assembly/Solver | Not Started | **UPDATED:** Now supports 12-DOF and 14-DOF elements for warping. |
 | 4 - Python/IO | Not Started | |
 | 5 - Loads | Not Started | |
 | 6 - MPC | Not Started | |
-| 7 - Results | Not Started | |
+| 7 - Results | Not Started | **UPDATED:** Task 7.2b added for bimoment/warping stress output. |
 | 8 - Other Elements | Not Started | |
 | 9 - Cargo | Not Started | |
 | 10 - Design Codes | Not Started | |
