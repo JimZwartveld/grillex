@@ -7,6 +7,8 @@
 #include "grillex/node_registry.hpp"
 #include "grillex/material.hpp"
 #include "grillex/section.hpp"
+#include "grillex/local_axes.hpp"
+#include "grillex/beam_element.hpp"
 
 namespace py = pybind11;
 
@@ -137,5 +139,74 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Set distances to extreme fibres [m]")
         .def("__repr__", [](const grillex::Section &s) {
             return "<Section '" + s.name + "' A=" + std::to_string(s.A) + ">";
+        });
+
+    // ========================================================================
+    // Phase 2: Beam Element Foundation
+    // ========================================================================
+
+    // LocalAxes class
+    py::class_<grillex::LocalAxes>(m, "LocalAxes",
+        "Local coordinate system for beam elements")
+        .def(py::init<const Eigen::Vector3d&, const Eigen::Vector3d&, double>(),
+             py::arg("end_a"), py::arg("end_b"), py::arg("roll_angle") = 0.0,
+             "Construct local axes from two points with optional roll angle")
+        .def_readonly("rotation_matrix", &grillex::LocalAxes::rotation_matrix,
+                      "3x3 rotation matrix (global to local)")
+        .def_readonly("x_axis", &grillex::LocalAxes::x_axis,
+                      "Local x-axis (along beam)")
+        .def_readonly("y_axis", &grillex::LocalAxes::y_axis,
+                      "Local y-axis")
+        .def_readonly("z_axis", &grillex::LocalAxes::z_axis,
+                      "Local z-axis")
+        .def("to_local", &grillex::LocalAxes::to_local,
+             py::arg("global"), "Transform vector from global to local coordinates")
+        .def("to_global", &grillex::LocalAxes::to_global,
+             py::arg("local"), "Transform vector from local to global coordinates")
+        .def("__repr__", [](const grillex::LocalAxes &ax) {
+            return "<LocalAxes x=" + std::to_string(ax.x_axis[0]) + "," +
+                   std::to_string(ax.x_axis[1]) + "," + std::to_string(ax.x_axis[2]) + ">";
+        });
+
+    // BeamElement class
+    py::class_<grillex::BeamElement>(m, "BeamElement",
+        "3D Euler-Bernoulli beam element with 12 DOFs")
+        .def(py::init<int, grillex::Node*, grillex::Node*,
+                      grillex::Material*, grillex::Section*, double>(),
+             py::arg("id"), py::arg("node_i"), py::arg("node_j"),
+             py::arg("material"), py::arg("section"), py::arg("roll") = 0.0,
+             "Construct a beam element")
+        .def_readwrite("id", &grillex::BeamElement::id, "Element ID")
+        .def_readonly("node_i", &grillex::BeamElement::node_i,
+                      "First node", py::return_value_policy::reference)
+        .def_readonly("node_j", &grillex::BeamElement::node_j,
+                      "Second node", py::return_value_policy::reference)
+        .def_readonly("material", &grillex::BeamElement::material,
+                      "Material", py::return_value_policy::reference)
+        .def_readonly("section", &grillex::BeamElement::section,
+                      "Section", py::return_value_policy::reference)
+        .def_readonly("local_axes", &grillex::BeamElement::local_axes,
+                      "Local coordinate system")
+        .def_readonly("length", &grillex::BeamElement::length,
+                      "Element length [m]")
+        .def_readwrite("offset_i", &grillex::BeamElement::offset_i,
+                       "End offset at node i [m]")
+        .def_readwrite("offset_j", &grillex::BeamElement::offset_j,
+                       "End offset at node j [m]")
+        .def("local_stiffness_matrix", &grillex::BeamElement::local_stiffness_matrix,
+             "Compute 12x12 local stiffness matrix")
+        .def("transformation_matrix", &grillex::BeamElement::transformation_matrix,
+             "Compute 12x12 transformation matrix")
+        .def("global_stiffness_matrix", &grillex::BeamElement::global_stiffness_matrix,
+             "Compute 12x12 global stiffness matrix")
+        .def("local_mass_matrix", &grillex::BeamElement::local_mass_matrix,
+             "Compute 12x12 local mass matrix")
+        .def("global_mass_matrix", &grillex::BeamElement::global_mass_matrix,
+             "Compute 12x12 global mass matrix")
+        .def("__repr__", [](const grillex::BeamElement &e) {
+            return "<BeamElement id=" + std::to_string(e.id) +
+                   " nodes=[" + std::to_string(e.node_i->id) + "," +
+                   std::to_string(e.node_j->id) + "] L=" +
+                   std::to_string(e.length) + ">";
         });
 }

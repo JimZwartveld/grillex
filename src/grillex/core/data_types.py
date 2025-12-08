@@ -6,8 +6,17 @@ This module provides Python-friendly access to the C++ core data structures:
 - NodeRegistry: Manager for nodes with automatic merging
 - Material: Material properties (E, G, nu, rho)
 - Section: Cross-section properties for beams
+- LocalAxes: Local coordinate system for beam elements
+- BeamElement: 3D Euler-Bernoulli beam element
 """
 
-from grillex._grillex_cpp import Node, NodeRegistry, Material, Section
+from grillex._grillex_cpp import (
+    Node,
+    NodeRegistry,
+    Material,
+    Section,
+    LocalAxes,
+    BeamElement
+)
 
-__all__ = ['Node', 'NodeRegistry', 'Material', 'Section']
+__all__ = ['Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes', 'BeamElement']

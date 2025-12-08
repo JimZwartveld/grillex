@@ -15,6 +15,8 @@ pybind11_add_module(_grillex_cpp
     src/node_registry.cpp
     src/material.cpp
     src/section.cpp
+    src/local_axes.cpp
+    src/beam_element.cpp
 )
 
 target_link_libraries(_grillex_cpp PRIVATE grillex_core)
