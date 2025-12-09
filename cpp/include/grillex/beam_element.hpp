@@ -9,6 +9,16 @@
 namespace grillex {
 
 /**
+ * @brief Beam formulation type
+ *
+ * Determines which beam theory is used for stiffness and mass matrices.
+ */
+enum class BeamFormulation {
+    EulerBernoulli,  ///< Classical beam theory (no shear deformation)
+    Timoshenko       ///< Beam theory with shear deformation effects
+};
+
+/**
  * @brief Beam element for structural analysis
  *
  * Implements a 3D Euler-Bernoulli beam element with 12 DOFs
@@ -54,11 +64,13 @@ public:
      * @brief Compute 12x12 local stiffness matrix
      *
      * Returns the element stiffness matrix in local coordinates
-     * using standard Euler-Bernoulli beam theory.
+     * using the specified beam formulation.
      *
+     * @param formulation Beam formulation type (default: EulerBernoulli)
      * @return Eigen::Matrix<double, 12, 12> Local stiffness matrix [kN, m, rad]
      */
-    Eigen::Matrix<double, 12, 12> local_stiffness_matrix() const;
+    Eigen::Matrix<double, 12, 12> local_stiffness_matrix(
+        BeamFormulation formulation = BeamFormulation::EulerBernoulli) const;
 
     /**
      * @brief Compute 12x12 transformation matrix
@@ -86,9 +98,11 @@ public:
      * Returns the consistent (not lumped) mass matrix in local coordinates.
      * Includes translational mass and rotary inertia contributions.
      *
+     * @param formulation Beam formulation type (default: EulerBernoulli)
      * @return Eigen::Matrix<double, 12, 12> Local mass matrix [mT = metric tonne]
      */
-    Eigen::Matrix<double, 12, 12> local_mass_matrix() const;
+    Eigen::Matrix<double, 12, 12> local_mass_matrix(
+        BeamFormulation formulation = BeamFormulation::EulerBernoulli) const;
 
     /**
      * @brief Compute 12x12 global mass matrix

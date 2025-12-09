@@ -17,7 +17,7 @@ Tests verify correct implementation of:
 
 import pytest
 import numpy as np
-from grillex.core import Node, NodeRegistry, Material, Section, LocalAxes, BeamElement
+from grillex.core import Node, NodeRegistry, Material, Section, LocalAxes, BeamElement, BeamFormulation
 
 
 class TestLocalAxes:
@@ -480,6 +480,179 @@ class TestPythonBindings:
         assert hasattr(axes, 'y_axis')
         assert hasattr(axes, 'z_axis')
         assert hasattr(axes, 'rotation_matrix')
+
+
+class TestTimoshenkoBeam:
+    """Tests for Task 2.6: Timoshenko Beam Element acceptance criteria"""
+
+    def setup_method(self):
+        """Setup common test data"""
+        # Steel material
+        self.steel = Material(1, "Steel", 210000000.0, 0.3, 7.85)
+
+        # Rectangular section 0.2m x 0.4m for testing
+        # A = 0.08 m², Iz = 0.2*0.4³/12 = 0.001067 m⁴, Iy = 0.4*0.2³/12 = 0.000267 m⁴
+        self.rect_section = Section(1, "Rect200x400", 0.08, 0.000267, 0.001067, 0.000569)
+        # Set shear areas (5/6 * A for rectangular section)
+        self.rect_section.set_shear_areas(0.08 * 5.0 / 6.0, 0.08 * 5.0 / 6.0)
+
+        # Slender beam (L/d = 30, should behave like Euler-Bernoulli)
+        self.node_slender_i = Node(1, 0.0, 0.0, 0.0)
+        self.node_slender_j = Node(2, 12.0, 0.0, 0.0)  # L = 12m, d = 0.4m
+
+        # Deep beam (L/d = 3, significant shear deformation)
+        self.node_deep_i = Node(3, 0.0, 0.0, 0.0)
+        self.node_deep_j = Node(4, 1.2, 0.0, 0.0)  # L = 1.2m, d = 0.4m
+
+    def test_slender_beam_timoshenko_matches_euler_bernoulli(self):
+        """For slender beams (L/d > 20), Timoshenko should match Euler-Bernoulli"""
+        beam = BeamElement(1, self.node_slender_i, self.node_slender_j,
+                          self.steel, self.rect_section)
+
+        # Get stiffness matrices
+        K_euler = beam.local_stiffness_matrix(BeamFormulation.EulerBernoulli)
+        K_timo = beam.local_stiffness_matrix(BeamFormulation.Timoshenko)
+
+        # For slender beams, should be very close (within 1%)
+        relative_diff = np.max(np.abs((K_timo - K_euler) / (K_euler + 1e-10)))
+        assert relative_diff < 0.01, f"Slender beam: Timoshenko should match Euler-Bernoulli, diff={relative_diff}"
+
+    def test_deep_beam_timoshenko_softer_than_euler_bernoulli(self):
+        """For deep beams (L/d < 5), Timoshenko should be softer (smaller stiffness)"""
+        beam = BeamElement(1, self.node_deep_i, self.node_deep_j,
+                          self.steel, self.rect_section)
+
+        # Get stiffness matrices
+        K_euler = beam.local_stiffness_matrix(BeamFormulation.EulerBernoulli)
+        K_timo = beam.local_stiffness_matrix(BeamFormulation.Timoshenko)
+
+        # For deep beams, Timoshenko bending stiffness should be notably smaller
+        # Check bending stiffness in z-direction (DOF 1,1 - transverse displacement)
+        k_euler_bend = K_euler[1, 1]
+        k_timo_bend = K_timo[1, 1]
+
+        # Timoshenko should be softer (smaller stiffness)
+        assert k_timo_bend < k_euler_bend
+        # Should be at least 5% different for L/d = 3
+        relative_diff = (k_euler_bend - k_timo_bend) / k_euler_bend
+        assert relative_diff > 0.05, f"Deep beam: expected >5% difference, got {relative_diff*100:.1f}%"
+
+    def test_timoshenko_stiffness_symmetric(self):
+        """Timoshenko stiffness matrix should be symmetric"""
+        beam = BeamElement(1, self.node_slender_i, self.node_slender_j,
+                          self.steel, self.rect_section)
+
+        K_timo = beam.local_stiffness_matrix(BeamFormulation.Timoshenko)
+
+        assert np.allclose(K_timo, K_timo.T, atol=1e-10)
+
+    def test_timoshenko_stiffness_positive_semidefinite(self):
+        """Timoshenko stiffness matrix should be positive semi-definite"""
+        beam = BeamElement(1, self.node_slender_i, self.node_slender_j,
+                          self.steel, self.rect_section)
+
+        K_timo = beam.local_stiffness_matrix(BeamFormulation.Timoshenko)
+
+        # Compute eigenvalues
+        eigenvalues = np.linalg.eigvalsh(K_timo)
+
+        # Should have 6 near-zero eigenvalues (rigid body modes)
+        zero_eigenvalues = np.sum(np.abs(eigenvalues) < 1e-3)
+        assert zero_eigenvalues == 6
+
+        # Remaining eigenvalues should be positive
+        non_zero_eigenvalues = eigenvalues[np.abs(eigenvalues) > 1e-3]
+        assert np.all(non_zero_eigenvalues > 0)
+
+    def test_timoshenko_mass_matrix_symmetric(self):
+        """Timoshenko mass matrix should be symmetric"""
+        beam = BeamElement(1, self.node_slender_i, self.node_slender_j,
+                          self.steel, self.rect_section)
+
+        M_timo = beam.local_mass_matrix(BeamFormulation.Timoshenko)
+
+        assert np.allclose(M_timo, M_timo.T, atol=1e-10)
+
+    def test_timoshenko_cantilever_deflection(self):
+        """Timoshenko cantilever should have larger deflection than Euler-Bernoulli"""
+        # Use deep beam for significant shear deformation
+        beam = BeamElement(1, self.node_deep_i, self.node_deep_j,
+                          self.steel, self.rect_section)
+
+        # Get stiffness matrices
+        K_euler = beam.local_stiffness_matrix(BeamFormulation.EulerBernoulli)
+        K_timo = beam.local_stiffness_matrix(BeamFormulation.Timoshenko)
+
+        # Extract the 6x6 stiffness relating free end DOFs
+        K_euler_free = K_euler[6:12, 6:12]
+        K_timo_free = K_timo[6:12, 6:12]
+
+        # Apply load P = 10 kN in negative z direction
+        P = 10.0
+        F_free = np.array([0.0, 0.0, -P, 0.0, 0.0, 0.0])
+
+        # Solve for displacements
+        u_euler = np.linalg.solve(K_euler_free, F_free)
+        u_timo = np.linalg.solve(K_timo_free, F_free)
+
+        # Tip deflection in z
+        delta_euler = u_euler[2]
+        delta_timo = u_timo[2]
+
+        # Timoshenko should have larger (more negative) deflection
+        assert delta_timo < delta_euler
+        # Should be noticeably different for deep beam
+        relative_diff = abs((delta_timo - delta_euler) / delta_euler)
+        assert relative_diff > 0.02, f"Expected >2% difference, got {relative_diff*100:.1f}%"
+
+    def test_shear_deformation_factor_calculation(self):
+        """Verify shear deformation factor φ is computed correctly"""
+        # For a rectangular section beam
+        # φ = 12EI / (κAsG L²)
+        # With κ = 5/6, As = (5/6)A for rectangular section
+
+        beam = BeamElement(1, self.node_deep_i, self.node_deep_j,
+                          self.steel, self.rect_section)
+
+        E = self.steel.E
+        G = self.steel.G
+        L = beam.length
+        Iz = self.rect_section.Iz
+        Asz = self.rect_section.Asz
+
+        # Calculate expected phi_z
+        phi_z_expected = 12.0 * E * Iz / (Asz * G * L * L)
+
+        # Get Timoshenko stiffness
+        K_timo = beam.local_stiffness_matrix(BeamFormulation.Timoshenko)
+        K_euler = beam.local_stiffness_matrix(BeamFormulation.EulerBernoulli)
+
+        # The bending stiffness should be reduced by factor (1 + phi_z)
+        # k_timo = k_euler / (1 + phi_z)
+        # So: (1 + phi_z) = k_euler / k_timo
+        k_euler_bend = K_euler[1, 1]  # Bending stiffness about z-axis
+        k_timo_bend = K_timo[1, 1]
+
+        phi_z_computed = (k_euler_bend / k_timo_bend) - 1.0
+
+        # Should match expected value
+        assert np.isclose(phi_z_computed, phi_z_expected, rtol=0.01)
+
+    def test_axial_and_torsion_unchanged(self):
+        """Axial and torsional stiffness should be same for both formulations"""
+        beam = BeamElement(1, self.node_deep_i, self.node_deep_j,
+                          self.steel, self.rect_section)
+
+        K_euler = beam.local_stiffness_matrix(BeamFormulation.EulerBernoulli)
+        K_timo = beam.local_stiffness_matrix(BeamFormulation.Timoshenko)
+
+        # Axial stiffness (DOF 0 and 6)
+        assert np.allclose(K_euler[0, 0], K_timo[0, 0])
+        assert np.allclose(K_euler[6, 6], K_timo[6, 6])
+
+        # Torsional stiffness (DOF 3 and 9)
+        assert np.allclose(K_euler[3, 3], K_timo[3, 3])
+        assert np.allclose(K_euler[9, 9], K_timo[9, 9])
 
 
 if __name__ == "__main__":

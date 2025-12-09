@@ -145,6 +145,15 @@ PYBIND11_MODULE(_grillex_cpp, m) {
     // Phase 2: Beam Element Foundation
     // ========================================================================
 
+    // BeamFormulation enum
+    py::enum_<grillex::BeamFormulation>(m, "BeamFormulation",
+        "Beam formulation type (Euler-Bernoulli or Timoshenko)")
+        .value("EulerBernoulli", grillex::BeamFormulation::EulerBernoulli,
+               "Classical beam theory (no shear deformation)")
+        .value("Timoshenko", grillex::BeamFormulation::Timoshenko,
+               "Beam theory with shear deformation effects")
+        .export_values();
+
     // LocalAxes class
     py::class_<grillex::LocalAxes>(m, "LocalAxes",
         "Local coordinate system for beam elements")
@@ -194,12 +203,14 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def_readwrite("offset_j", &grillex::BeamElement::offset_j,
                        "End offset at node j [m]")
         .def("local_stiffness_matrix", &grillex::BeamElement::local_stiffness_matrix,
+             py::arg("formulation") = grillex::BeamFormulation::EulerBernoulli,
              "Compute 12x12 local stiffness matrix")
         .def("transformation_matrix", &grillex::BeamElement::transformation_matrix,
              "Compute 12x12 transformation matrix")
         .def("global_stiffness_matrix", &grillex::BeamElement::global_stiffness_matrix,
              "Compute 12x12 global stiffness matrix")
         .def("local_mass_matrix", &grillex::BeamElement::local_mass_matrix,
+             py::arg("formulation") = grillex::BeamFormulation::EulerBernoulli,
              "Compute 12x12 local mass matrix")
         .def("global_mass_matrix", &grillex::BeamElement::global_mass_matrix,
              "Compute 12x12 global mass matrix")

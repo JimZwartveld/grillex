@@ -15,7 +15,8 @@ double BeamElement::compute_length() const {
     return diff.norm();
 }
 
-Eigen::Matrix<double, 12, 12> BeamElement::local_stiffness_matrix() const {
+Eigen::Matrix<double, 12, 12> BeamElement::local_stiffness_matrix(
+    BeamFormulation formulation) const {
     Eigen::Matrix<double, 12, 12> K = Eigen::Matrix<double, 12, 12>::Zero();
 
     // Extract properties
@@ -38,11 +39,30 @@ Eigen::Matrix<double, 12, 12> BeamElement::local_stiffness_matrix() const {
     K(6, 0) = -k_axial;
     K(6, 6) = k_axial;
 
+    // Compute shear deformation factors for Timoshenko beams
+    double phi_y = 0.0;  // Shear deformation factor for bending about y-axis
+    double phi_z = 0.0;  // Shear deformation factor for bending about z-axis
+
+    if (formulation == BeamFormulation::Timoshenko) {
+        // φ_y = 12EI_y / (κA_sy * G * L²)
+        // φ_z = 12EI_z / (κA_sz * G * L²)
+        // Using κ = 5/6 for rectangular sections (conservative approximation)
+        double kappa = 5.0 / 6.0;
+
+        // Get shear areas (if not set, default to A with shear correction)
+        double Asy = section->Asy > 0 ? section->Asy : kappa * A;
+        double Asz = section->Asz > 0 ? section->Asz : kappa * A;
+
+        phi_y = 12.0 * E * Iy / (Asy * G * L2);
+        phi_z = 12.0 * E * Iz / (Asz * G * L2);
+    }
+
     // Bending about z-axis (in-plane y, DOFs 1, 5, 7, 11: v_i, θz_i, v_j, θz_j)
-    double k_bend_z = 12.0 * E * Iz / L3;
-    double k_bend_z2 = 6.0 * E * Iz / L2;
-    double k_bend_z3 = 4.0 * E * Iz / L;
-    double k_bend_z4 = 2.0 * E * Iz / L;
+    // Standard Euler-Bernoulli terms, modified for Timoshenko
+    double k_bend_z = 12.0 * E * Iz / (L3 * (1.0 + phi_z));
+    double k_bend_z2 = 6.0 * E * Iz / (L2 * (1.0 + phi_z));
+    double k_bend_z3 = (4.0 + phi_z) * E * Iz / (L * (1.0 + phi_z));
+    double k_bend_z4 = (2.0 - phi_z) * E * Iz / (L * (1.0 + phi_z));
 
     K(1, 1) = k_bend_z;       // v_i, v_i
     K(1, 5) = k_bend_z2;      // v_i, θz_i
@@ -65,10 +85,11 @@ Eigen::Matrix<double, 12, 12> BeamElement::local_stiffness_matrix() const {
     K(11, 11) = k_bend_z3;    // θz_j, θz_j
 
     // Bending about y-axis (out-of-plane w, DOFs 2, 4, 8, 10: w_i, θy_i, w_j, θy_j)
-    double k_bend_y = 12.0 * E * Iy / L3;
-    double k_bend_y2 = 6.0 * E * Iy / L2;
-    double k_bend_y3 = 4.0 * E * Iy / L;
-    double k_bend_y4 = 2.0 * E * Iy / L;
+    // Standard Euler-Bernoulli terms, modified for Timoshenko
+    double k_bend_y = 12.0 * E * Iy / (L3 * (1.0 + phi_y));
+    double k_bend_y2 = 6.0 * E * Iy / (L2 * (1.0 + phi_y));
+    double k_bend_y3 = (4.0 + phi_y) * E * Iy / (L * (1.0 + phi_y));
+    double k_bend_y4 = (2.0 - phi_y) * E * Iy / (L * (1.0 + phi_y));
 
     K(2, 2) = k_bend_y;       // w_i, w_i
     K(2, 4) = -k_bend_y2;     // w_i, θy_i (note sign convention)
@@ -130,19 +151,36 @@ Eigen::Matrix<double, 12, 12> BeamElement::global_stiffness_matrix() const {
     return T.transpose() * K_local * T;
 }
 
-Eigen::Matrix<double, 12, 12> BeamElement::local_mass_matrix() const {
+Eigen::Matrix<double, 12, 12> BeamElement::local_mass_matrix(
+    BeamFormulation formulation) const {
     Eigen::Matrix<double, 12, 12> M = Eigen::Matrix<double, 12, 12>::Zero();
 
     // Extract properties
     double rho = material->rho;  // Density [mT/m³]
+    double E = material->E;
+    double G = material->G;
     double A = section->A;        // Area [m²]
     double Iy = section->Iy;      // Second moment about y [m⁴]
     double Iz = section->Iz;      // Second moment about z [m⁴]
     double J = section->J;        // Torsional constant [m⁴]
     double L = length;            // Length [m]
+    double L2 = L * L;
 
     // Total mass
     double mass = rho * A * L;
+
+    // Compute shear deformation factors for Timoshenko beams
+    double phi_y = 0.0;
+    double phi_z = 0.0;
+
+    if (formulation == BeamFormulation::Timoshenko) {
+        double kappa = 5.0 / 6.0;
+        double Asy = section->Asy > 0 ? section->Asy : kappa * A;
+        double Asz = section->Asz > 0 ? section->Asz : kappa * A;
+
+        phi_y = 12.0 * E * Iy / (Asy * G * L2);
+        phi_z = 12.0 * E * Iz / (Asz * G * L2);
+    }
 
     // Common coefficients for consistent mass matrix
     double m_trans = mass / 420.0;  // Translational mass coefficient
@@ -156,47 +194,55 @@ Eigen::Matrix<double, 12, 12> BeamElement::local_mass_matrix() const {
 
     // Bending in y-direction (DOFs 1, 5, 7, 11: v_i, θz_i, v_j, θz_j)
     // Includes translational and rotary inertia (Iz)
-    M(1, 1) = 156.0 * m_trans;
-    M(1, 5) = 22.0 * L * m_trans;
-    M(1, 7) = 54.0 * m_trans;
-    M(1, 11) = -13.0 * L * m_trans;
+    // Modified for Timoshenko beams with shear deformation
+    double phi_z2 = phi_z * phi_z;
+    double den_z = (1.0 + phi_z) * (1.0 + phi_z);
 
-    M(5, 1) = 22.0 * L * m_trans;
-    M(5, 5) = 4.0 * L * L * m_trans + 140.0 * Iz * m_rot;
-    M(5, 7) = 13.0 * L * m_trans;
-    M(5, 11) = -3.0 * L * L * m_trans + 70.0 * Iz * m_rot;
+    M(1, 1) = m_trans * (156.0 + 294.0 * phi_z + 140.0 * phi_z2) / den_z;
+    M(1, 5) = m_trans * L * (22.0 + 38.5 * phi_z + 17.5 * phi_z2) / den_z;
+    M(1, 7) = m_trans * (54.0 + 126.0 * phi_z + 70.0 * phi_z2) / den_z;
+    M(1, 11) = m_trans * L * (-13.0 - 31.5 * phi_z - 17.5 * phi_z2) / den_z;
 
-    M(7, 1) = 54.0 * m_trans;
-    M(7, 5) = 13.0 * L * m_trans;
-    M(7, 7) = 156.0 * m_trans;
-    M(7, 11) = -22.0 * L * m_trans;
+    M(5, 1) = m_trans * L * (22.0 + 38.5 * phi_z + 17.5 * phi_z2) / den_z;
+    M(5, 5) = m_trans * L2 * (4.0 + 7.0 * phi_z + 3.5 * phi_z2) / den_z + 140.0 * Iz * m_rot;
+    M(5, 7) = m_trans * L * (13.0 + 31.5 * phi_z + 17.5 * phi_z2) / den_z;
+    M(5, 11) = m_trans * L2 * (-3.0 - 7.0 * phi_z - 3.5 * phi_z2) / den_z + 70.0 * Iz * m_rot;
 
-    M(11, 1) = -13.0 * L * m_trans;
-    M(11, 5) = -3.0 * L * L * m_trans + 70.0 * Iz * m_rot;
-    M(11, 7) = -22.0 * L * m_trans;
-    M(11, 11) = 4.0 * L * L * m_trans + 140.0 * Iz * m_rot;
+    M(7, 1) = m_trans * (54.0 + 126.0 * phi_z + 70.0 * phi_z2) / den_z;
+    M(7, 5) = m_trans * L * (13.0 + 31.5 * phi_z + 17.5 * phi_z2) / den_z;
+    M(7, 7) = m_trans * (156.0 + 294.0 * phi_z + 140.0 * phi_z2) / den_z;
+    M(7, 11) = m_trans * L * (-22.0 - 38.5 * phi_z - 17.5 * phi_z2) / den_z;
+
+    M(11, 1) = m_trans * L * (-13.0 - 31.5 * phi_z - 17.5 * phi_z2) / den_z;
+    M(11, 5) = m_trans * L2 * (-3.0 - 7.0 * phi_z - 3.5 * phi_z2) / den_z + 70.0 * Iz * m_rot;
+    M(11, 7) = m_trans * L * (-22.0 - 38.5 * phi_z - 17.5 * phi_z2) / den_z;
+    M(11, 11) = m_trans * L2 * (4.0 + 7.0 * phi_z + 3.5 * phi_z2) / den_z + 140.0 * Iz * m_rot;
 
     // Bending in z-direction (DOFs 2, 4, 8, 10: w_i, θy_i, w_j, θy_j)
     // Includes translational and rotary inertia (Iy)
-    M(2, 2) = 156.0 * m_trans;
-    M(2, 4) = -22.0 * L * m_trans;
-    M(2, 8) = 54.0 * m_trans;
-    M(2, 10) = 13.0 * L * m_trans;
+    // Modified for Timoshenko beams with shear deformation
+    double phi_y2 = phi_y * phi_y;
+    double den_y = (1.0 + phi_y) * (1.0 + phi_y);
 
-    M(4, 2) = -22.0 * L * m_trans;
-    M(4, 4) = 4.0 * L * L * m_trans + 140.0 * Iy * m_rot;
-    M(4, 8) = -13.0 * L * m_trans;
-    M(4, 10) = -3.0 * L * L * m_trans + 70.0 * Iy * m_rot;
+    M(2, 2) = m_trans * (156.0 + 294.0 * phi_y + 140.0 * phi_y2) / den_y;
+    M(2, 4) = -m_trans * L * (22.0 + 38.5 * phi_y + 17.5 * phi_y2) / den_y;
+    M(2, 8) = m_trans * (54.0 + 126.0 * phi_y + 70.0 * phi_y2) / den_y;
+    M(2, 10) = m_trans * L * (13.0 + 31.5 * phi_y + 17.5 * phi_y2) / den_y;
 
-    M(8, 2) = 54.0 * m_trans;
-    M(8, 4) = -13.0 * L * m_trans;
-    M(8, 8) = 156.0 * m_trans;
-    M(8, 10) = 22.0 * L * m_trans;
+    M(4, 2) = -m_trans * L * (22.0 + 38.5 * phi_y + 17.5 * phi_y2) / den_y;
+    M(4, 4) = m_trans * L2 * (4.0 + 7.0 * phi_y + 3.5 * phi_y2) / den_y + 140.0 * Iy * m_rot;
+    M(4, 8) = -m_trans * L * (13.0 + 31.5 * phi_y + 17.5 * phi_y2) / den_y;
+    M(4, 10) = -m_trans * L2 * (3.0 + 7.0 * phi_y + 3.5 * phi_y2) / den_y + 70.0 * Iy * m_rot;
 
-    M(10, 2) = 13.0 * L * m_trans;
-    M(10, 4) = -3.0 * L * L * m_trans + 70.0 * Iy * m_rot;
-    M(10, 8) = 22.0 * L * m_trans;
-    M(10, 10) = 4.0 * L * L * m_trans + 140.0 * Iy * m_rot;
+    M(8, 2) = m_trans * (54.0 + 126.0 * phi_y + 70.0 * phi_y2) / den_y;
+    M(8, 4) = -m_trans * L * (13.0 + 31.5 * phi_y + 17.5 * phi_y2) / den_y;
+    M(8, 8) = m_trans * (156.0 + 294.0 * phi_y + 140.0 * phi_y2) / den_y;
+    M(8, 10) = m_trans * L * (22.0 + 38.5 * phi_y + 17.5 * phi_y2) / den_y;
+
+    M(10, 2) = m_trans * L * (13.0 + 31.5 * phi_y + 17.5 * phi_y2) / den_y;
+    M(10, 4) = -m_trans * L2 * (3.0 + 7.0 * phi_y + 3.5 * phi_y2) / den_y + 70.0 * Iy * m_rot;
+    M(10, 8) = m_trans * L * (22.0 + 38.5 * phi_y + 17.5 * phi_y2) / den_y;
+    M(10, 10) = m_trans * L2 * (4.0 + 7.0 * phi_y + 3.5 * phi_y2) / den_y + 140.0 * Iy * m_rot;
 
     // Torsional inertia (DOFs 3, 9: θx_i, θx_j)
     double m_torsion = rho * J * L / 6.0;
