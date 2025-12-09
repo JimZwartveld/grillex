@@ -341,4 +341,227 @@ Eigen::Matrix<double, 12, 12> BeamElement::offset_transformation_matrix() const 
     return T;
 }
 
+Eigen::Matrix<double, 14, 14> BeamElement::local_stiffness_matrix_warping(
+    BeamFormulation formulation) const {
+    // Start with 14×14 zero matrix
+    Eigen::Matrix<double, 14, 14> K = Eigen::Matrix<double, 14, 14>::Zero();
+
+    // Get the 12×12 matrix without warping
+    Eigen::Matrix<double, 12, 12> K12 = local_stiffness_matrix(formulation);
+
+    // Extract properties
+    double E = material->E;
+    double G = material->G;
+    double Iw = section->Iw;
+    double L = length;
+
+    // Common terms for warping stiffness
+    double L2 = L * L;
+    double L3 = L2 * L;
+    double EIw = E * Iw;
+
+    // DOF mapping for 14×14 matrix:
+    // Node i: [0-2: UX UY UZ], [3-5: RX RY RZ], [6: WARP]
+    // Node j: [7-9: UX UY UZ], [10-12: RX RY RZ], [13: WARP]
+
+    // Copy translational DOFs (UX, UY, UZ) for both nodes
+    K.block<3, 3>(0, 0) = K12.block<3, 3>(0, 0);      // Node i trans-trans
+    K.block<3, 3>(0, 7) = K12.block<3, 3>(0, 6);      // Node i trans - node j trans
+    K.block<3, 3>(7, 0) = K12.block<3, 3>(6, 0);      // Node j trans - node i trans
+    K.block<3, 3>(7, 7) = K12.block<3, 3>(6, 6);      // Node j trans-trans
+
+    // Copy rotational DOFs (RY, RZ) - skip RX (torsion) for now
+    // RY: index 4 in 12×12 → index 4 in 14×14
+    // RZ: index 5 in 12×12 → index 5 in 14×14
+    for (int i : {1, 2, 4, 5}) {  // v, w, θy, θz at node i
+        for (int j : {1, 2, 4, 5}) {
+            K(i, j) = K12(i, j);
+        }
+    }
+    // Node i bending - Node j trans/rot
+    for (int i : {1, 2, 4, 5}) {
+        K(i, 7) = K12(i, 6);      // v,w,θy,θz @ i - u @ j
+        K(i, 8) = K12(i, 7);      // v,w,θy,θz @ i - v @ j
+        K(i, 9) = K12(i, 8);      // v,w,θy,θz @ i - w @ j
+        K(i, 11) = K12(i, 10);    // v,w,θy,θz @ i - θy @ j
+        K(i, 12) = K12(i, 11);    // v,w,θy,θz @ i - θz @ j
+    }
+    // Node j trans/rot - Node i bending
+    for (int j : {1, 2, 4, 5}) {
+        K(7, j) = K12(6, j);      // u @ j - v,w,θy,θz @ i
+        K(8, j) = K12(7, j);      // v @ j - v,w,θy,θz @ i
+        K(9, j) = K12(8, j);      // w @ j - v,w,θy,θz @ i
+        K(11, j) = K12(10, j);    // θy @ j - v,w,θy,θz @ i
+        K(12, j) = K12(11, j);    // θz @ j - v,w,θy,θz @ i
+    }
+    // Node j bending - Node j bending
+    for (int i : {8, 9, 11, 12}) {  // v, w, θy, θz at node j (in 14×14)
+        for (int j : {8, 9, 11, 12}) {
+            int i12 = (i == 8) ? 7 : (i == 9) ? 8 : (i == 11) ? 10 : 11;
+            int j12 = (j == 8) ? 7 : (j == 9) ? 8 : (j == 11) ? 10 : 11;
+            K(i, j) = K12(i12, j12);
+        }
+    }
+
+    // Torsion-warping coupling: 4×4 block for [θx_i, φ'_i, θx_j, φ'_j]
+    // Indices in 14×14: [3, 6, 10, 13]
+
+    // According to Vlasov theory:
+    // K_tw = [GJ/L + 12EIw/L³    6EIw/L²      -GJ/L - 12EIw/L³   6EIw/L²   ]
+    //        [6EIw/L²            4EIw/L       -6EIw/L²           2EIw/L    ]
+    //        [-GJ/L - 12EIw/L³   -6EIw/L²     GJ/L + 12EIw/L³    -6EIw/L²  ]
+    //        [6EIw/L²            2EIw/L       -6EIw/L²           4EIw/L    ]
+
+    double k_tw_11 = G * section->J / L + 12.0 * EIw / L3;
+    double k_tw_12 = 6.0 * EIw / L2;
+    double k_tw_13 = -G * section->J / L - 12.0 * EIw / L3;
+    double k_tw_14 = 6.0 * EIw / L2;
+    double k_tw_22 = 4.0 * EIw / L;
+    double k_tw_23 = -6.0 * EIw / L2;
+    double k_tw_24 = 2.0 * EIw / L;
+    double k_tw_33 = G * section->J / L + 12.0 * EIw / L3;
+    double k_tw_34 = -6.0 * EIw / L2;
+    double k_tw_44 = 4.0 * EIw / L;
+
+    // Fill the 4×4 torsion-warping block
+    K(3, 3) = k_tw_11;    // θx_i, θx_i
+    K(3, 6) = k_tw_12;    // θx_i, φ'_i
+    K(3, 10) = k_tw_13;   // θx_i, θx_j
+    K(3, 13) = k_tw_14;   // θx_i, φ'_j
+
+    K(6, 3) = k_tw_12;    // φ'_i, θx_i (symmetric)
+    K(6, 6) = k_tw_22;    // φ'_i, φ'_i
+    K(6, 10) = k_tw_23;   // φ'_i, θx_j
+    K(6, 13) = k_tw_24;   // φ'_i, φ'_j
+
+    K(10, 3) = k_tw_13;   // θx_j, θx_i (symmetric)
+    K(10, 6) = k_tw_23;   // θx_j, φ'_i (symmetric)
+    K(10, 10) = k_tw_33;  // θx_j, θx_j
+    K(10, 13) = k_tw_34;  // θx_j, φ'_j
+
+    K(13, 3) = k_tw_14;   // φ'_j, θx_i (symmetric)
+    K(13, 6) = k_tw_24;   // φ'_j, φ'_i (symmetric)
+    K(13, 10) = k_tw_34;  // φ'_j, θx_j (symmetric)
+    K(13, 13) = k_tw_44;  // φ'_j, φ'_j
+
+    // Apply offset transformation if offsets are present
+    // TODO: Implement offset transformation for 14×14 matrices
+    // For now, offsets are not supported with warping elements
+
+    return K;
+}
+
+Eigen::Matrix<double, 14, 14> BeamElement::local_mass_matrix_warping(
+    BeamFormulation formulation) const {
+    // Start with 14×14 zero matrix
+    Eigen::Matrix<double, 14, 14> M = Eigen::Matrix<double, 14, 14>::Zero();
+
+    // Get the 12×12 mass matrix without warping
+    Eigen::Matrix<double, 12, 12> M12 = local_mass_matrix(formulation);
+
+    // DOF mapping for 14×14 matrix:
+    // Node i: [0-2: UX UY UZ], [3-5: RX RY RZ], [6: WARP]
+    // Node j: [7-9: UX UY UZ], [10-12: RX RY RZ], [13: WARP]
+
+    // Copy translational and rotational masses from 12×12 matrix
+    // Node i: UX, UY, UZ (0-2 in both matrices)
+    M.block<3, 3>(0, 0) = M12.block<3, 3>(0, 0);
+    M.block<3, 3>(0, 7) = M12.block<3, 3>(0, 6);
+    M.block<3, 3>(7, 0) = M12.block<3, 3>(6, 0);
+    M.block<3, 3>(7, 7) = M12.block<3, 3>(6, 6);
+
+    // Copy bending masses (v, w, θy, θz and couplings)
+    // Similar pattern as stiffness matrix
+    for (int i : {1, 2, 4, 5}) {
+        for (int j : {1, 2, 4, 5}) {
+            M(i, j) = M12(i, j);
+        }
+    }
+    // Node i bending - Node j trans/rot
+    for (int i : {1, 2, 4, 5}) {
+        M(i, 7) = M12(i, 6);
+        M(i, 8) = M12(i, 7);
+        M(i, 9) = M12(i, 8);
+        M(i, 11) = M12(i, 10);
+        M(i, 12) = M12(i, 11);
+    }
+    // Node j trans/rot - Node i bending
+    for (int j : {1, 2, 4, 5}) {
+        M(7, j) = M12(6, j);
+        M(8, j) = M12(7, j);
+        M(9, j) = M12(8, j);
+        M(11, j) = M12(10, j);
+        M(12, j) = M12(11, j);
+    }
+    // Node j bending - Node j bending
+    for (int i : {8, 9, 11, 12}) {
+        for (int j : {8, 9, 11, 12}) {
+            int i12 = (i == 8) ? 7 : (i == 9) ? 8 : (i == 11) ? 10 : 11;
+            int j12 = (j == 8) ? 7 : (j == 9) ? 8 : (j == 11) ? 10 : 11;
+            M(i, j) = M12(i12, j12);
+        }
+    }
+
+    // Copy torsional inertia (RX DOF)
+    // 12×12: indices 3 and 9
+    // 14×14: indices 3 and 10
+    M(3, 3) = M12(3, 3);
+    M(3, 10) = M12(3, 9);
+    M(10, 3) = M12(9, 3);
+    M(10, 10) = M12(9, 9);
+
+    // Warping inertia terms (indices 6 and 13)
+    // Typically negligible for static analysis, left as zero
+    // For dynamic analysis, could add: M(6,6) = M(13,13) = rho * Iw * L / 3.0;
+    // but this is usually omitted in practice
+
+    // Apply offset transformation if offsets are present
+    // TODO: Implement offset transformation for 14×14 matrices
+    // For now, offsets are not supported with warping elements
+
+    return M;
+}
+
+Eigen::Matrix<double, 14, 14> BeamElement::transformation_matrix_warping() const {
+    Eigen::Matrix<double, 14, 14> T = Eigen::Matrix<double, 14, 14>::Zero();
+
+    // Get the 3x3 rotation matrix from local axes
+    Eigen::Matrix3d R = local_axes.rotation_matrix;
+
+    // Block diagonal structure:
+    // - 3x3 for node i translations (UX, UY, UZ)
+    // - 3x3 for node i rotations (RX, RY, RZ)
+    // - 1x1 identity for node i warping (WARP) - transforms as scalar
+    // - 3x3 for node j translations (UX, UY, UZ)
+    // - 3x3 for node j rotations (RX, RY, RZ)
+    // - 1x1 identity for node j warping (WARP) - transforms as scalar
+
+    T.block<3, 3>(0, 0) = R;      // Node i translations
+    T.block<3, 3>(3, 3) = R;      // Node i rotations
+    T(6, 6) = 1.0;                // Node i warping (scalar, no transformation)
+    T.block<3, 3>(7, 7) = R;      // Node j translations
+    T.block<3, 3>(10, 10) = R;    // Node j rotations
+    T(13, 13) = 1.0;              // Node j warping (scalar, no transformation)
+
+    return T;
+}
+
+Eigen::Matrix<double, 14, 14> BeamElement::global_stiffness_matrix_warping(
+    BeamFormulation formulation) const {
+    Eigen::Matrix<double, 14, 14> K_local = local_stiffness_matrix_warping(formulation);
+    Eigen::Matrix<double, 14, 14> T = transformation_matrix_warping();
+
+    // K_global = T^T * K_local * T
+    return T.transpose() * K_local * T;
+}
+
+Eigen::Matrix<double, 14, 14> BeamElement::global_mass_matrix_warping(
+    BeamFormulation formulation) const {
+    Eigen::Matrix<double, 14, 14> M_local = local_mass_matrix_warping(formulation);
+    Eigen::Matrix<double, 14, 14> T = transformation_matrix_warping();
+
+    // M_global = T^T * M_local * T
+    return T.transpose() * M_local * T;
+}
+
 } // namespace grillex

@@ -32,6 +32,10 @@ public:
     double Asy;         ///< Shear area for forces in y-direction [m²]
     double Asz;         ///< Shear area for forces in z-direction [m²]
 
+    // Warping analysis properties
+    bool requires_warping;   ///< Indicates if section requires warping analysis
+    double omega_max;         ///< Maximum sectorial coordinate [m²] for stress calculation
+
     // Distances to extreme fibres for stress calculation
     double zy_top;      ///< Distance to top extreme fibre for y-axis bending [m]
     double zy_bot;      ///< Distance to bottom extreme fibre for y-axis bending [m]
@@ -79,6 +83,17 @@ public:
      * @param zz_bot Distance to bottom fibre for z-bending [m]
      */
     void set_fibre_distances(double zy_top, double zy_bot, double zz_top, double zz_bot);
+
+    /**
+     * @brief Enable warping analysis for this section
+     *
+     * Sets the warping constant and maximum sectorial coordinate,
+     * and marks the section as requiring warping analysis.
+     *
+     * @param Iw Warping constant [m⁶]
+     * @param omega_max Maximum sectorial coordinate [m²] (optional)
+     */
+    void enable_warping(double Iw, double omega_max = 0.0);
 };
 
 } // namespace grillex

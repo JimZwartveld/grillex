@@ -142,6 +142,64 @@ public:
      */
     double effective_length() const;
 
+    /**
+     * @brief Compute 14x14 local stiffness matrix including warping DOF
+     *
+     * Returns the element stiffness matrix in local coordinates including
+     * the 7th DOF (warping) for thin-walled sections.
+     *
+     * @param formulation Beam formulation type (default: EulerBernoulli)
+     * @return Eigen::Matrix<double, 14, 14> Local stiffness matrix with warping [kN, m, rad]
+     */
+    Eigen::Matrix<double, 14, 14> local_stiffness_matrix_warping(
+        BeamFormulation formulation = BeamFormulation::EulerBernoulli) const;
+
+    /**
+     * @brief Compute 14x14 local mass matrix including warping DOF
+     *
+     * Returns the consistent mass matrix in local coordinates including
+     * the 7th DOF (warping) for thin-walled sections.
+     *
+     * @param formulation Beam formulation type (default: EulerBernoulli)
+     * @return Eigen::Matrix<double, 14, 14> Local mass matrix with warping [mT]
+     */
+    Eigen::Matrix<double, 14, 14> local_mass_matrix_warping(
+        BeamFormulation formulation = BeamFormulation::EulerBernoulli) const;
+
+    /**
+     * @brief Compute 14x14 transformation matrix for warping elements
+     *
+     * Returns the transformation matrix that relates local to global DOFs
+     * including the warping DOF (which transforms as a scalar).
+     *
+     * @return Eigen::Matrix<double, 14, 14> Transformation matrix
+     */
+    Eigen::Matrix<double, 14, 14> transformation_matrix_warping() const;
+
+    /**
+     * @brief Compute 14x14 global stiffness matrix including warping DOF
+     *
+     * Transforms the local stiffness matrix to global coordinates:
+     * K_global = T^T * K_local * T
+     *
+     * @param formulation Beam formulation type (default: EulerBernoulli)
+     * @return Eigen::Matrix<double, 14, 14> Global stiffness matrix with warping [kN, m, rad]
+     */
+    Eigen::Matrix<double, 14, 14> global_stiffness_matrix_warping(
+        BeamFormulation formulation = BeamFormulation::EulerBernoulli) const;
+
+    /**
+     * @brief Compute 14x14 global mass matrix including warping DOF
+     *
+     * Transforms the local mass matrix to global coordinates:
+     * M_global = T^T * M_local * T
+     *
+     * @param formulation Beam formulation type (default: EulerBernoulli)
+     * @return Eigen::Matrix<double, 14, 14> Global mass matrix with warping [mT]
+     */
+    Eigen::Matrix<double, 14, 14> global_mass_matrix_warping(
+        BeamFormulation formulation = BeamFormulation::EulerBernoulli) const;
+
 private:
     /**
      * @brief Compute element length from node positions

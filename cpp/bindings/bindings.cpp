@@ -36,7 +36,7 @@ PYBIND11_MODULE(_grillex_cpp, m) {
 
     // Node class
     py::class_<grillex::Node>(m, "Node",
-        "Node represents a point in the structural model with up to 6 DOFs")
+        "Node represents a point in the structural model with up to 7 DOFs (6 standard + 1 optional warping)")
         .def(py::init<int, double, double, double>(),
              py::arg("id"), py::arg("x"), py::arg("y"), py::arg("z"),
              "Construct a node at position (x, y, z)")
@@ -45,11 +45,17 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def_readwrite("y", &grillex::Node::y, "Y coordinate [m]")
         .def_readwrite("z", &grillex::Node::z, "Z coordinate [m]")
         .def_readwrite("dof_active", &grillex::Node::dof_active,
-                       "DOF activation flags [UX, UY, UZ, RX, RY, RZ]")
+                       "DOF activation flags [UX, UY, UZ, RX, RY, RZ, WARP]")
         .def_readwrite("global_dof_numbers", &grillex::Node::global_dof_numbers,
                        "Global DOF numbers (assigned during assembly)")
         .def("position", &grillex::Node::position,
              "Get position as Eigen::Vector3d")
+        .def("enable_warping_dof", &grillex::Node::enable_warping_dof,
+             "Enable the warping DOF (7th DOF) for this node")
+        .def("has_warping_dof", &grillex::Node::has_warping_dof,
+             "Check if warping DOF is enabled")
+        .def("num_active_dofs", &grillex::Node::num_active_dofs,
+             "Get number of active DOFs at this node (6 or 7)")
         .def("__repr__", [](const grillex::Node &n) {
             return "<Node id=" + std::to_string(n.id) +
                    " pos=(" + std::to_string(n.x) + ", " +
@@ -125,6 +131,10 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def_readwrite("Iw", &grillex::Section::Iw, "Warping constant [m⁶]")
         .def_readwrite("Asy", &grillex::Section::Asy, "Shear area y [m²]")
         .def_readwrite("Asz", &grillex::Section::Asz, "Shear area z [m²]")
+        .def_readwrite("requires_warping", &grillex::Section::requires_warping,
+                       "Indicates if section requires warping analysis")
+        .def_readwrite("omega_max", &grillex::Section::omega_max,
+                       "Maximum sectorial coordinate [m²]")
         .def_readwrite("zy_top", &grillex::Section::zy_top, "Fibre distance y-top [m]")
         .def_readwrite("zy_bot", &grillex::Section::zy_bot, "Fibre distance y-bottom [m]")
         .def_readwrite("zz_top", &grillex::Section::zz_top, "Fibre distance z-top [m]")
@@ -137,6 +147,9 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              py::arg("zy_top"), py::arg("zy_bot"),
              py::arg("zz_top"), py::arg("zz_bot"),
              "Set distances to extreme fibres [m]")
+        .def("enable_warping", &grillex::Section::enable_warping,
+             py::arg("Iw"), py::arg("omega_max") = 0.0,
+             "Enable warping analysis with warping constant and max sectorial coordinate")
         .def("__repr__", [](const grillex::Section &s) {
             return "<Section '" + s.name + "' A=" + std::to_string(s.A) + ">";
         });
@@ -221,6 +234,20 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Check if element has any offsets")
         .def("effective_length", &grillex::BeamElement::effective_length,
              "Compute effective beam length accounting for offsets [m]")
+        .def("local_stiffness_matrix_warping", &grillex::BeamElement::local_stiffness_matrix_warping,
+             py::arg("formulation") = grillex::BeamFormulation::EulerBernoulli,
+             "Compute 14x14 local stiffness matrix including warping DOF")
+        .def("local_mass_matrix_warping", &grillex::BeamElement::local_mass_matrix_warping,
+             py::arg("formulation") = grillex::BeamFormulation::EulerBernoulli,
+             "Compute 14x14 local mass matrix including warping DOF")
+        .def("transformation_matrix_warping", &grillex::BeamElement::transformation_matrix_warping,
+             "Compute 14x14 transformation matrix for warping elements")
+        .def("global_stiffness_matrix_warping", &grillex::BeamElement::global_stiffness_matrix_warping,
+             py::arg("formulation") = grillex::BeamFormulation::EulerBernoulli,
+             "Compute 14x14 global stiffness matrix including warping DOF")
+        .def("global_mass_matrix_warping", &grillex::BeamElement::global_mass_matrix_warping,
+             py::arg("formulation") = grillex::BeamFormulation::EulerBernoulli,
+             "Compute 14x14 global mass matrix including warping DOF")
         .def("__repr__", [](const grillex::BeamElement &e) {
             return "<BeamElement id=" + std::to_string(e.id) +
                    " nodes=[" + std::to_string(e.node_i->id) + "," +

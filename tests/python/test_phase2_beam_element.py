@@ -655,5 +655,188 @@ class TestTimoshenkoBeam:
         assert np.allclose(K_euler[9, 9], K_timo[9, 9])
 
 
+class TestWarpingBeam:
+    """Tests for Task 2.7: Warping Beam Element (7th DOF) acceptance criteria"""
+
+    def setup_method(self):
+        """Setup common test data"""
+        # Steel material
+        self.steel = Material(1, "Steel", 210000000.0, 0.3, 7.85)
+
+        # I-section with warping properties (IPE300)
+        # A = 0.00538 m², Iy = 8.36e-5 m⁴, Iz = 6.04e-6 m⁴, J = 2.01e-7 m⁴
+        # Iw ≈ 1.26e-5 m⁶ (typical for IPE300)
+        self.i_section = Section(1, "IPE300", 0.00538, 0.0000836, 0.00000604, 0.000000201)
+        self.i_section.enable_warping(1.26e-5)  # Enable warping with Iw
+
+        # Nodes for beam
+        self.node_i = Node(1, 0.0, 0.0, 0.0)
+        self.node_j = Node(2, 6.0, 0.0, 0.0)
+
+    def test_node_warping_dof_control(self):
+        """Node warping DOF can be enabled and queried"""
+        node = Node(1, 0.0, 0.0, 0.0)
+
+        # By default, warping DOF is disabled
+        assert not node.has_warping_dof()
+        assert node.num_active_dofs() == 6
+
+        # Enable warping DOF
+        node.enable_warping_dof()
+        assert node.has_warping_dof()
+        assert node.num_active_dofs() == 7
+
+    def test_section_warping_configuration(self):
+        """Section can be configured for warping analysis"""
+        section = Section(1, "Test", 0.01, 0.0001, 0.0001, 0.0001)
+
+        # By default, warping is disabled
+        assert not section.requires_warping
+        assert section.Iw == 0.0
+
+        # Enable warping
+        section.enable_warping(1.0e-5, 0.001)
+        assert section.requires_warping
+        assert section.Iw == 1.0e-5
+        assert section.omega_max == 0.001
+
+    def test_warping_stiffness_matrix_is_symmetric(self):
+        """14×14 warping stiffness matrix is symmetric"""
+        beam = BeamElement(1, self.node_i, self.node_j, self.steel, self.i_section)
+
+        K_warp = beam.local_stiffness_matrix_warping()
+
+        # Check shape
+        assert K_warp.shape == (14, 14)
+
+        # Check symmetry
+        assert np.allclose(K_warp, K_warp.T, atol=1e-10)
+
+    def test_warping_mass_matrix_is_symmetric(self):
+        """14×14 warping mass matrix is symmetric"""
+        beam = BeamElement(1, self.node_i, self.node_j, self.steel, self.i_section)
+
+        M_warp = beam.local_mass_matrix_warping()
+
+        # Check shape
+        assert M_warp.shape == (14, 14)
+
+        # Check symmetry
+        assert np.allclose(M_warp, M_warp.T, atol=1e-10)
+
+    def test_warping_transformation_matrix_structure(self):
+        """14×14 transformation matrix has correct block diagonal structure"""
+        beam = BeamElement(1, self.node_i, self.node_j, self.steel, self.i_section)
+
+        T = beam.transformation_matrix_warping()
+
+        # Check shape
+        assert T.shape == (14, 14)
+
+        # Get rotation matrix
+        R = beam.local_axes.rotation_matrix
+
+        # Check blocks
+        assert np.allclose(T[0:3, 0:3], R)    # Node i translations
+        assert np.allclose(T[3:6, 3:6], R)    # Node i rotations
+        assert T[6, 6] == 1.0                 # Node i warping (scalar)
+        assert np.allclose(T[7:10, 7:10], R)  # Node j translations
+        assert np.allclose(T[10:13, 10:13], R)  # Node j rotations
+        assert T[13, 13] == 1.0               # Node j warping (scalar)
+
+    def test_zero_warping_constant_behaves_like_12dof(self):
+        """For Iw = 0, warping matrix should behave like standard beam"""
+        # Create section with zero warping constant
+        section_no_warp = Section(1, "NoWarp", 0.00538, 0.0000836, 0.00000604, 0.000000201)
+        section_no_warp.set_warping_constant(0.0)
+
+        beam = BeamElement(1, self.node_i, self.node_j, self.steel, section_no_warp)
+
+        # Get both matrices
+        K12 = beam.local_stiffness_matrix()
+        K14 = beam.local_stiffness_matrix_warping()
+
+        # Extract the 12×12 portion from 14×14 (excluding warping DOFs at indices 6 and 13)
+        indices_12 = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
+        K12_from_14 = K14[np.ix_(indices_12, indices_12)]
+
+        # Should match closely (St. Venant torsion only)
+        assert np.allclose(K12_from_14, K12, rtol=1e-10)
+
+    def test_warping_increases_torsional_stiffness(self):
+        """Warping stiffness increases overall torsional rigidity"""
+        beam = BeamElement(1, self.node_i, self.node_j, self.steel, self.i_section)
+
+        # Get warping and non-warping stiffness
+        K12 = beam.local_stiffness_matrix()
+        K14 = beam.local_stiffness_matrix_warping()
+
+        # Torsional stiffness (θx_i, θx_i)
+        # In 12×12: index 3
+        # In 14×14: index 3 (but now coupled with warping)
+        k_torsion_12 = K12[3, 3]
+        k_torsion_14 = K14[3, 3]
+
+        # With warping, torsional stiffness should be higher
+        assert k_torsion_14 > k_torsion_12
+
+    def test_warping_stiffness_positive_semidefinite(self):
+        """14×14 warping stiffness matrix is positive semi-definite"""
+        beam = BeamElement(1, self.node_i, self.node_j, self.steel, self.i_section)
+
+        K_warp = beam.local_stiffness_matrix_warping()
+
+        # Compute eigenvalues
+        eigenvalues = np.linalg.eigvalsh(K_warp)
+
+        # Should have 7 near-zero eigenvalues (rigid body modes + warping mode)
+        # Actually, warping adds coupling, so we still expect 6 rigid body modes
+        zero_eigenvalues = np.sum(np.abs(eigenvalues) < 1e-3)
+        assert zero_eigenvalues == 6
+
+        # Remaining eigenvalues should be positive
+        non_zero_eigenvalues = eigenvalues[np.abs(eigenvalues) > 1e-3]
+        assert np.all(non_zero_eigenvalues > 0)
+
+    def test_cantilever_with_warping_restrained(self):
+        """Cantilever with warping restrained at fixed end has higher torsional stiffness"""
+        beam = BeamElement(1, self.node_i, self.node_j, self.steel, self.i_section)
+
+        K_warp = beam.local_stiffness_matrix_warping()
+
+        # For a cantilever: fix all DOFs at node i (indices 0-6)
+        # Apply torque at node j (index 10 for θx_j)
+
+        # Extract free DOFs at node j (indices 7-13)
+        K_free = K_warp[7:14, 7:14]
+
+        # Apply unit torque
+        T = 1.0  # kN·m
+        F_free = np.array([0.0, 0.0, 0.0, T, 0.0, 0.0, 0.0])  # Torque in θx direction
+
+        # Solve for displacements
+        u_free = np.linalg.solve(K_free, F_free)
+
+        # Twist at free end (θx_j)
+        theta_x = u_free[3]
+
+        # Should have some twist (positive value)
+        assert theta_x > 0
+
+        # Warping displacement at free end (index 6 in u_free)
+        phi_prime = u_free[6]
+
+        # Should also have non-zero warping displacement
+        # (sign depends on direction, just check non-zero)
+        assert abs(phi_prime) > 1e-10
+
+    def test_warping_dof_arrays_size_seven(self):
+        """Node DOF arrays have size 7 with warping support"""
+        node = Node(1, 0.0, 0.0, 0.0)
+
+        assert len(node.dof_active) == 7
+        assert len(node.global_dof_numbers) == 7
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
