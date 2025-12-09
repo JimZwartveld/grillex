@@ -17,7 +17,8 @@ from grillex._grillex_cpp import (
     Section,
     LocalAxes,
     BeamElement,
-    BeamFormulation
+    BeamFormulation,
+    EndRelease
 )
 
-__all__ = ['Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes', 'BeamElement', 'BeamFormulation']
+__all__ = ['Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes', 'BeamElement', 'BeamFormulation', 'EndRelease']

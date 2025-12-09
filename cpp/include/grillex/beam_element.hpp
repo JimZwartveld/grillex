@@ -5,6 +5,7 @@
 #include "grillex/section.hpp"
 #include "grillex/local_axes.hpp"
 #include <Eigen/Dense>
+#include <vector>
 
 namespace grillex {
 
@@ -16,6 +17,73 @@ namespace grillex {
 enum class BeamFormulation {
     EulerBernoulli,  ///< Classical beam theory (no shear deformation)
     Timoshenko       ///< Beam theory with shear deformation effects
+};
+
+/**
+ * @brief End release configuration for beam element
+ *
+ * Defines which DOFs are released (force-free) at beam ends.
+ * Released DOFs are internally condensed out using static condensation.
+ */
+struct EndRelease {
+    // Translation releases at node i
+    bool release_ux_i = false;  ///< Axial release at end i (sliding joint)
+    bool release_uy_i = false;  ///< Shear y release at end i
+    bool release_uz_i = false;  ///< Shear z release at end i
+
+    // Rotation releases at node i
+    bool release_rx_i = false;  ///< Torsion release at end i
+    bool release_ry_i = false;  ///< Moment about y release at end i
+    bool release_rz_i = false;  ///< Moment about z release at end i
+
+    // Warping release at node i (for 14-DOF elements)
+    bool release_warp_i = false;  ///< Warping release at end i (free to warp)
+
+    // Translation releases at node j
+    bool release_ux_j = false;  ///< Axial release at end j (sliding joint)
+    bool release_uy_j = false;  ///< Shear y release at end j
+    bool release_uz_j = false;  ///< Shear z release at end j
+
+    // Rotation releases at node j
+    bool release_rx_j = false;  ///< Torsion release at end j
+    bool release_ry_j = false;  ///< Moment about y release at end j
+    bool release_rz_j = false;  ///< Moment about z release at end j
+
+    // Warping release at node j (for 14-DOF elements)
+    bool release_warp_j = false;  ///< Warping release at end j (free to warp)
+
+    /**
+     * @brief Release both bending moments at end i (pin connection)
+     */
+    void release_moment_i() { release_ry_i = release_rz_i = true; }
+
+    /**
+     * @brief Release both bending moments at end j (pin connection)
+     */
+    void release_moment_j() { release_ry_j = release_rz_j = true; }
+
+    /**
+     * @brief Release all rotations at end i (true pin/ball joint)
+     */
+    void release_all_rotations_i() { release_rx_i = release_ry_i = release_rz_i = true; }
+
+    /**
+     * @brief Release all rotations at end j (true pin/ball joint)
+     */
+    void release_all_rotations_j() { release_rx_j = release_ry_j = release_rz_j = true; }
+
+    /**
+     * @brief Check if any releases are active
+     */
+    bool has_any_release() const;
+
+    /**
+     * @brief Get indices of released DOFs
+     *
+     * @param has_warping True if element has warping DOF (14-DOF), false for 12-DOF
+     * @return std::vector<int> Indices of released DOFs (0-11 for 12-DOF, 0-13 for 14-DOF)
+     */
+    std::vector<int> get_released_indices(bool has_warping) const;
 };
 
 /**
@@ -46,6 +114,9 @@ public:
     /// End offsets in local coordinates [m]
     Eigen::Vector3d offset_i = Eigen::Vector3d::Zero();
     Eigen::Vector3d offset_j = Eigen::Vector3d::Zero();
+
+    /// End release configuration
+    EndRelease releases;
 
     /**
      * @brief Construct a beam element
@@ -217,6 +288,22 @@ private:
      * @return Eigen::Matrix<double, 12, 12> Offset transformation matrix
      */
     Eigen::Matrix<double, 12, 12> offset_transformation_matrix() const;
+
+    /**
+     * @brief Apply static condensation to remove released DOFs
+     *
+     * Uses static condensation to eliminate released DOFs from the element matrix:
+     * K_condensed = K_rr - K_rc * K_cc^(-1) * K_cr
+     *
+     * Where r = retained DOFs, c = condensed (released) DOFs
+     *
+     * @param K Full element stiffness or mass matrix
+     * @param released_indices Indices of DOFs to be released/condensed
+     * @return Eigen::MatrixXd Condensed matrix (same size as input)
+     */
+    Eigen::MatrixXd apply_static_condensation(
+        const Eigen::MatrixXd& K,
+        const std::vector<int>& released_indices) const;
 };
 
 } // namespace grillex

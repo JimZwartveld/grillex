@@ -167,6 +167,60 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                "Beam theory with shear deformation effects")
         .export_values();
 
+    // EndRelease struct
+    py::class_<grillex::EndRelease>(m, "EndRelease",
+        "End release configuration for beam elements")
+        .def(py::init<>(), "Construct with no releases (fully fixed)")
+        .def_readwrite("release_ux_i", &grillex::EndRelease::release_ux_i,
+                       "Axial release at end i (sliding joint)")
+        .def_readwrite("release_uy_i", &grillex::EndRelease::release_uy_i,
+                       "Shear y release at end i")
+        .def_readwrite("release_uz_i", &grillex::EndRelease::release_uz_i,
+                       "Shear z release at end i")
+        .def_readwrite("release_rx_i", &grillex::EndRelease::release_rx_i,
+                       "Torsion release at end i")
+        .def_readwrite("release_ry_i", &grillex::EndRelease::release_ry_i,
+                       "Moment about y release at end i")
+        .def_readwrite("release_rz_i", &grillex::EndRelease::release_rz_i,
+                       "Moment about z release at end i")
+        .def_readwrite("release_warp_i", &grillex::EndRelease::release_warp_i,
+                       "Warping release at end i (free to warp)")
+        .def_readwrite("release_ux_j", &grillex::EndRelease::release_ux_j,
+                       "Axial release at end j (sliding joint)")
+        .def_readwrite("release_uy_j", &grillex::EndRelease::release_uy_j,
+                       "Shear y release at end j")
+        .def_readwrite("release_uz_j", &grillex::EndRelease::release_uz_j,
+                       "Shear z release at end j")
+        .def_readwrite("release_rx_j", &grillex::EndRelease::release_rx_j,
+                       "Torsion release at end j")
+        .def_readwrite("release_ry_j", &grillex::EndRelease::release_ry_j,
+                       "Moment about y release at end j")
+        .def_readwrite("release_rz_j", &grillex::EndRelease::release_rz_j,
+                       "Moment about z release at end j")
+        .def_readwrite("release_warp_j", &grillex::EndRelease::release_warp_j,
+                       "Warping release at end j (free to warp)")
+        .def("release_moment_i", &grillex::EndRelease::release_moment_i,
+             "Release both bending moments at end i (pin connection)")
+        .def("release_moment_j", &grillex::EndRelease::release_moment_j,
+             "Release both bending moments at end j (pin connection)")
+        .def("release_all_rotations_i", &grillex::EndRelease::release_all_rotations_i,
+             "Release all rotations at end i (true pin/ball joint)")
+        .def("release_all_rotations_j", &grillex::EndRelease::release_all_rotations_j,
+             "Release all rotations at end j (true pin/ball joint)")
+        .def("has_any_release", &grillex::EndRelease::has_any_release,
+             "Check if any releases are active")
+        .def("get_released_indices", &grillex::EndRelease::get_released_indices,
+             py::arg("has_warping"),
+             "Get indices of released DOFs")
+        .def("__repr__", [](const grillex::EndRelease &r) {
+            int count = 0;
+            if (r.release_ux_i || r.release_uy_i || r.release_uz_i ||
+                r.release_rx_i || r.release_ry_i || r.release_rz_i || r.release_warp_i) count++;
+            if (r.release_ux_j || r.release_uy_j || r.release_uz_j ||
+                r.release_rx_j || r.release_ry_j || r.release_rz_j || r.release_warp_j) count++;
+            return "<EndRelease " + std::to_string(count) + " ends with releases>";
+        });
+
     // LocalAxes class
     py::class_<grillex::LocalAxes>(m, "LocalAxes",
         "Local coordinate system for beam elements")
@@ -215,6 +269,8 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                        "End offset at node i [m]")
         .def_readwrite("offset_j", &grillex::BeamElement::offset_j,
                        "End offset at node j [m]")
+        .def_readwrite("releases", &grillex::BeamElement::releases,
+                       "End release configuration")
         .def("local_stiffness_matrix", &grillex::BeamElement::local_stiffness_matrix,
              py::arg("formulation") = grillex::BeamFormulation::EulerBernoulli,
              "Compute 12x12 local stiffness matrix")

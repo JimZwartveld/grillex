@@ -1,7 +1,48 @@
 #include "grillex/beam_element.hpp"
 #include <cmath>
+#include <algorithm>
 
 namespace grillex {
+
+// ============================================================================
+// EndRelease Implementation
+// ============================================================================
+
+bool EndRelease::has_any_release() const {
+    return release_ux_i || release_uy_i || release_uz_i ||
+           release_rx_i || release_ry_i || release_rz_i || release_warp_i ||
+           release_ux_j || release_uy_j || release_uz_j ||
+           release_rx_j || release_ry_j || release_rz_j || release_warp_j;
+}
+
+std::vector<int> EndRelease::get_released_indices(bool has_warping) const {
+    std::vector<int> indices;
+
+    // Node i DOFs (indices 0-5 or 0-6 with warping)
+    if (release_ux_i) indices.push_back(0);
+    if (release_uy_i) indices.push_back(1);
+    if (release_uz_i) indices.push_back(2);
+    if (release_rx_i) indices.push_back(3);
+    if (release_ry_i) indices.push_back(4);
+    if (release_rz_i) indices.push_back(5);
+    if (has_warping && release_warp_i) indices.push_back(6);
+
+    // Node j DOFs (indices 6-11 for 12-DOF or 7-13 for 14-DOF)
+    int offset = has_warping ? 7 : 6;
+    if (release_ux_j) indices.push_back(offset + 0);
+    if (release_uy_j) indices.push_back(offset + 1);
+    if (release_uz_j) indices.push_back(offset + 2);
+    if (release_rx_j) indices.push_back(offset + 3);
+    if (release_ry_j) indices.push_back(offset + 4);
+    if (release_rz_j) indices.push_back(offset + 5);
+    if (has_warping && release_warp_j) indices.push_back(offset + 6);
+
+    return indices;
+}
+
+// ============================================================================
+// BeamElement Implementation
+// ============================================================================
 
 BeamElement::BeamElement(int id, Node* node_i, Node* node_j,
                          Material* mat, Section* sec, double roll)
@@ -123,6 +164,11 @@ Eigen::Matrix<double, 12, 12> BeamElement::local_stiffness_matrix(
     if (has_offsets()) {
         Eigen::Matrix<double, 12, 12> T_offset = offset_transformation_matrix();
         K = T_offset.transpose() * K * T_offset;
+    }
+
+    // Apply end releases via static condensation
+    if (releases.has_any_release()) {
+        K = apply_static_condensation(K, releases.get_released_indices(false));
     }
 
     return K;
@@ -255,6 +301,11 @@ Eigen::Matrix<double, 12, 12> BeamElement::local_mass_matrix(
     if (has_offsets()) {
         Eigen::Matrix<double, 12, 12> T_offset = offset_transformation_matrix();
         M = T_offset.transpose() * M * T_offset;
+    }
+
+    // Apply end releases via static condensation
+    if (releases.has_any_release()) {
+        M = apply_static_condensation(M, releases.get_released_indices(false));
     }
 
     return M;
@@ -448,6 +499,11 @@ Eigen::Matrix<double, 14, 14> BeamElement::local_stiffness_matrix_warping(
     // TODO: Implement offset transformation for 14×14 matrices
     // For now, offsets are not supported with warping elements
 
+    // Apply end releases via static condensation
+    if (releases.has_any_release()) {
+        K = apply_static_condensation(K, releases.get_released_indices(true));
+    }
+
     return K;
 }
 
@@ -519,6 +575,11 @@ Eigen::Matrix<double, 14, 14> BeamElement::local_mass_matrix_warping(
     // TODO: Implement offset transformation for 14×14 matrices
     // For now, offsets are not supported with warping elements
 
+    // Apply end releases via static condensation
+    if (releases.has_any_release()) {
+        M = apply_static_condensation(M, releases.get_released_indices(true));
+    }
+
     return M;
 }
 
@@ -562,6 +623,73 @@ Eigen::Matrix<double, 14, 14> BeamElement::global_mass_matrix_warping(
 
     // M_global = T^T * M_local * T
     return T.transpose() * M_local * T;
+}
+
+Eigen::MatrixXd BeamElement::apply_static_condensation(
+    const Eigen::MatrixXd& K,
+    const std::vector<int>& released_indices) const {
+
+    if (released_indices.empty()) {
+        return K;  // No releases, return original matrix
+    }
+
+    int n = K.rows();
+    int n_released = released_indices.size();
+    int n_retained = n - n_released;
+
+    // Create lists of retained and released indices
+    std::vector<int> retained_indices;
+    retained_indices.reserve(n_retained);
+    for (int i = 0; i < n; ++i) {
+        if (std::find(released_indices.begin(), released_indices.end(), i) == released_indices.end()) {
+            retained_indices.push_back(i);
+        }
+    }
+
+    // Extract submatrices
+    // K_rr: retained-retained
+    // K_rc: retained-released
+    // K_cr: released-retained
+    // K_cc: released-released
+    Eigen::MatrixXd K_rr(n_retained, n_retained);
+    Eigen::MatrixXd K_rc(n_retained, n_released);
+    Eigen::MatrixXd K_cr(n_released, n_retained);
+    Eigen::MatrixXd K_cc(n_released, n_released);
+
+    for (int i = 0; i < n_retained; ++i) {
+        for (int j = 0; j < n_retained; ++j) {
+            K_rr(i, j) = K(retained_indices[i], retained_indices[j]);
+        }
+        for (int j = 0; j < n_released; ++j) {
+            K_rc(i, j) = K(retained_indices[i], released_indices[j]);
+        }
+    }
+
+    for (int i = 0; i < n_released; ++i) {
+        for (int j = 0; j < n_retained; ++j) {
+            K_cr(i, j) = K(released_indices[i], retained_indices[j]);
+        }
+        for (int j = 0; j < n_released; ++j) {
+            K_cc(i, j) = K(released_indices[i], released_indices[j]);
+        }
+    }
+
+    // Perform static condensation: K_condensed = K_rr - K_rc * K_cc^(-1) * K_cr
+    Eigen::MatrixXd K_cc_inv = K_cc.inverse();
+    Eigen::MatrixXd K_condensed_retained = K_rr - K_rc * K_cc_inv * K_cr;
+
+    // Build the full condensed matrix (same size as input)
+    // Retained DOFs get the condensed stiffness
+    // Released DOFs get zeros (they don't contribute to global stiffness)
+    Eigen::MatrixXd K_result = Eigen::MatrixXd::Zero(n, n);
+
+    for (int i = 0; i < n_retained; ++i) {
+        for (int j = 0; j < n_retained; ++j) {
+            K_result(retained_indices[i], retained_indices[j]) = K_condensed_retained(i, j);
+        }
+    }
+
+    return K_result;
 }
 
 } // namespace grillex

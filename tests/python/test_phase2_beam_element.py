@@ -838,5 +838,308 @@ class TestWarpingBeam:
         assert len(node.global_dof_numbers) == 7
 
 
+class TestEndReleases:
+    """Tests for Task 2.5: End Releases acceptance criteria"""
+
+    def test_end_release_struct_creation(self):
+        """EndRelease struct can be created and has all release flags"""
+        from grillex.core import EndRelease
+
+        release = EndRelease()
+
+        # All flags should default to False (fully fixed)
+        assert release.release_ux_i == False
+        assert release.release_uy_i == False
+        assert release.release_uz_i == False
+        assert release.release_rx_i == False
+        assert release.release_ry_i == False
+        assert release.release_rz_i == False
+        assert release.release_warp_i == False
+
+        assert release.release_ux_j == False
+        assert release.release_uy_j == False
+        assert release.release_uz_j == False
+        assert release.release_rx_j == False
+        assert release.release_ry_j == False
+        assert release.release_rz_j == False
+        assert release.release_warp_j == False
+
+        # Should have no releases
+        assert release.has_any_release() == False
+
+    def test_release_moment_convenience_methods(self):
+        """Convenience methods release_moment_i/j release both bending moments"""
+        from grillex.core import EndRelease
+
+        release = EndRelease()
+        release.release_moment_i()
+
+        assert release.release_ry_i == True
+        assert release.release_rz_i == True
+        assert release.has_any_release() == True
+
+        release2 = EndRelease()
+        release2.release_moment_j()
+
+        assert release2.release_ry_j == True
+        assert release2.release_rz_j == True
+
+    def test_release_all_rotations_convenience_methods(self):
+        """Convenience methods release_all_rotations_i/j release all rotations"""
+        from grillex.core import EndRelease
+
+        release = EndRelease()
+        release.release_all_rotations_i()
+
+        assert release.release_rx_i == True
+        assert release.release_ry_i == True
+        assert release.release_rz_i == True
+
+        release2 = EndRelease()
+        release2.release_all_rotations_j()
+
+        assert release2.release_rx_j == True
+        assert release2.release_ry_j == True
+        assert release2.release_rz_j == True
+
+    def test_get_released_indices_12dof(self):
+        """get_released_indices returns correct DOF indices for 12-DOF elements"""
+        from grillex.core import EndRelease
+
+        release = EndRelease()
+        release.release_moment_i()  # Releases RY_i and RZ_i (indices 4, 5)
+
+        indices = release.get_released_indices(False)  # 12-DOF
+
+        assert 4 in indices  # RY_i
+        assert 5 in indices  # RZ_i
+        assert len(indices) == 2
+
+    def test_get_released_indices_14dof(self):
+        """get_released_indices returns correct DOF indices for 14-DOF elements"""
+        from grillex.core import EndRelease
+
+        release = EndRelease()
+        release.release_warp_i = True  # Warp_i is index 6 in 14-DOF
+
+        indices = release.get_released_indices(True)  # 14-DOF
+
+        assert 6 in indices  # WARP_i
+        assert len(indices) == 1
+
+    def test_simply_supported_beam_stiffness(self):
+        """Simply supported beam (pinned-pinned) has correct reduced stiffness"""
+        # Create a 4m horizontal beam
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 4.0, 0.0, 0.0)
+
+        # Material: Steel
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)  # kN/m², mT/m³
+
+        # Section: Rectangular 0.2m x 0.3m
+        b, h = 0.2, 0.3
+        A = b * h
+        Iy = b * h**3 / 12  # Bending about y (weak axis)
+        Iz = h * b**3 / 12  # Bending about z (strong axis)
+        J = 0.0001  # Small torsional constant
+        sec = Section(1, "Rect200x300", A=A, Iy=Iy, Iz=Iz, J=J)
+
+        # Create beam with releases at both ends (moment releases)
+        beam = BeamElement(1, node_i, node_j, mat, sec, roll=0.0)
+        beam.releases.release_moment_i()  # Pin at i
+        beam.releases.release_moment_j()  # Pin at j
+
+        # Get local stiffness matrix
+        K = beam.local_stiffness_matrix()
+
+        # For a simply supported beam, moment DOFs should be released
+        # Check that moment DOFs (RY_i=4, RZ_i=5, RY_j=10, RZ_j=11) have very small diagonal terms
+        assert abs(K[4, 4]) < 1e-6, "RY_i should be released"
+        assert abs(K[5, 5]) < 1e-6, "RZ_i should be released"
+        assert abs(K[10, 10]) < 1e-6, "RY_j should be released"
+        assert abs(K[11, 11]) < 1e-6, "RZ_j should be released"
+
+        # Axial stiffness should remain (not coupled to moments)
+        assert K[0, 0] > 1e6, "Axial stiffness should remain"
+
+        # NOTE: Transverse stiffnesses become zero when both moment ends are released
+        # because the beam becomes a mechanism (no bending stiffness)
+
+    def test_pinned_fixed_beam_stiffness(self):
+        """Pinned-fixed beam has correct stiffness pattern"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 5.0, 0.0, 0.0)
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "Rect", A=0.06, Iy=0.00045, Iz=0.0004, J=0.0001)
+
+        beam = BeamElement(1, node_i, node_j, mat, sec)
+        beam.releases.release_moment_i()  # Pin at i (release moments)
+        # Node j is fixed (no releases)
+
+        K = beam.local_stiffness_matrix()
+
+        # Node i moments should be released
+        assert abs(K[4, 4]) < 1e-6, "RY_i should be released"
+        assert abs(K[5, 5]) < 1e-6, "RZ_i should be released"
+
+        # Node j moments should be stiff
+        assert K[10, 10] > 1e3, "RY_j should be stiff"
+        assert K[11, 11] > 1e3, "RZ_j should be stiff"
+
+    def test_axial_release_sliding_joint(self):
+        """Axial release creates sliding joint (no axial force)"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 3.0, 0.0, 0.0)
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "Rect", A=0.06, Iy=0.00045, Iz=0.0004, J=0.0001)
+
+        beam = BeamElement(1, node_i, node_j, mat, sec)
+        beam.releases.release_ux_i = True  # Axial release at i
+
+        K = beam.local_stiffness_matrix()
+
+        # Axial DOF at i should be released
+        assert abs(K[0, 0]) < 1e-6, "UX_i should be released"
+
+        # Bending DOFs should remain
+        assert K[1, 1] > 1e3, "UY_i should be stiff"
+
+        # NOTE: Axial release at i creates a mechanism, so UX_j also becomes zero
+        # This is correct: if one end can slide freely, the whole element has no axial stiffness
+
+    def test_torsion_release(self):
+        """Torsion release allows free rotation about beam axis"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 4.0, 0.0, 0.0)
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "Rect", A=0.06, Iy=0.00045, Iz=0.0004, J=0.0002)
+
+        beam = BeamElement(1, node_i, node_j, mat, sec)
+        beam.releases.release_rx_i = True  # Torsion release at i
+
+        K = beam.local_stiffness_matrix()
+
+        # Torsion DOF at i should be released
+        assert abs(K[3, 3]) < 1e-6, "RX_i should be released"
+
+        # Bending should remain
+        assert K[4, 4] > 1e3, "RY_i should be stiff"
+
+    def test_mass_matrix_with_releases(self):
+        """Mass matrix is also modified by releases"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 4.0, 0.0, 0.0)
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "Rect", A=0.06, Iy=0.00045, Iz=0.0004, J=0.0001)
+
+        beam = BeamElement(1, node_i, node_j, mat, sec)
+        beam.releases.release_moment_i()
+
+        M = beam.local_mass_matrix()
+
+        # Released moment DOFs should have near-zero diagonal terms
+        assert abs(M[4, 4]) < 1e-6, "RY_i mass should be released"
+        assert abs(M[5, 5]) < 1e-6, "RZ_i mass should be released"
+
+        # Translational mass should remain (use smaller threshold due to condensation effects)
+        assert M[0, 0] > 1e-8, "Axial mass should remain"
+        assert M[1, 1] > 1e-8, "Transverse mass should remain"
+
+    def test_warping_release_14dof(self):
+        """Warping release works for 14-DOF elements"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 5.0, 0.0, 0.0)
+
+        # Enable warping DOF
+        node_i.enable_warping_dof()
+        node_j.enable_warping_dof()
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+
+        # I-beam section with warping
+        sec = Section(1, "I-beam", A=0.015, Iy=0.0001, Iz=0.0002, J=0.00001)
+        sec.enable_warping(Iw=0.00005)
+
+        beam = BeamElement(1, node_i, node_j, mat, sec)
+        beam.releases.release_warp_i = True  # Release warping at i
+
+        K = beam.local_stiffness_matrix_warping()
+
+        # Warping DOF at i (index 6) should be released
+        assert abs(K[6, 6]) < 1e-6, "WARP_i should be released"
+
+        # Warping DOF at j (index 13) should remain stiff
+        assert K[13, 13] > 1e-6, "WARP_j should be stiff"
+
+    def test_multiple_releases_combined(self):
+        """Multiple releases can be combined"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 4.0, 0.0, 0.0)
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "Rect", A=0.06, Iy=0.00045, Iz=0.0004, J=0.0001)
+
+        beam = BeamElement(1, node_i, node_j, mat, sec)
+
+        # Release multiple DOFs at end i
+        beam.releases.release_ux_i = True   # Axial
+        beam.releases.release_moment_i()    # Both moments
+
+        K = beam.local_stiffness_matrix()
+
+        # All released DOFs should have near-zero diagonal
+        assert abs(K[0, 0]) < 1e-6, "UX_i should be released"
+        assert abs(K[4, 4]) < 1e-6, "RY_i should be released"
+        assert abs(K[5, 5]) < 1e-6, "RZ_i should be released"
+
+        # Non-released DOFs should remain
+        assert K[1, 1] > 1e3, "UY_i should be stiff"
+        assert K[2, 2] > 1e3, "UZ_i should be stiff"
+        assert K[3, 3] > 1e-6, "RX_i should be stiff"
+
+    def test_timoshenko_beam_with_releases(self):
+        """End releases work with Timoshenko formulation"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 3.0, 0.0, 0.0)
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "Rect", A=0.06, Iy=0.00045, Iz=0.0004, J=0.0001)
+
+        beam = BeamElement(1, node_i, node_j, mat, sec)
+        beam.releases.release_moment_i()
+
+        # Get Timoshenko stiffness
+        K_timo = beam.local_stiffness_matrix(BeamFormulation.Timoshenko)
+
+        # Released moments should still be zero with Timoshenko
+        assert abs(K_timo[4, 4]) < 1e-6, "RY_i should be released"
+        assert abs(K_timo[5, 5]) < 1e-6, "RZ_i should be released"
+
+        # Shear stiffness should be present
+        assert K_timo[1, 1] > 1e3, "Shear stiffness should remain"
+
+    def test_beam_element_has_releases_member(self):
+        """BeamElement has releases member that can be accessed"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 4.0, 0.0, 0.0)
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "Rect", A=0.06, Iy=0.00045, Iz=0.0004, J=0.0001)
+
+        beam = BeamElement(1, node_i, node_j, mat, sec)
+
+        # Should have releases attribute
+        assert hasattr(beam, 'releases')
+
+        # Should be able to modify it
+        beam.releases.release_ry_i = True
+        assert beam.releases.release_ry_i == True
+        assert beam.releases.has_any_release() == True
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
