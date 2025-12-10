@@ -1362,6 +1362,188 @@ Create a unified factory/interface for creating beam elements with different for
 
 ---
 
+### Task 2.9: Warping DOF Decoupling at Non-Collinear Connections
+**Requirements:** R-DOF-008 (new), R-ELEM-009 (new)
+**Dependencies:** Task 2.7, Task 3.1
+**Difficulty:** High
+
+**Description:**
+Handle warping DOF compatibility at nodes where elements with different orientations connect. Warping is a cross-section phenomenon that occurs in the local element direction, so warping DOFs should only be coupled between collinear elements.
+
+**The Problem:**
+The current architecture treats warping as a nodal DOF, meaning all elements connected to a node share the same warping DOF. This is correct for:
+- **Collinear elements** (continuous beam): Warping should be continuous → share DOF ✓
+
+But incorrect for:
+- **Non-collinear elements** (e.g., orthogonal beams at a joint): Warping in one direction should NOT influence warping in a perpendicular direction → DOFs should be decoupled ✗
+
+**Physical Reasoning:**
+- Warping displacement represents out-of-plane deformation of the cross-section
+- For an I-beam, warping causes flange tips to move axially in opposite directions
+- When two beams meet at an angle, their warping modes are geometrically incompatible
+- Sharing the warping DOF would incorrectly couple these incompatible deformations
+- In reality, the connection detail (bolted, welded) determines the actual restraint
+
+**Strategy: Element-Based Warping DOF with Automatic Coupling Detection**
+
+The solution involves making warping DOFs element-specific by default, but automatically coupling them for collinear elements:
+
+1. **Warping DOF becomes element-local by default:**
+   - Each beam element that requires warping gets its own warping DOF at each end
+   - Instead of 1 nodal warping DOF shared by all elements, each element has independent warping DOFs
+   - This requires tracking warping DOFs per element-node pair, not per node
+
+2. **Automatic collinearity detection:**
+   ```cpp
+   // Check if two elements sharing a node are collinear
+   bool are_elements_collinear(const BeamElement& elem1, const BeamElement& elem2,
+                                int shared_node_id, double angle_tolerance = 5.0) {
+       Eigen::Vector3d dir1 = elem1.direction_vector();
+       Eigen::Vector3d dir2 = elem2.direction_vector();
+
+       // Normalize directions (accounting for element connectivity)
+       // If shared node is at different ends, flip one direction
+       if (elem1.node_j->id == shared_node_id) dir1 = -dir1;
+       if (elem2.node_i->id == shared_node_id) dir2 = -dir2;
+
+       // Collinear if angle is within tolerance (cos(5°) ≈ 0.996)
+       double dot = std::abs(dir1.dot(dir2));
+       return dot > std::cos(angle_tolerance * M_PI / 180.0);
+   }
+   ```
+
+3. **DOF coupling via constraint equations:**
+   - For collinear elements, add constraint: `warp_elem1_node = warp_elem2_node`
+   - Implemented via master-slave DOF elimination or Lagrange multipliers
+   - The DOFHandler identifies collinear element groups at shared nodes
+
+   ```cpp
+   struct WarpingDOFInfo {
+       int element_id;
+       int node_id;
+       bool is_node_i;  // true for node i, false for node j
+       int global_dof;
+   };
+
+   struct WarpingCoupling {
+       std::vector<WarpingDOFInfo> coupled_dofs;  // DOFs that should be equal
+       int master_dof;  // The DOF retained in the system
+   };
+   ```
+
+4. **Modified DOF numbering:**
+   ```cpp
+   class DOFHandler {
+   public:
+       // For elements with warping:
+       // - Each element gets unique warping DOF at each end initially
+       // - Then collinear element groups are identified
+       // - Coupled DOFs share the same global number (master-slave)
+
+       void number_dofs(NodeRegistry& registry,
+                        const std::vector<BeamElement*>& elements);
+
+       // Get warping DOF for specific element at specific node
+       int get_warping_dof(int element_id, int node_id) const;
+
+       // Query coupling information
+       const std::vector<WarpingCoupling>& get_warping_couplings() const;
+
+   private:
+       // Warping DOF map: (element_id, node_id) -> global_dof
+       std::map<std::pair<int,int>, int> warping_dof_map_;
+
+       // Groups of collinear elements at each node
+       void identify_collinear_groups(int node_id,
+                                      const std::vector<BeamElement*>& elements);
+   };
+   ```
+
+5. **Assembly modifications:**
+   - Location arrays now differ for warping DOF: element-specific
+   - Standard DOFs (0-5) still use nodal global DOFs
+   - Warping DOF uses element-specific global DOF
+
+   ```cpp
+   std::vector<int> get_location_array(const BeamElement& elem) const {
+       std::vector<int> loc(14);
+
+       // Standard 6 DOFs per node (unchanged)
+       for (int d = 0; d < 6; ++d) {
+           loc[d] = get_global_dof(elem.node_i->id, d);
+           loc[7 + d] = get_global_dof(elem.node_j->id, d);
+       }
+
+       // Warping DOFs are element-specific
+       loc[6] = get_warping_dof(elem.id, elem.node_i->id);
+       loc[13] = get_warping_dof(elem.id, elem.node_j->id);
+
+       return loc;
+   }
+   ```
+
+**Alternative Strategy: User-Specified Warping Continuity Groups**
+
+If automatic detection is not desired, allow explicit user specification:
+
+```cpp
+// User explicitly defines which elements share warping at a node
+void set_warping_continuous(int node_id, std::vector<int> element_ids);
+
+// User explicitly releases warping between elements at a node
+void release_warping_coupling(int node_id, int element1_id, int element2_id);
+```
+
+This gives users full control over warping compatibility at complex joints.
+
+**Boundary Condition Updates:**
+- `fix_warping_at_node(node_id)`: Must now fix ALL warping DOFs at that node (for all connected elements)
+- `free_warping_at_node(node_id)`: Must free ALL warping DOFs at that node
+- New method: `fix_warping_at_element_end(element_id, node_id)`: Fix specific element's warping
+
+**Implementation Steps:**
+1. Add `direction_vector()` method to BeamElement
+2. Implement `are_elements_collinear()` helper function
+3. Modify DOFHandler to track element-specific warping DOFs
+4. Implement collinearity detection in DOF numbering
+5. Update `get_location_array()` for element-specific warping
+6. Update boundary condition handling for element-specific warping
+7. Add tests for non-collinear connections (e.g., T-joint, L-joint)
+8. Add tests for collinear connections (continuous beam)
+9. Update Python bindings for new API
+
+**Test Cases:**
+1. **T-joint (orthogonal):** Two I-beams meeting at 90°
+   - Warping DOFs should be independent
+   - Torque in one beam should not cause warping in the other
+
+2. **L-joint (orthogonal):** Two I-beams forming an L
+   - Warping DOFs should be independent
+
+3. **Continuous beam:** Three collinear elements
+   - Warping DOFs at internal nodes should be shared
+   - Warping should be continuous along the beam
+
+4. **Skewed connection:** Two beams at 30° angle
+   - Should be detected as non-collinear (outside tolerance)
+   - Warping DOFs should be independent
+
+5. **Nearly collinear:** Two beams at 2° angle
+   - Should be detected as collinear (within tolerance)
+   - Warping DOFs should be coupled
+
+**Acceptance Criteria:**
+- [ ] Collinearity detection correctly identifies parallel elements
+- [ ] Non-collinear elements have independent warping DOFs
+- [ ] Collinear elements share warping DOFs (continuous warping)
+- [ ] Boundary conditions work for element-specific warping DOFs
+- [ ] T-joint with torque shows no warping coupling between orthogonal beams
+- [ ] Continuous beam shows warping continuity at internal nodes
+- [ ] User can override automatic coupling detection
+- [ ] Backward compatible: models without warping unchanged
+
+---
+
 ## Phase 3: Assembly & Solver
 
 **⚠️ UPDATED FOR WARPING DOF SUPPORT ⚠️**
