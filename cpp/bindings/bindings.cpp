@@ -9,6 +9,7 @@
 #include "grillex/section.hpp"
 #include "grillex/local_axes.hpp"
 #include "grillex/beam_element.hpp"
+#include "grillex/dof_handler.hpp"
 
 namespace py = pybind11;
 
@@ -362,4 +363,32 @@ PYBIND11_MODULE(_grillex_cpp, m) {
           py::arg("config") = grillex::BeamConfig{},
           py::arg("roll") = 0.0,
           "Factory function to create beam elements with different configurations");
+
+    // ========================================================================
+    // Phase 3: Assembly & Solver
+    // ========================================================================
+
+    // DOFHandler class
+    py::class_<grillex::DOFHandler>(m, "DOFHandler",
+        "Handles global DOF numbering for structural analysis")
+        .def(py::init<>(), "Construct an empty DOFHandler")
+        .def("number_dofs", &grillex::DOFHandler::number_dofs,
+             py::arg("registry"),
+             "Assign global DOF numbers to all nodes in the registry")
+        .def("total_dofs", &grillex::DOFHandler::total_dofs,
+             "Get total number of DOFs in the system")
+        .def("get_global_dof", &grillex::DOFHandler::get_global_dof,
+             py::arg("node_id"), py::arg("local_dof"),
+             "Get global DOF number for a specific node and local DOF")
+        .def("get_location_array", &grillex::DOFHandler::get_location_array,
+             py::arg("elem"),
+             "Get location array for an element (maps local to global DOFs)")
+        .def("has_warping_dofs", &grillex::DOFHandler::has_warping_dofs,
+             "Check if any node has warping DOF active")
+        .def("clear", &grillex::DOFHandler::clear,
+             "Clear all DOF numbering")
+        .def("__repr__", [](const grillex::DOFHandler &dh) {
+            return "<DOFHandler total_dofs=" + std::to_string(dh.total_dofs()) +
+                   " has_warping=" + (dh.has_warping_dofs() ? "True" : "False") + ">";
+        });
 }

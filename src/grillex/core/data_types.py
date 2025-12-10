@@ -24,11 +24,13 @@ from grillex._grillex_cpp import (
     EndRelease,
     BeamConfig,
     BeamElementBase,
-    create_beam_element
+    create_beam_element,
+    DOFHandler
 )
 
 __all__ = [
     'Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes',
     'BeamElement', 'BeamFormulation', 'EndRelease',
-    'BeamConfig', 'BeamElementBase', 'create_beam_element'
+    'BeamConfig', 'BeamElementBase', 'create_beam_element',
+    'DOFHandler'
 ]

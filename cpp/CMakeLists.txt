@@ -17,6 +17,7 @@ pybind11_add_module(_grillex_cpp
     src/section.cpp
     src/local_axes.cpp
     src/beam_element.cpp
+    src/dof_handler.cpp
 )
 
 target_link_libraries(_grillex_cpp PRIVATE grillex_core)
