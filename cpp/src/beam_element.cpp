@@ -51,6 +51,14 @@ BeamElement::BeamElement(int id, Node* node_i, Node* node_j,
     length = compute_length();
 }
 
+BeamElement::BeamElement(int id, Node* node_i, Node* node_j,
+                         Material* mat, Section* sec,
+                         const BeamConfig& config, double roll)
+    : id(id), node_i(node_i), node_j(node_j), material(mat), section(sec),
+      config(config), local_axes(node_i->position(), node_j->position(), roll) {
+    length = compute_length();
+}
+
 double BeamElement::compute_length() const {
     Eigen::Vector3d diff = node_j->position() - node_i->position();
     return diff.norm();
@@ -690,6 +698,60 @@ Eigen::MatrixXd BeamElement::apply_static_condensation(
     }
 
     return K_result;
+}
+
+// ============================================================================
+// Virtual Method Implementations (BeamElementBase interface)
+// ============================================================================
+
+Eigen::MatrixXd BeamElement::compute_local_stiffness() const {
+    BeamFormulation form = config.get_formulation();
+    if (config.include_warping) {
+        return local_stiffness_matrix_warping(form);
+    } else {
+        return local_stiffness_matrix(form);
+    }
+}
+
+Eigen::MatrixXd BeamElement::compute_local_mass() const {
+    BeamFormulation form = config.get_formulation();
+    if (config.include_warping) {
+        return local_mass_matrix_warping(form);
+    } else {
+        return local_mass_matrix(form);
+    }
+}
+
+Eigen::MatrixXd BeamElement::compute_transformation() const {
+    if (config.include_warping) {
+        return transformation_matrix_warping();
+    } else {
+        return transformation_matrix();
+    }
+}
+
+int BeamElement::num_dofs() const {
+    return config.include_warping ? 14 : 12;
+}
+
+BeamFormulation BeamElement::get_formulation() const {
+    return config.get_formulation();
+}
+
+bool BeamElement::has_warping() const {
+    return config.include_warping;
+}
+
+// ============================================================================
+// Factory Function
+// ============================================================================
+
+std::unique_ptr<BeamElementBase> create_beam_element(
+    int id, Node* node_i, Node* node_j,
+    Material* mat, Section* sec,
+    const BeamConfig& config,
+    double roll) {
+    return std::make_unique<BeamElement>(id, node_i, node_j, mat, sec, config, roll);
 }
 
 } // namespace grillex

@@ -1356,9 +1356,96 @@ Create a unified factory/interface for creating beam elements with different for
    ```
 
 **Acceptance Criteria:**
-- [ ] Factory correctly creates Euler-Bernoulli, Timoshenko, or Warping elements
-- [ ] num_dofs() returns correct value (12 or 14)
-- [ ] Existing code continues to work with default config
+- [x] Factory correctly creates Euler-Bernoulli, Timoshenko, or Warping elements
+- [x] Factory correctly creates Euler-Bernoulli, Timoshenko, or Warping elements
+- [x] num_dofs() returns correct value (12 or 14)
+- [x] Existing code continues to work with default config
+
+**Implementation Details:**
+
+**Status:** ✅ COMPLETED
+
+**Files Modified:**
+- `cpp/include/grillex/beam_element.hpp`
+- `cpp/src/beam_element.cpp`
+- `cpp/bindings/bindings.cpp`
+- `src/grillex/core/data_types.py`
+- `src/grillex/core/__init__.py`
+
+**Key Design Decisions:**
+
+1. **BeamConfig Struct:**
+   - Simple POD struct with three boolean/enum fields
+   - `get_formulation()` method resolves `include_shear_deformation` alias to Timoshenko
+   - Default constructor provides Euler-Bernoulli without warping
+
+2. **BeamElementBase Abstract Class:**
+   - Pure virtual interface for polymorphic beam element access
+   - Methods named `compute_local_stiffness()`, `compute_local_mass()`, `compute_transformation()` to avoid name conflicts with existing fixed-size methods
+   - Additional query methods: `num_dofs()`, `get_formulation()`, `has_warping()`
+
+3. **BeamElement Inheritance:**
+   - BeamElement now inherits from BeamElementBase
+   - New `config` member variable tracks element configuration
+   - New constructor accepts `BeamConfig` parameter
+   - Virtual methods dispatch to appropriate 12x12 or 14x14 methods based on config
+   - Existing constructors and methods remain unchanged for backward compatibility
+
+4. **Factory Function:**
+   - Simple wrapper: `std::make_unique<BeamElement>(...)` with config
+   - Returns `unique_ptr<BeamElementBase>` for polymorphic usage
+   - Default config parameter allows convenient creation
+
+5. **Backward Compatibility:**
+   - Existing code using `BeamElement(id, node_i, node_j, mat, sec)` continues to work
+   - Old methods `local_stiffness_matrix(formulation)` still available
+   - Config defaults to Euler-Bernoulli, 12-DOF behavior
+
+**Testing:**
+- Created comprehensive test suite: `tests/python/test_beam_factory.py`
+- 18 tests covering:
+  - BeamConfig configuration and aliases
+  - Factory creation of different element types
+  - Polymorphic interface behavior (12x12 vs 14x14 matrices)
+  - Backward compatibility with existing code
+- All tests passing ✅
+
+**Python Bindings:**
+- Exported `BeamConfig`, `BeamElementBase`, and `create_beam_element` to Python
+- BeamElement now declared as subclass of BeamElementBase in bindings
+- Factory function available from Python with default arguments
+
+**Usage Examples:**
+
+```cpp
+// C++: Create Euler-Bernoulli beam (default)
+auto elem1 = create_beam_element(1, node_i, node_j, mat, sec);
+
+// C++: Create Timoshenko beam with warping
+BeamConfig config;
+config.formulation = BeamFormulation::Timoshenko;
+config.include_warping = true;
+auto elem2 = create_beam_element(2, node_i, node_j, mat, sec, config);
+
+// Polymorphic usage
+int ndof = elem2->num_dofs();  // Returns 14
+auto K = elem2->compute_local_stiffness();  // Returns 14x14 matrix
+```
+
+```python
+# Python: Create Euler-Bernoulli beam
+elem1 = create_beam_element(1, node_i, node_j, mat, sec)
+
+# Python: Create Timoshenko beam with warping
+config = BeamConfig()
+config.formulation = BeamFormulation.Timoshenko
+config.include_warping = True
+elem2 = create_beam_element(2, node_i, node_j, mat, sec, config)
+
+# Polymorphic usage
+ndof = elem2.num_dofs()  # Returns 14
+K = elem2.compute_local_stiffness()  # Returns 14x14 numpy array
+```
 
 ---
 

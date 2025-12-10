@@ -6,6 +6,7 @@
 #include "grillex/local_axes.hpp"
 #include <Eigen/Dense>
 #include <vector>
+#include <memory>
 
 namespace grillex {
 
@@ -17,6 +18,28 @@ namespace grillex {
 enum class BeamFormulation {
     EulerBernoulli,  ///< Classical beam theory (no shear deformation)
     Timoshenko       ///< Beam theory with shear deformation effects
+};
+
+/**
+ * @brief Configuration for beam element creation
+ *
+ * Defines which beam formulation and optional features to use.
+ */
+struct BeamConfig {
+    BeamFormulation formulation = BeamFormulation::EulerBernoulli;  ///< Beam formulation type
+    bool include_warping = false;          ///< Include warping DOF (7th DOF at each end)
+    bool include_shear_deformation = false; ///< Alias for Timoshenko formulation
+
+    /**
+     * @brief Get the effective beam formulation
+     *
+     * If include_shear_deformation is true, returns Timoshenko regardless of formulation setting.
+     *
+     * @return BeamFormulation The effective formulation to use
+     */
+    BeamFormulation get_formulation() const {
+        return include_shear_deformation ? BeamFormulation::Timoshenko : formulation;
+    }
 };
 
 /**
@@ -87,6 +110,59 @@ struct EndRelease {
 };
 
 /**
+ * @brief Abstract base class for beam elements
+ *
+ * Provides polymorphic interface for beam elements with different formulations
+ * (Euler-Bernoulli, Timoshenko) and DOF configurations (12 or 14 DOFs).
+ */
+class BeamElementBase {
+public:
+    /**
+     * @brief Compute local stiffness matrix (polymorphic)
+     *
+     * @return Eigen::MatrixXd Local stiffness matrix (12x12 or 14x14)
+     */
+    virtual Eigen::MatrixXd compute_local_stiffness() const = 0;
+
+    /**
+     * @brief Compute local mass matrix (polymorphic)
+     *
+     * @return Eigen::MatrixXd Local mass matrix (12x12 or 14x14)
+     */
+    virtual Eigen::MatrixXd compute_local_mass() const = 0;
+
+    /**
+     * @brief Compute transformation matrix (polymorphic)
+     *
+     * @return Eigen::MatrixXd Transformation matrix (12x12 or 14x14)
+     */
+    virtual Eigen::MatrixXd compute_transformation() const = 0;
+
+    /**
+     * @brief Get number of DOFs for this element
+     *
+     * @return int Number of DOFs (12 for standard, 14 for warping)
+     */
+    virtual int num_dofs() const = 0;
+
+    /**
+     * @brief Get the beam formulation used
+     *
+     * @return BeamFormulation The formulation (EulerBernoulli or Timoshenko)
+     */
+    virtual BeamFormulation get_formulation() const = 0;
+
+    /**
+     * @brief Check if element includes warping DOF
+     *
+     * @return bool True if element has 14 DOFs (includes warping)
+     */
+    virtual bool has_warping() const = 0;
+
+    virtual ~BeamElementBase() = default;
+};
+
+/**
  * @brief Beam element for structural analysis
  *
  * Implements a 3D Euler-Bernoulli beam element with 12 DOFs
@@ -101,7 +177,7 @@ struct EndRelease {
  * - θy: rotation about local y (bending)
  * - θz: rotation about local z (bending)
  */
-class BeamElement {
+class BeamElement : public BeamElementBase {
 public:
     int id;              ///< Element ID
     Node* node_i;        ///< First node (start)
@@ -118,6 +194,9 @@ public:
     /// End release configuration
     EndRelease releases;
 
+    /// Beam configuration (formulation and features)
+    BeamConfig config;
+
     /**
      * @brief Construct a beam element
      *
@@ -130,6 +209,21 @@ public:
      */
     BeamElement(int id, Node* node_i, Node* node_j,
                 Material* mat, Section* sec, double roll = 0.0);
+
+    /**
+     * @brief Construct a beam element with configuration
+     *
+     * @param id Element ID
+     * @param node_i First node
+     * @param node_j Second node
+     * @param mat Material
+     * @param sec Section
+     * @param config Beam configuration (formulation and features)
+     * @param roll Roll angle about beam axis [radians], default 0.0
+     */
+    BeamElement(int id, Node* node_i, Node* node_j,
+                Material* mat, Section* sec,
+                const BeamConfig& config, double roll = 0.0);
 
     /**
      * @brief Compute 12x12 local stiffness matrix
@@ -271,6 +365,56 @@ public:
     Eigen::Matrix<double, 14, 14> global_mass_matrix_warping(
         BeamFormulation formulation = BeamFormulation::EulerBernoulli) const;
 
+    // Virtual method implementations from BeamElementBase
+
+    /**
+     * @brief Compute local stiffness matrix (polymorphic interface)
+     *
+     * Returns either 12x12 or 14x14 matrix depending on config.include_warping
+     *
+     * @return Eigen::MatrixXd Local stiffness matrix
+     */
+    Eigen::MatrixXd compute_local_stiffness() const override;
+
+    /**
+     * @brief Compute local mass matrix (polymorphic interface)
+     *
+     * Returns either 12x12 or 14x14 matrix depending on config.include_warping
+     *
+     * @return Eigen::MatrixXd Local mass matrix
+     */
+    Eigen::MatrixXd compute_local_mass() const override;
+
+    /**
+     * @brief Compute transformation matrix (polymorphic interface)
+     *
+     * Returns either 12x12 or 14x14 matrix depending on config.include_warping
+     *
+     * @return Eigen::MatrixXd Transformation matrix
+     */
+    Eigen::MatrixXd compute_transformation() const override;
+
+    /**
+     * @brief Get number of DOFs (polymorphic interface)
+     *
+     * @return int 12 or 14 depending on config.include_warping
+     */
+    int num_dofs() const override;
+
+    /**
+     * @brief Get beam formulation (polymorphic interface)
+     *
+     * @return BeamFormulation The effective formulation from config
+     */
+    BeamFormulation get_formulation() const override;
+
+    /**
+     * @brief Check if warping is enabled (polymorphic interface)
+     *
+     * @return bool True if config.include_warping is true
+     */
+    bool has_warping() const override;
+
 private:
     /**
      * @brief Compute element length from node positions
@@ -305,5 +449,26 @@ private:
         const Eigen::MatrixXd& K,
         const std::vector<int>& released_indices) const;
 };
+
+/**
+ * @brief Factory function to create beam elements with different configurations
+ *
+ * Creates a beam element with the specified formulation and features.
+ * Returns a unique_ptr to BeamElementBase for polymorphic usage.
+ *
+ * @param id Element ID
+ * @param node_i First node
+ * @param node_j Second node
+ * @param mat Material
+ * @param sec Section
+ * @param config Beam configuration (formulation and features)
+ * @param roll Roll angle about beam axis [radians], default 0.0
+ * @return std::unique_ptr<BeamElementBase> Pointer to created beam element
+ */
+std::unique_ptr<BeamElementBase> create_beam_element(
+    int id, Node* node_i, Node* node_j,
+    Material* mat, Section* sec,
+    const BeamConfig& config = BeamConfig{},
+    double roll = 0.0);
 
 } // namespace grillex

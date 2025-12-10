@@ -167,6 +167,41 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                "Beam theory with shear deformation effects")
         .export_values();
 
+    // BeamConfig struct
+    py::class_<grillex::BeamConfig>(m, "BeamConfig",
+        "Configuration for beam element creation")
+        .def(py::init<>(), "Construct with default configuration (Euler-Bernoulli, no warping)")
+        .def_readwrite("formulation", &grillex::BeamConfig::formulation,
+                       "Beam formulation type")
+        .def_readwrite("include_warping", &grillex::BeamConfig::include_warping,
+                       "Include warping DOF (7th DOF at each end)")
+        .def_readwrite("include_shear_deformation", &grillex::BeamConfig::include_shear_deformation,
+                       "Alias for Timoshenko formulation")
+        .def("get_formulation", &grillex::BeamConfig::get_formulation,
+             "Get the effective beam formulation")
+        .def("__repr__", [](const grillex::BeamConfig &c) {
+            std::string form = (c.get_formulation() == grillex::BeamFormulation::EulerBernoulli)
+                             ? "EulerBernoulli" : "Timoshenko";
+            return "<BeamConfig formulation=" + form +
+                   " include_warping=" + (c.include_warping ? "True" : "False") + ">";
+        });
+
+    // BeamElementBase abstract class
+    py::class_<grillex::BeamElementBase>(m, "BeamElementBase",
+        "Abstract base class for beam elements with different formulations")
+        .def("compute_local_stiffness", &grillex::BeamElementBase::compute_local_stiffness,
+             "Compute local stiffness matrix (12x12 or 14x14)")
+        .def("compute_local_mass", &grillex::BeamElementBase::compute_local_mass,
+             "Compute local mass matrix (12x12 or 14x14)")
+        .def("compute_transformation", &grillex::BeamElementBase::compute_transformation,
+             "Compute transformation matrix (12x12 or 14x14)")
+        .def("num_dofs", &grillex::BeamElementBase::num_dofs,
+             "Get number of DOFs (12 for standard, 14 for warping)")
+        .def("get_formulation", &grillex::BeamElementBase::get_formulation,
+             "Get the beam formulation used")
+        .def("has_warping", &grillex::BeamElementBase::has_warping,
+             "Check if element includes warping DOF");
+
     // EndRelease struct
     py::class_<grillex::EndRelease>(m, "EndRelease",
         "End release configuration for beam elements")
@@ -245,13 +280,20 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         });
 
     // BeamElement class
-    py::class_<grillex::BeamElement>(m, "BeamElement",
+    py::class_<grillex::BeamElement, grillex::BeamElementBase>(m, "BeamElement",
         "3D Euler-Bernoulli beam element with 12 DOFs")
         .def(py::init<int, grillex::Node*, grillex::Node*,
                       grillex::Material*, grillex::Section*, double>(),
              py::arg("id"), py::arg("node_i"), py::arg("node_j"),
              py::arg("material"), py::arg("section"), py::arg("roll") = 0.0,
              "Construct a beam element")
+        .def(py::init<int, grillex::Node*, grillex::Node*,
+                      grillex::Material*, grillex::Section*,
+                      const grillex::BeamConfig&, double>(),
+             py::arg("id"), py::arg("node_i"), py::arg("node_j"),
+             py::arg("material"), py::arg("section"),
+             py::arg("config"), py::arg("roll") = 0.0,
+             "Construct a beam element with configuration")
         .def_readwrite("id", &grillex::BeamElement::id, "Element ID")
         .def_readonly("node_i", &grillex::BeamElement::node_i,
                       "First node", py::return_value_policy::reference)
@@ -271,6 +313,8 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                        "End offset at node j [m]")
         .def_readwrite("releases", &grillex::BeamElement::releases,
                        "End release configuration")
+        .def_readwrite("config", &grillex::BeamElement::config,
+                       "Beam configuration (formulation and features)")
         .def("local_stiffness_matrix", &grillex::BeamElement::local_stiffness_matrix,
              py::arg("formulation") = grillex::BeamFormulation::EulerBernoulli,
              "Compute 12x12 local stiffness matrix")
@@ -310,4 +354,12 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                    std::to_string(e.node_j->id) + "] L=" +
                    std::to_string(e.length) + ">";
         });
+
+    // Factory function
+    m.def("create_beam_element", &grillex::create_beam_element,
+          py::arg("id"), py::arg("node_i"), py::arg("node_j"),
+          py::arg("material"), py::arg("section"),
+          py::arg("config") = grillex::BeamConfig{},
+          py::arg("roll") = 0.0,
+          "Factory function to create beam elements with different configurations");
 }

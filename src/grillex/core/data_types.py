@@ -8,6 +8,9 @@ This module provides Python-friendly access to the C++ core data structures:
 - Section: Cross-section properties for beams
 - LocalAxes: Local coordinate system for beam elements
 - BeamElement: 3D Euler-Bernoulli beam element
+- BeamConfig: Configuration for beam element creation
+- BeamElementBase: Abstract base class for beam elements
+- create_beam_element: Factory function for creating beam elements
 """
 
 from grillex._grillex_cpp import (
@@ -18,7 +21,14 @@ from grillex._grillex_cpp import (
     LocalAxes,
     BeamElement,
     BeamFormulation,
-    EndRelease
+    EndRelease,
+    BeamConfig,
+    BeamElementBase,
+    create_beam_element
 )
 
-__all__ = ['Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes', 'BeamElement', 'BeamFormulation', 'EndRelease']
+__all__ = [
+    'Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes',
+    'BeamElement', 'BeamFormulation', 'EndRelease',
+    'BeamConfig', 'BeamElementBase', 'create_beam_element'
+]
