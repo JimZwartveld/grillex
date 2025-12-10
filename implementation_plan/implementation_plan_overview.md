@@ -1,0 +1,94 @@
+# Grillex 2.0 – Implementation Plan
+
+## Overview
+
+This document provides a detailed, step-by-step implementation plan for building Grillex 2.0, a structural analysis and design platform. The plan is structured so that individual tasks can be executed by agents with varying levels of expertise.
+
+**Key Principles:**
+- Each task has clear inputs, outputs, and acceptance criteria
+- Tasks reference specific requirements (R-ID)
+- Dependencies between tasks are explicitly stated
+- Tasks are ordered to enable incremental testing
+
+---
+
+
+## Phases Overview
+
+The implementation plan is organized into 15 phases:
+
+### Phase 0: Project Setup & Infrastructure
+**Requirements:** R-ARCH-001, R-DEV-001, R-DEV-003 **Dependencies:** None **Difficulty:** Low **Description:** Create the basic project directory structure.
+
+→ [See full Phase 0 details](implementation_plan_phase00.md)
+
+### Phase 1: Core Data Structures (C++)
+**Requirements:** R-MOD-003, R-DOF-001 **Dependencies:** Task 0.2 **Difficulty:** Medium **Description:** Create the C++ Node class representing a point in the structural model.
+
+→ [See full Phase 1 details](implementation_plan_phase01.md)
+
+### Phase 2: Beam Element Foundation (C++)
+**Requirements:** R-COORD-001, R-COORD-002, R-COORD-003 **Dependencies:** Task 1.1 **Difficulty:** High **Description:** Create a class to compute local beam coordinate systems.
+
+→ [See full Phase 2 details](implementation_plan_phase02.md)
+
+### Phase 3: Assembly & Solver
+**⚠️ UPDATED FOR WARPING DOF SUPPORT ⚠️** The following tasks have been updated to handle both 12-DOF and 14-DOF elements. **Requirements:** R-DOF-005, R-DOF-001, R-DOF-002, R-DOF-007 (warping) **Depe
+
+→ [See full Phase 3 details](implementation_plan_phase03.md)
+
+### Phase 4: Python Front-End & I/O
+**Requirements:** R-MOD-001, R-MOD-002, R-ARCH-003 **Dependencies:** Task 3.5 **Difficulty:** Medium **Description:** Create Pythonic wrapper around C++ Model class.
+
+→ [See full Phase 4 details](implementation_plan_phase04.md)
+
+### Phase 5: Loads & Load Cases
+**Requirements:** R-LOAD-001, R-LOAD-002, R-LOAD-010 **Dependencies:** Task 4.1 **Difficulty:** Medium **Description:** Create the load case and load combination structures.
+
+→ [See full Phase 5 details](implementation_plan_phase05.md)
+
+### Phase 6: MPC & Rigid Links
+**Requirements:** R-MPC-001, R-MPC-002 **Dependencies:** Task 3.2 **Difficulty:** High **Description:** Implement the constraint transformation matrix T.
+
+→ [See full Phase 6 details](implementation_plan_phase06.md)
+
+### Phase 7: Internal Actions & Results
+**Requirements:** R-RES-001 **Dependencies:** Task 3.5 **Difficulty:** Medium **Description:** Compute element end forces from displacements.
+
+→ [See full Phase 7 details](implementation_plan_phase07.md)
+
+### Phase 8: Additional Element Types
+**Requirements:** R-MOD-007, R-ELEM-007 **Dependencies:** Task 3.2 **Difficulty:** Medium **Description:** Create spring element connecting two nodes.
+
+→ [See full Phase 8 details](implementation_plan_phase08.md)
+
+### Phase 9: Cargo Modelling
+**Requirements:** R-CARGO-001, R-CARGO-002, R-CARGO-003 **Dependencies:** Tasks 8.1, 8.2, 6.2 **Difficulty:** Medium **Description:** Create the Cargo Python-level abstraction.
+
+→ [See full Phase 9 details](implementation_plan_phase09.md)
+
+### Phase 10: Design Codes (Plugin Structure)
+**Requirements:** R-CODE-001, R-CODE-002 **Dependencies:** Task 7.2 **Difficulty:** Medium **Description:** Create the pluggable design code module structure.
+
+→ [See full Phase 10 details](implementation_plan_phase10.md)
+
+### Phase 11: Error Handling & Diagnostics
+**Requirements:** R-ERR-001, R-ERR-002 **Dependencies:** Task 3.4 **Difficulty:** Medium **Description:** Create structured error reporting.
+
+→ [See full Phase 11 details](implementation_plan_phase11.md)
+
+### Phase 12: LLM Tooling
+**Requirements:** R-LLM-001 **Dependencies:** All previous Python tasks **Difficulty:** Medium **Description:** Ensure all Python functions have complete type hints and docstrings.
+
+→ [See full Phase 12 details](implementation_plan_phase12.md)
+
+### Phase 13: Validation & Benchmarks
+**Requirements:** R-VAL-001, R-VAL-002 **Dependencies:** Phase 5 complete **Difficulty:** Low **Description:** Create validation benchmark for simply supported beam.
+
+→ [See full Phase 13 details](implementation_plan_phase13.md)
+
+### Phase 14: DevOps & Packaging
+
+
+→ [See full Phase 14 details](implementation_plan_phase14.md)
+
