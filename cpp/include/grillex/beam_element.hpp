@@ -415,6 +415,16 @@ public:
      */
     bool has_warping() const override;
 
+    /**
+     * @brief Get the direction vector of the beam (normalized)
+     *
+     * Returns a unit vector pointing from node_i to node_j.
+     * Used for collinearity detection at shared nodes.
+     *
+     * @return Eigen::Vector3d Unit vector along beam axis
+     */
+    Eigen::Vector3d direction_vector() const;
+
 private:
     /**
      * @brief Compute element length from node positions
@@ -470,5 +480,33 @@ std::unique_ptr<BeamElementBase> create_beam_element(
     Material* mat, Section* sec,
     const BeamConfig& config = BeamConfig{},
     double roll = 0.0);
+
+/**
+ * @brief Check if two elements sharing a node are collinear
+ *
+ * Two elements are considered collinear if their direction vectors are
+ * (anti-)parallel within the specified angle tolerance. This is used to
+ * determine warping DOF coupling at shared nodes.
+ *
+ * For collinear elements:
+ * - Warping deformation is geometrically compatible
+ * - Warping DOFs should be coupled (share same global DOF)
+ *
+ * For non-collinear elements:
+ * - Warping deformation is geometrically incompatible
+ * - Warping DOFs should be independent
+ *
+ * @param elem1 First beam element
+ * @param elem2 Second beam element
+ * @param shared_node_id ID of the node shared by both elements
+ * @param angle_tolerance_deg Maximum angle (in degrees) for elements to be considered collinear.
+ *                            Default is 5.0 degrees.
+ * @return bool True if elements are collinear within tolerance
+ */
+bool are_elements_collinear(
+    const BeamElement& elem1,
+    const BeamElement& elem2,
+    int shared_node_id,
+    double angle_tolerance_deg = 5.0);
 
 } // namespace grillex

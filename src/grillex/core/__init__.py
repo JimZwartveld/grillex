@@ -4,12 +4,14 @@ from .data_types import (
     Node, NodeRegistry, Material, Section, LocalAxes,
     BeamElement, BeamFormulation, EndRelease,
     BeamConfig, BeamElementBase, create_beam_element,
-    DOFHandler
+    are_elements_collinear,
+    DOFHandler, WarpingDOFInfo, WarpingCoupling
 )
 
 __all__ = [
     'Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes',
     'BeamElement', 'BeamFormulation', 'EndRelease',
     'BeamConfig', 'BeamElementBase', 'create_beam_element',
-    'DOFHandler'
+    'are_elements_collinear',
+    'DOFHandler', 'WarpingDOFInfo', 'WarpingCoupling'
 ]

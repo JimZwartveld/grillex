@@ -2,7 +2,7 @@
 Core data types for Grillex structural analysis.
 
 This module provides Python-friendly access to the C++ core data structures:
-- Node: Point in 3D space with up to 6 DOFs
+- Node: Point in 3D space with up to 7 DOFs (including warping)
 - NodeRegistry: Manager for nodes with automatic merging
 - Material: Material properties (E, G, nu, rho)
 - Section: Cross-section properties for beams
@@ -11,6 +11,10 @@ This module provides Python-friendly access to the C++ core data structures:
 - BeamConfig: Configuration for beam element creation
 - BeamElementBase: Abstract base class for beam elements
 - create_beam_element: Factory function for creating beam elements
+- are_elements_collinear: Helper for detecting collinear beams at nodes
+- DOFHandler: Global DOF numbering with element-specific warping support
+- WarpingDOFInfo: Information about warping DOF for element at node
+- WarpingCoupling: Group of coupled warping DOFs for collinear elements
 """
 
 from grillex._grillex_cpp import (
@@ -25,12 +29,16 @@ from grillex._grillex_cpp import (
     BeamConfig,
     BeamElementBase,
     create_beam_element,
-    DOFHandler
+    are_elements_collinear,
+    DOFHandler,
+    WarpingDOFInfo,
+    WarpingCoupling
 )
 
 __all__ = [
     'Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes',
     'BeamElement', 'BeamFormulation', 'EndRelease',
     'BeamConfig', 'BeamElementBase', 'create_beam_element',
-    'DOFHandler'
+    'are_elements_collinear',
+    'DOFHandler', 'WarpingDOFInfo', 'WarpingCoupling'
 ]

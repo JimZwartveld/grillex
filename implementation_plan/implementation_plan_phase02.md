@@ -1108,14 +1108,256 @@ This gives users full control over warping compatibility at complex joints.
    - Warping DOFs should be coupled
 
 **Acceptance Criteria:**
-- [ ] Collinearity detection correctly identifies parallel elements
-- [ ] Non-collinear elements have independent warping DOFs
-- [ ] Collinear elements share warping DOFs (continuous warping)
-- [ ] Boundary conditions work for element-specific warping DOFs
-- [ ] T-joint with torque shows no warping coupling between orthogonal beams
-- [ ] Continuous beam shows warping continuity at internal nodes
-- [ ] User can override automatic coupling detection
-- [ ] Backward compatible: models without warping unchanged
+- [x] Collinearity detection correctly identifies parallel elements
+- [x] Non-collinear elements have independent warping DOFs
+- [x] Collinear elements share warping DOFs (continuous warping)
+- [ ] Boundary conditions work for element-specific warping DOFs (deferred to Task 3.3)
+- [ ] T-joint with torque shows no warping coupling between orthogonal beams (requires solver)
+- [ ] Continuous beam shows warping continuity at internal nodes (requires solver)
+- [x] User can override automatic coupling detection
+- [x] Backward compatible: models without warping unchanged
+
+---
+
+## Task 2.9 Implementation Summary
+
+**Status:** ✅ COMPLETED
+
+**Implementation Date:** December 11, 2025
+
+### Overview
+Implemented element-specific warping DOF handling with automatic collinearity detection. The DOFHandler now correctly handles warping DOFs at nodes where non-collinear elements connect, ensuring warping deformation is properly decoupled for geometrically incompatible element orientations.
+
+### Files Created/Modified
+
+1. **cpp/include/grillex/beam_element.hpp** (MODIFIED)
+   - Added `direction_vector()` method declaration to BeamElement (line 426)
+   - Added `are_elements_collinear()` free function declaration (lines 506-510)
+
+2. **cpp/src/beam_element.cpp** (MODIFIED)
+   - Added `BeamElement::direction_vector()` implementation (lines 745-750)
+   - Added `are_elements_collinear()` implementation (lines 768-813) with direction flipping logic for shared node handling
+
+3. **cpp/include/grillex/dof_handler.hpp** (MODIFIED - major expansion)
+   - Added `WarpingDOFInfo` struct (lines 20-30) for tracking element-specific warping DOFs
+   - Added `WarpingCoupling` struct (lines 38-41) for grouping coupled warping DOFs
+   - Extended `DOFHandler` class with new methods:
+     - `number_dofs_with_elements()` (lines 93-96) - main numbering with collinearity detection
+     - `get_warping_dof()` (lines 127) - element-specific warping DOF lookup
+     - `set_warping_continuous()` (line 163) - user override for forced coupling
+     - `release_warping_coupling()` (lines 175) - user override to release coupling
+     - `get_warping_couplings()` (line 182) - query coupling information
+     - `get_collinearity_tolerance()` (line 189) - query tolerance setting
+   - Added private members for element-specific warping tracking (lines 197-207)
+   - Added `identify_collinear_groups()` private helper (lines 217-220)
+
+4. **cpp/src/dof_handler.cpp** (REWRITTEN - 307 lines)
+   - Complete implementation of element-specific warping DOF numbering
+   - `number_dofs_with_elements()` (lines 40-127):
+     - Step 1: Number standard DOFs (0-5) per node
+     - Step 2: Collect warping elements and build node→elements map
+     - Step 3: For each node, identify collinear groups and assign warping DOFs
+   - `identify_collinear_groups()` (lines 129-214): Union-find style grouping with transitive collinearity
+   - `get_location_array()` updated (lines 243-273): Uses element-specific warping DOFs for 14-DOF elements
+   - User override methods: `set_warping_continuous()`, `release_warping_coupling()`
+
+5. **cpp/bindings/bindings.cpp** (MODIFIED)
+   - Added `direction_vector()` to BeamElement binding (line 352-353)
+   - Added `are_elements_collinear()` function binding (lines 367-371)
+   - Added `WarpingDOFInfo` struct binding (lines 377-393)
+   - Added `WarpingCoupling` struct binding (lines 395-406)
+   - Extended `DOFHandler` binding with all new methods (lines 408-448)
+
+6. **src/grillex/core/data_types.py** (MODIFIED)
+   - Added imports: `are_elements_collinear`, `WarpingDOFInfo`, `WarpingCoupling`
+   - Updated `__all__` export list
+
+7. **src/grillex/core/__init__.py** (MODIFIED)
+   - Added new exports to module interface
+
+8. **tests/python/test_warping_decoupling.py** (NEW - 400+ lines)
+   - Comprehensive test suite with 26 tests in 7 test classes:
+     - `TestDirectionVector` (5 tests): Unit vector behavior
+     - `TestCollinearityDetection` (5 tests): Collinearity with tolerance
+     - `TestWarpingDOFNumbering` (4 tests): Element-specific DOF assignment
+     - `TestWarpingCouplings` (2 tests): Coupling record tracking
+     - `TestUserOverride` (2 tests): Manual coupling control
+     - `TestBackwardCompatibility` (3 tests): Legacy mode and mixed models
+     - `TestAcceptanceCriteria` (5 tests): Matching specification requirements
+
+### Key Design Decisions
+
+1. **Element-Specific Warping DOFs**
+   - Warping DOFs stored in `warping_dof_map_` keyed by `(element_id, node_id)` pairs
+   - Standard DOFs (0-5) remain nodal, shared by all connected elements
+   - Warping DOFs (index 6) are element-specific by default
+
+2. **Collinearity Detection Algorithm**
+   - Uses direction vectors normalized to unit length
+   - Accounts for element connectivity direction at shared node
+   - Uses absolute dot product for parallel/anti-parallel detection
+   - Default tolerance of 5 degrees (configurable)
+   - Transitive grouping: if A collinear with B and B collinear with C, all three share DOF
+
+3. **DOF Numbering Strategy**
+   - Standard DOFs numbered first (per node, sequential)
+   - Warping DOFs numbered per collinear group at each node
+   - All elements in a collinear group share the same warping DOF number
+   - Non-collinear elements get independent warping DOF numbers
+
+4. **Location Array Format for 14-DOF Elements**
+   ```
+   [UX_i, UY_i, UZ_i, RX_i, RY_i, RZ_i, WARP_i, UX_j, UY_j, UZ_j, RX_j, RY_j, RZ_j, WARP_j]
+    0     1     2     3     4     5     6       7     8     9     10    11    12    13
+   ```
+   - Indices 0-5 and 7-12: nodal DOFs (shared)
+   - Indices 6 and 13: element-specific warping DOFs
+
+5. **Backward Compatibility**
+   - Legacy `number_dofs(registry)` method preserved for 12-DOF models
+   - New `number_dofs_with_elements(registry, elements)` for 14-DOF models
+   - Legacy method treats warping DOFs as nodal (old behavior)
+
+### Issues Encountered and Solutions
+
+**Issue 1: Direction Vector Comparison at Shared Node**
+- **Problem:** When comparing directions, need to account for which end of each element connects to the shared node
+- **Solution:** Flip direction vectors based on element connectivity:
+  - If elem1.node_j == shared_node, dir1 points INTO the node
+  - If elem2.node_i == shared_node, dir2 points OUT OF the node
+  - Flip to compare consistently
+- **Code Pattern:**
+  ```cpp
+  if (!elem1_ends_at_shared) dir1 = -dir1;
+  if (elem2_starts_at_shared) dir2 = -dir2;
+  ```
+
+**Issue 2: Transitive Collinearity**
+- **Problem:** Three elements A, B, C where A↔B and B↔C are collinear should all share DOF, even if A↔C comparison wasn't made
+- **Solution:** Union-find style grouping algorithm that checks transitivity:
+  - When adding element j to a group, check collinearity against all existing group members
+  - If collinear with ANY member, add to group
+- **Benefit:** Handles chains of collinear elements correctly
+
+**Issue 3: User Override Persistence**
+- **Problem:** Should user-specified couplings/releases persist across re-numbering?
+- **Decision:** Yes - `clear()` does not clear `forced_couplings_` and `released_couplings_`
+- **Rationale:** User configuration represents modeling intent that should persist
+
+### Testing Results
+
+All 26 tests pass (100% success rate):
+
+**TestDirectionVector (5 tests):**
+- ✓ test_horizontal_beam_x_direction
+- ✓ test_horizontal_beam_y_direction
+- ✓ test_vertical_beam
+- ✓ test_diagonal_beam
+- ✓ test_direction_is_unit_vector
+
+**TestCollinearityDetection (5 tests):**
+- ✓ test_collinear_continuous_beam
+- ✓ test_orthogonal_t_joint
+- ✓ test_collinear_with_tolerance
+- ✓ test_non_collinear_outside_tolerance
+- ✓ test_l_joint_orthogonal
+
+**TestWarpingDOFNumbering (4 tests):**
+- ✓ test_single_warping_element_numbering
+- ✓ test_collinear_elements_share_warping_dof
+- ✓ test_non_collinear_elements_independent_warping_dofs
+- ✓ test_location_array_14dof
+
+**TestWarpingCouplings (2 tests):**
+- ✓ test_warping_couplings_recorded
+- ✓ test_no_couplings_for_non_collinear
+
+**TestUserOverride (2 tests):**
+- ✓ test_force_coupling_non_collinear
+- ✓ test_release_coupling_collinear
+
+**TestBackwardCompatibility (3 tests):**
+- ✓ test_legacy_numbering_still_works
+- ✓ test_12dof_elements_work_with_new_method
+- ✓ test_mixed_12dof_14dof_model
+
+**TestAcceptanceCriteria (5 tests):**
+- ✓ test_collinearity_detection_correct
+- ✓ test_non_collinear_independent_dofs
+- ✓ test_collinear_shared_dofs
+- ✓ test_user_override_works
+- ✓ test_backward_compatible
+
+### Backward Compatibility Verification
+
+All 14 existing Phase 3 DOFHandler tests continue to pass, confirming that:
+- Legacy `number_dofs()` method unchanged
+- 12-DOF element handling unchanged
+- Existing warping DOF tests pass (using legacy nodal mode)
+
+### Example Usage
+
+**C++ - Element-Specific Warping at T-Joint:**
+```cpp
+#include "grillex/dof_handler.hpp"
+
+NodeRegistry registry;
+auto& n1 = registry.get_or_create_node(0.0, 0.0, 0.0);
+auto& n2 = registry.get_or_create_node(6.0, 0.0, 0.0);  // T-joint
+auto& n3 = registry.get_or_create_node(6.0, 4.0, 0.0);  // Perpendicular
+
+n1.enable_warping_dof(); n2.enable_warping_dof(); n3.enable_warping_dof();
+
+BeamConfig config; config.include_warping = true;
+BeamElement elem1(1, &n1, &n2, mat, sec, config);
+BeamElement elem2(2, &n2, &n3, mat, sec, config);
+
+DOFHandler dof_handler;
+dof_handler.number_dofs_with_elements(registry, {&elem1, &elem2});
+
+// Warping DOFs at n2 are DIFFERENT (non-collinear)
+int warp1 = dof_handler.get_warping_dof(1, n2.id);  // e.g., 12
+int warp2 = dof_handler.get_warping_dof(2, n2.id);  // e.g., 13
+assert(warp1 != warp2);
+```
+
+**Python - Continuous Beam with Shared Warping:**
+```python
+from grillex.core import (NodeRegistry, Material, Section, BeamElement,
+                         BeamConfig, DOFHandler, are_elements_collinear)
+
+registry = NodeRegistry()
+n1 = registry.get_or_create_node(0, 0, 0)
+n2 = registry.get_or_create_node(6, 0, 0)
+n3 = registry.get_or_create_node(12, 0, 0)
+
+for n in [n1, n2, n3]:
+    n.enable_warping_dof()
+
+config = BeamConfig()
+config.include_warping = True
+
+elem1 = BeamElement(1, n1, n2, mat, sec, config)
+elem2 = BeamElement(2, n2, n3, mat, sec, config)
+
+# Check collinearity
+assert are_elements_collinear(elem1, elem2, n2.id)  # True
+
+dof_handler = DOFHandler()
+dof_handler.number_dofs_with_elements(registry, [elem1, elem2])
+
+# Warping DOFs at n2 are SAME (collinear)
+assert dof_handler.get_warping_dof(1, n2.id) == dof_handler.get_warping_dof(2, n2.id)
+```
+
+### Remaining Work (Deferred)
+
+The following acceptance criteria require the solver (Phase 3) to fully verify:
+- Boundary conditions work for element-specific warping DOFs → Task 3.3
+- T-joint with torque shows no warping coupling → Requires analysis
+- Continuous beam shows warping continuity at internal nodes → Requires analysis
+
+The DOF numbering and coupling infrastructure is complete; verification awaits solver implementation.
 
 ---
 

@@ -349,6 +349,8 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def("global_mass_matrix_warping", &grillex::BeamElement::global_mass_matrix_warping,
              py::arg("formulation") = grillex::BeamFormulation::EulerBernoulli,
              "Compute 14x14 global mass matrix including warping DOF")
+        .def("direction_vector", &grillex::BeamElement::direction_vector,
+             "Get the direction vector of the beam (normalized, from node_i to node_j)")
         .def("__repr__", [](const grillex::BeamElement &e) {
             return "<BeamElement id=" + std::to_string(e.id) +
                    " nodes=[" + std::to_string(e.node_i->id) + "," +
@@ -364,31 +366,86 @@ PYBIND11_MODULE(_grillex_cpp, m) {
           py::arg("roll") = 0.0,
           "Factory function to create beam elements with different configurations");
 
+    // are_elements_collinear helper function
+    m.def("are_elements_collinear", &grillex::are_elements_collinear,
+          py::arg("elem1"), py::arg("elem2"), py::arg("shared_node_id"),
+          py::arg("angle_tolerance_deg") = 5.0,
+          "Check if two elements sharing a node are collinear within the angle tolerance");
+
     // ========================================================================
     // Phase 3: Assembly & Solver
     // ========================================================================
 
+    // WarpingDOFInfo struct
+    py::class_<grillex::WarpingDOFInfo>(m, "WarpingDOFInfo",
+        "Information about a warping DOF for a specific element at a node")
+        .def(py::init<>())
+        .def_readwrite("element_id", &grillex::WarpingDOFInfo::element_id,
+                       "Element ID")
+        .def_readwrite("node_id", &grillex::WarpingDOFInfo::node_id,
+                       "Node ID where this warping DOF is located")
+        .def_readwrite("is_node_i", &grillex::WarpingDOFInfo::is_node_i,
+                       "True if this is at node_i of the element")
+        .def_readwrite("global_dof", &grillex::WarpingDOFInfo::global_dof,
+                       "Assigned global DOF number")
+        .def("__repr__", [](const grillex::WarpingDOFInfo &info) {
+            return "<WarpingDOFInfo elem=" + std::to_string(info.element_id) +
+                   " node=" + std::to_string(info.node_id) +
+                   " global_dof=" + std::to_string(info.global_dof) + ">";
+        });
+
+    // WarpingCoupling struct
+    py::class_<grillex::WarpingCoupling>(m, "WarpingCoupling",
+        "Group of warping DOFs that should be coupled (share the same global DOF)")
+        .def(py::init<>())
+        .def_readwrite("coupled_dofs", &grillex::WarpingCoupling::coupled_dofs,
+                       "DOFs that share the same global DOF")
+        .def_readwrite("master_dof", &grillex::WarpingCoupling::master_dof,
+                       "The global DOF number used by all coupled DOFs")
+        .def("__repr__", [](const grillex::WarpingCoupling &coupling) {
+            return "<WarpingCoupling master_dof=" + std::to_string(coupling.master_dof) +
+                   " num_coupled=" + std::to_string(coupling.coupled_dofs.size()) + ">";
+        });
+
     // DOFHandler class
     py::class_<grillex::DOFHandler>(m, "DOFHandler",
-        "Handles global DOF numbering for structural analysis")
+        "Handles global DOF numbering for structural analysis with element-specific warping DOFs")
         .def(py::init<>(), "Construct an empty DOFHandler")
         .def("number_dofs", &grillex::DOFHandler::number_dofs,
              py::arg("registry"),
-             "Assign global DOF numbers to all nodes in the registry")
+             "Assign global DOF numbers to all nodes (legacy mode, nodal warping)")
+        .def("number_dofs_with_elements", &grillex::DOFHandler::number_dofs_with_elements,
+             py::arg("registry"), py::arg("elements"),
+             py::arg("collinearity_tolerance_deg") = 5.0,
+             "Assign DOF numbers with element-specific warping handling and automatic collinearity detection")
         .def("total_dofs", &grillex::DOFHandler::total_dofs,
              "Get total number of DOFs in the system")
         .def("get_global_dof", &grillex::DOFHandler::get_global_dof,
              py::arg("node_id"), py::arg("local_dof"),
-             "Get global DOF number for a specific node and local DOF")
+             "Get global DOF number for a specific node and local DOF (standard DOFs 0-5)")
+        .def("get_warping_dof", &grillex::DOFHandler::get_warping_dof,
+             py::arg("element_id"), py::arg("node_id"),
+             "Get warping DOF for a specific element at a specific node")
         .def("get_location_array", &grillex::DOFHandler::get_location_array,
              py::arg("elem"),
              "Get location array for an element (maps local to global DOFs)")
         .def("has_warping_dofs", &grillex::DOFHandler::has_warping_dofs,
-             "Check if any node has warping DOF active")
+             "Check if any warping DOF exists")
         .def("clear", &grillex::DOFHandler::clear,
              "Clear all DOF numbering")
+        .def("set_warping_continuous", &grillex::DOFHandler::set_warping_continuous,
+             py::arg("node_id"), py::arg("element_ids"),
+             "Manually specify that warping should be continuous between elements at a node")
+        .def("release_warping_coupling", &grillex::DOFHandler::release_warping_coupling,
+             py::arg("node_id"), py::arg("element1_id"), py::arg("element2_id"),
+             "Manually release warping coupling between two elements at a node")
+        .def("get_warping_couplings", &grillex::DOFHandler::get_warping_couplings,
+             "Get all warping coupling information")
+        .def("get_collinearity_tolerance", &grillex::DOFHandler::get_collinearity_tolerance,
+             "Get the collinearity tolerance used for warping DOF coupling (degrees)")
         .def("__repr__", [](const grillex::DOFHandler &dh) {
             return "<DOFHandler total_dofs=" + std::to_string(dh.total_dofs()) +
-                   " has_warping=" + (dh.has_warping_dofs() ? "True" : "False") + ">";
+                   " has_warping=" + (dh.has_warping_dofs() ? "True" : "False") +
+                   " collinearity_tol=" + std::to_string(dh.get_collinearity_tolerance()) + "deg>";
         });
 }

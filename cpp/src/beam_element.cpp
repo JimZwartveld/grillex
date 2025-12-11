@@ -742,6 +742,13 @@ bool BeamElement::has_warping() const {
     return config.include_warping;
 }
 
+Eigen::Vector3d BeamElement::direction_vector() const {
+    Eigen::Vector3d pos_i = node_i->position();
+    Eigen::Vector3d pos_j = node_j->position();
+    Eigen::Vector3d dir = pos_j - pos_i;
+    return dir.normalized();
+}
+
 // ============================================================================
 // Factory Function
 // ============================================================================
@@ -752,6 +759,57 @@ std::unique_ptr<BeamElementBase> create_beam_element(
     const BeamConfig& config,
     double roll) {
     return std::make_unique<BeamElement>(id, node_i, node_j, mat, sec, config, roll);
+}
+
+// ============================================================================
+// Collinearity Detection
+// ============================================================================
+
+bool are_elements_collinear(
+    const BeamElement& elem1,
+    const BeamElement& elem2,
+    int shared_node_id,
+    double angle_tolerance_deg) {
+
+    // Get direction vectors
+    Eigen::Vector3d dir1 = elem1.direction_vector();
+    Eigen::Vector3d dir2 = elem2.direction_vector();
+
+    // If the shared node is at different ends of the elements, we need to
+    // flip one direction to compare them properly.
+    // When elements are collinear and continuous (like a spliced beam),
+    // one element's direction points into the node while the other points out.
+
+    // For elem1: if shared_node is node_j, direction points INTO the node
+    // For elem1: if shared_node is node_i, direction points OUT OF the node
+    // To be collinear and continuous, the directions should be opposite at the shared node
+
+    bool elem1_ends_at_shared = (elem1.node_j->id == shared_node_id);
+    bool elem2_starts_at_shared = (elem2.node_i->id == shared_node_id);
+
+    // If elem1 ends at shared and elem2 starts at shared, they're continuous
+    // if dir1 ≈ dir2 (both pointing in the same global direction)
+    // If elem1 starts at shared and elem2 ends at shared, same logic
+    // The key is: continuous beams have SAME direction at the shared node
+
+    // Flip directions to compare them relative to the shared node
+    // After flipping, collinear continuous elements should have dirs pointing the same way
+    if (!elem1_ends_at_shared) {
+        dir1 = -dir1;  // Now dir1 points toward the shared node
+    }
+    if (elem2_starts_at_shared) {
+        dir2 = -dir2;  // Now dir2 points toward the shared node
+    }
+
+    // Collinear if directions are parallel (either same or opposite direction)
+    // We take absolute value of dot product to handle both cases
+    double dot = std::abs(dir1.dot(dir2));
+
+    // Convert angle tolerance to cosine threshold
+    // cos(5°) ≈ 0.9962
+    double cos_threshold = std::cos(angle_tolerance_deg * M_PI / 180.0);
+
+    return dot >= cos_threshold;
 }
 
 } // namespace grillex
