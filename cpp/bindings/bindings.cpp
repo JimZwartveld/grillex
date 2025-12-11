@@ -11,6 +11,7 @@
 #include "grillex/beam_element.hpp"
 #include "grillex/dof_handler.hpp"
 #include "grillex/assembler.hpp"
+#include "grillex/boundary_condition.hpp"
 
 namespace py = pybind11;
 
@@ -477,5 +478,76 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def("__repr__", [](const grillex::Assembler &asm_) {
             return "<Assembler total_dofs=" +
                    std::to_string(asm_.get_dof_handler().total_dofs()) + ">";
+        });
+
+    // DOFIndex enum
+    py::enum_<grillex::DOFIndex>(m, "DOFIndex",
+        "Local DOF indices for beam elements")
+        .value("UX", grillex::DOFIndex::UX, "Translation in X direction")
+        .value("UY", grillex::DOFIndex::UY, "Translation in Y direction")
+        .value("UZ", grillex::DOFIndex::UZ, "Translation in Z direction")
+        .value("RX", grillex::DOFIndex::RX, "Rotation about X axis")
+        .value("RY", grillex::DOFIndex::RY, "Rotation about Y axis")
+        .value("RZ", grillex::DOFIndex::RZ, "Rotation about Z axis")
+        .value("WARP", grillex::DOFIndex::WARP, "Warping displacement (7th DOF)")
+        .export_values();
+
+    // FixedDOF struct
+    py::class_<grillex::FixedDOF>(m, "FixedDOF",
+        "Represents a fixed degree of freedom with optional prescribed value")
+        .def(py::init<int, int, double>(),
+             py::arg("node_id"),
+             py::arg("local_dof"),
+             py::arg("value") = 0.0,
+             "Construct a fixed DOF")
+        .def_readwrite("node_id", &grillex::FixedDOF::node_id,
+                      "Node ID where DOF is fixed")
+        .def_readwrite("local_dof", &grillex::FixedDOF::local_dof,
+                      "Local DOF index (0-6)")
+        .def_readwrite("value", &grillex::FixedDOF::value,
+                      "Prescribed value")
+        .def("__repr__", [](const grillex::FixedDOF &fd) {
+            return "<FixedDOF node=" + std::to_string(fd.node_id) +
+                   " dof=" + std::to_string(fd.local_dof) +
+                   " value=" + std::to_string(fd.value) + ">";
+        });
+
+    // BCHandler class
+    py::class_<grillex::BCHandler>(m, "BCHandler",
+        "Boundary Condition Handler for managing fixed DOFs and prescribed displacements")
+        .def(py::init<>(), "Construct an empty boundary condition handler")
+        .def("add_fixed_dof", &grillex::BCHandler::add_fixed_dof,
+             py::arg("node_id"),
+             py::arg("local_dof"),
+             py::arg("value") = 0.0,
+             "Add a single fixed DOF with optional prescribed value")
+        .def("fix_node", &grillex::BCHandler::fix_node,
+             py::arg("node_id"),
+             "Fix all 6 standard DOFs at a node (full fixity, no warping)")
+        .def("fix_node_with_warping", &grillex::BCHandler::fix_node_with_warping,
+             py::arg("node_id"),
+             "Fix all 7 DOFs at a node (including warping)")
+        .def("pin_node", &grillex::BCHandler::pin_node,
+             py::arg("node_id"),
+             "Fix only translations at a node (pin support)")
+        .def("fork_support", &grillex::BCHandler::fork_support,
+             py::arg("node_id"),
+             "Apply fork support (fix translations, free rotations and warping)")
+        .def("apply_to_system", &grillex::BCHandler::apply_to_system,
+             py::arg("K"),
+             py::arg("F"),
+             py::arg("dof_handler"),
+             "Apply boundary conditions to system matrices using penalty method")
+        .def("get_fixed_global_dofs", &grillex::BCHandler::get_fixed_global_dofs,
+             py::arg("dof_handler"),
+             "Get list of global DOF indices that are fixed")
+        .def("num_fixed_dofs", &grillex::BCHandler::num_fixed_dofs,
+             "Get number of fixed DOFs")
+        .def("clear", &grillex::BCHandler::clear,
+             "Clear all boundary conditions")
+        .def("get_fixed_dofs", &grillex::BCHandler::get_fixed_dofs,
+             "Get const reference to fixed DOFs list")
+        .def("__repr__", [](const grillex::BCHandler &bc) {
+            return "<BCHandler num_fixed=" + std::to_string(bc.num_fixed_dofs()) + ">";
         });
 }

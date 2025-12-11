@@ -16,6 +16,9 @@ This module provides Python-friendly access to the C++ core data structures:
 - WarpingDOFInfo: Information about warping DOF for element at node
 - WarpingCoupling: Group of coupled warping DOFs for collinear elements
 - Assembler: Assembles global stiffness and mass matrices from elements
+- DOFIndex: Enum for local DOF indices (UX, UY, UZ, RX, RY, RZ, WARP)
+- FixedDOF: Represents a fixed degree of freedom with prescribed value
+- BCHandler: Boundary condition handler for managing fixed DOFs
 """
 
 from grillex._grillex_cpp import (
@@ -34,7 +37,10 @@ from grillex._grillex_cpp import (
     DOFHandler,
     WarpingDOFInfo,
     WarpingCoupling,
-    Assembler
+    Assembler,
+    DOFIndex,
+    FixedDOF,
+    BCHandler
 )
 
 __all__ = [
@@ -43,5 +49,6 @@ __all__ = [
     'BeamConfig', 'BeamElementBase', 'create_beam_element',
     'are_elements_collinear',
     'DOFHandler', 'WarpingDOFInfo', 'WarpingCoupling',
-    'Assembler'
+    'Assembler',
+    'DOFIndex', 'FixedDOF', 'BCHandler'
 ]
