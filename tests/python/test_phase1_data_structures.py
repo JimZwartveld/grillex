@@ -38,12 +38,17 @@ class TestNodeClass:
         """DOF arrays are correctly initialized"""
         node = Node(3, 0.0, 0.0, 0.0)
 
-        # All DOFs should be active by default
-        assert len(node.dof_active) == 6
-        assert all(node.dof_active)
+        # DOF arrays should have size 7 (6 standard + 1 warping)
+        assert len(node.dof_active) == 7
+        assert len(node.global_dof_numbers) == 7
+
+        # First 6 DOFs should be active by default
+        assert all(node.dof_active[i] for i in range(6))
+
+        # Warping DOF (index 6) should be inactive by default
+        assert node.dof_active[6] == False
 
         # Global DOF numbers should be unassigned (-1)
-        assert len(node.global_dof_numbers) == 6
         assert all(dof == -1 for dof in node.global_dof_numbers)
 
 

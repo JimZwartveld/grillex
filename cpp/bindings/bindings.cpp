@@ -10,6 +10,7 @@
 #include "grillex/local_axes.hpp"
 #include "grillex/beam_element.hpp"
 #include "grillex/dof_handler.hpp"
+#include "grillex/assembler.hpp"
 
 namespace py = pybind11;
 
@@ -447,5 +448,30 @@ PYBIND11_MODULE(_grillex_cpp, m) {
             return "<DOFHandler total_dofs=" + std::to_string(dh.total_dofs()) +
                    " has_warping=" + (dh.has_warping_dofs() ? "True" : "False") +
                    " collinearity_tol=" + std::to_string(dh.get_collinearity_tolerance()) + "deg>";
+        });
+
+    // ========================================================================
+    // Phase 3: Assembly & Solver
+    // ========================================================================
+
+    // Assembler class
+    py::class_<grillex::Assembler>(m, "Assembler",
+        "Assembles global stiffness and mass matrices from element matrices")
+        .def(py::init<grillex::DOFHandler&>(),
+             py::arg("dof_handler"),
+             "Construct an Assembler with a DOFHandler",
+             py::keep_alive<1, 2>())  // Keep DOFHandler alive as long as Assembler exists
+        .def("assemble_stiffness", &grillex::Assembler::assemble_stiffness,
+             py::arg("elements"),
+             "Assemble global stiffness matrix from element stiffness matrices")
+        .def("assemble_mass", &grillex::Assembler::assemble_mass,
+             py::arg("elements"),
+             "Assemble global mass matrix from element mass matrices")
+        .def("get_dof_handler", &grillex::Assembler::get_dof_handler,
+             "Get the DOFHandler used by this assembler",
+             py::return_value_policy::reference_internal)
+        .def("__repr__", [](const grillex::Assembler &asm_) {
+            return "<Assembler total_dofs=" +
+                   std::to_string(asm_.get_dof_handler().total_dofs()) + ">";
         });
 }

@@ -5,7 +5,8 @@ from .data_types import (
     BeamElement, BeamFormulation, EndRelease,
     BeamConfig, BeamElementBase, create_beam_element,
     are_elements_collinear,
-    DOFHandler, WarpingDOFInfo, WarpingCoupling
+    DOFHandler, WarpingDOFInfo, WarpingCoupling,
+    Assembler
 )
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     'BeamElement', 'BeamFormulation', 'EndRelease',
     'BeamConfig', 'BeamElementBase', 'create_beam_element',
     'are_elements_collinear',
-    'DOFHandler', 'WarpingDOFInfo', 'WarpingCoupling'
+    'DOFHandler', 'WarpingDOFInfo', 'WarpingCoupling',
+    'Assembler'
 ]

@@ -15,6 +15,7 @@ This module provides Python-friendly access to the C++ core data structures:
 - DOFHandler: Global DOF numbering with element-specific warping support
 - WarpingDOFInfo: Information about warping DOF for element at node
 - WarpingCoupling: Group of coupled warping DOFs for collinear elements
+- Assembler: Assembles global stiffness and mass matrices from elements
 """
 
 from grillex._grillex_cpp import (
@@ -32,7 +33,8 @@ from grillex._grillex_cpp import (
     are_elements_collinear,
     DOFHandler,
     WarpingDOFInfo,
-    WarpingCoupling
+    WarpingCoupling,
+    Assembler
 )
 
 __all__ = [
@@ -40,5 +42,6 @@ __all__ = [
     'BeamElement', 'BeamFormulation', 'EndRelease',
     'BeamConfig', 'BeamElementBase', 'create_beam_element',
     'are_elements_collinear',
-    'DOFHandler', 'WarpingDOFInfo', 'WarpingCoupling'
+    'DOFHandler', 'WarpingDOFInfo', 'WarpingCoupling',
+    'Assembler'
 ]
