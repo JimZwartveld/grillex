@@ -425,12 +425,6 @@ public:
      */
     Eigen::Vector3d direction_vector() const;
 
-private:
-    /**
-     * @brief Compute element length from node positions
-     */
-    double compute_length() const;
-
     /**
      * @brief Compute 12x12 offset transformation matrix
      *
@@ -442,6 +436,22 @@ private:
      * @return Eigen::Matrix<double, 12, 12> Offset transformation matrix
      */
     Eigen::Matrix<double, 12, 12> offset_transformation_matrix() const;
+
+    /**
+     * @brief Compute 14x14 offset transformation matrix for warping elements
+     *
+     * Relates beam end DOFs to node DOFs for rigid offsets in warping elements.
+     * The warping DOF is not affected by offsets (identity transformation).
+     *
+     * @return Eigen::Matrix<double, 14, 14> Offset transformation matrix
+     */
+    Eigen::Matrix<double, 14, 14> offset_transformation_matrix_warping() const;
+
+private:
+    /**
+     * @brief Compute element length from node positions
+     */
+    double compute_length() const;
 
     /**
      * @brief Apply static condensation to remove released DOFs

@@ -336,6 +336,10 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Check if element has any offsets")
         .def("effective_length", &grillex::BeamElement::effective_length,
              "Compute effective beam length accounting for offsets [m]")
+        .def("offset_transformation_matrix", &grillex::BeamElement::offset_transformation_matrix,
+             "Compute 12x12 offset transformation matrix")
+        .def("offset_transformation_matrix_warping", &grillex::BeamElement::offset_transformation_matrix_warping,
+             "Compute 14x14 offset transformation matrix for warping elements")
         .def("local_stiffness_matrix_warping", &grillex::BeamElement::local_stiffness_matrix_warping,
              py::arg("formulation") = grillex::BeamFormulation::EulerBernoulli,
              "Compute 14x14 local stiffness matrix including warping DOF")

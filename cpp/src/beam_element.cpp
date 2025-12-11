@@ -400,6 +400,56 @@ Eigen::Matrix<double, 12, 12> BeamElement::offset_transformation_matrix() const 
     return T;
 }
 
+Eigen::Matrix<double, 14, 14> BeamElement::offset_transformation_matrix_warping() const {
+    Eigen::Matrix<double, 14, 14> T = Eigen::Matrix<double, 14, 14>::Identity();
+
+    if (!has_offsets()) {
+        return T;  // No transformation needed
+    }
+
+    // Build skew-symmetric matrices for cross products
+    // For offset r, the skew-symmetric matrix [r×] is:
+    //   [ 0   -rz   ry ]
+    //   [ rz   0   -rx ]
+    //   [-ry   rx   0  ]
+
+    // DOF ordering for 14×14:
+    // Node i: [0-2: UX UY UZ], [3-5: RX RY RZ], [6: WARP]
+    // Node j: [7-9: UX UY UZ], [10-12: RX RY RZ], [13: WARP]
+
+    // Transformation for end i
+    if (offset_i.norm() > 1e-12) {
+        Eigen::Matrix3d r_i_skew;
+        r_i_skew <<       0.0,     -offset_i(2),  offset_i(1),
+                     offset_i(2),       0.0,     -offset_i(0),
+                    -offset_i(1),  offset_i(0),      0.0;
+
+        // Translations couple with rotations via offset
+        // [I  -[r×]  0]  // 3x7 block for node i (trans coupled with rot, warp identity)
+        // [0   I     0]  // 3x7 block for rotations (identity)
+        // [0   0     1]  // 1x7 block for warping (identity, no coupling)
+        T.block<3, 3>(0, 3) = -r_i_skew;  // Coupling between translations and rotations
+        // Warping DOF (index 6) remains identity - no coupling with offsets
+    }
+
+    // Transformation for end j
+    if (offset_j.norm() > 1e-12) {
+        Eigen::Matrix3d r_j_skew;
+        r_j_skew <<       0.0,     -offset_j(2),  offset_j(1),
+                     offset_j(2),       0.0,     -offset_j(0),
+                    -offset_j(1),  offset_j(0),      0.0;
+
+        // Translations couple with rotations via offset
+        // [I  -[r×]  0]  // 3x7 block for node j
+        // [0   I     0]  // 3x7 block for rotations
+        // [0   0     1]  // 1x7 block for warping (identity)
+        T.block<3, 3>(7, 10) = -r_j_skew;  // Coupling between translations and rotations
+        // Warping DOF (index 13) remains identity - no coupling with offsets
+    }
+
+    return T;
+}
+
 Eigen::Matrix<double, 14, 14> BeamElement::local_stiffness_matrix_warping(
     BeamFormulation formulation) const {
     // Start with 14×14 zero matrix
@@ -504,8 +554,10 @@ Eigen::Matrix<double, 14, 14> BeamElement::local_stiffness_matrix_warping(
     K(13, 13) = k_tw_44;  // φ'_j, φ'_j
 
     // Apply offset transformation if offsets are present
-    // TODO: Implement offset transformation for 14×14 matrices
-    // For now, offsets are not supported with warping elements
+    if (has_offsets()) {
+        Eigen::Matrix<double, 14, 14> T_offset = offset_transformation_matrix_warping();
+        K = T_offset.transpose() * K * T_offset;
+    }
 
     // Apply end releases via static condensation
     if (releases.has_any_release()) {
@@ -580,8 +632,10 @@ Eigen::Matrix<double, 14, 14> BeamElement::local_mass_matrix_warping(
     // but this is usually omitted in practice
 
     // Apply offset transformation if offsets are present
-    // TODO: Implement offset transformation for 14×14 matrices
-    // For now, offsets are not supported with warping elements
+    if (has_offsets()) {
+        Eigen::Matrix<double, 14, 14> T_offset = offset_transformation_matrix_warping();
+        M = T_offset.transpose() * M * T_offset;
+    }
 
     // Apply end releases via static condensation
     if (releases.has_any_release()) {

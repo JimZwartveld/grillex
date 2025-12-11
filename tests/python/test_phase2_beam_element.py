@@ -17,7 +17,7 @@ Tests verify correct implementation of:
 
 import pytest
 import numpy as np
-from grillex.core import Node, NodeRegistry, Material, Section, LocalAxes, BeamElement, BeamFormulation
+from grillex.core import Node, NodeRegistry, Material, Section, LocalAxes, BeamElement, BeamFormulation, BeamConfig
 
 
 class TestLocalAxes:
@@ -1139,6 +1139,247 @@ class TestEndReleases:
         beam.releases.release_ry_i = True
         assert beam.releases.release_ry_i == True
         assert beam.releases.has_any_release() == True
+
+
+class TestWarpingOffsetTransformation:
+    """Tests for Task 2.7 extension: offset transformation for 14×14 matrices"""
+
+    def test_offset_transformation_matrix_warping_size(self):
+        """Offset transformation matrix for warping elements is 14×14"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 6.0, 0.0, 0.0)
+
+        node_i.enable_warping_dof()
+        node_j.enable_warping_dof()
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "I-Beam", A=0.01, Iy=2e-4, Iz=5e-5, J=1e-5)
+        sec.enable_warping(1e-6, 0.1)
+
+        config = BeamConfig()
+        config.include_warping = True
+        beam = BeamElement(1, node_i, node_j, mat, sec, config)
+
+        # Set an offset
+        beam.offset_i = np.array([0.0, 0.2, 0.0])
+
+        # Get offset transformation matrix
+        T = beam.offset_transformation_matrix_warping()
+
+        # Should be 14×14
+        assert T.shape == (14, 14)
+
+    def test_offset_transformation_matrix_warping_no_offsets(self):
+        """With no offsets, transformation matrix is identity"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 6.0, 0.0, 0.0)
+
+        node_i.enable_warping_dof()
+        node_j.enable_warping_dof()
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "I-Beam", A=0.01, Iy=2e-4, Iz=5e-5, J=1e-5)
+        sec.enable_warping(1e-6, 0.1)
+
+        config = BeamConfig()
+        config.include_warping = True
+        beam = BeamElement(1, node_i, node_j, mat, sec, config)
+
+        # No offsets (default is zero)
+        T = beam.offset_transformation_matrix_warping()
+
+        # Should be identity matrix
+        I = np.eye(14)
+        np.testing.assert_allclose(T, I, rtol=1e-12)
+
+    def test_offset_transformation_warping_dof_uncoupled(self):
+        """Warping DOFs are not coupled with offsets (identity transformation)"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 6.0, 0.0, 0.0)
+
+        node_i.enable_warping_dof()
+        node_j.enable_warping_dof()
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "I-Beam", A=0.01, Iy=2e-4, Iz=5e-5, J=1e-5)
+        sec.enable_warping(1e-6, 0.1)
+
+        config = BeamConfig()
+        config.include_warping = True
+        beam = BeamElement(1, node_i, node_j, mat, sec, config)
+
+        # Set offsets at both ends
+        beam.offset_i = np.array([0.0, 0.3, 0.1])
+        beam.offset_j = np.array([0.0, -0.2, 0.15])
+
+        T = beam.offset_transformation_matrix_warping()
+
+        # Warping DOF rows (6 and 13) should be identity
+        # Row 6 should be [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
+        assert T[6, 6] == 1.0
+        for j in range(14):
+            if j != 6:
+                assert abs(T[6, j]) < 1e-12, f"T[6,{j}] should be zero"
+
+        # Row 13 should be [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+        assert T[13, 13] == 1.0
+        for j in range(14):
+            if j != 13:
+                assert abs(T[13, j]) < 1e-12, f"T[13,{j}] should be zero"
+
+    def test_offset_transformation_translation_rotation_coupling(self):
+        """Offsets create coupling between translations and rotations (not warping)"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 6.0, 0.0, 0.0)
+
+        node_i.enable_warping_dof()
+        node_j.enable_warping_dof()
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "I-Beam", A=0.01, Iy=2e-4, Iz=5e-5, J=1e-5)
+        sec.enable_warping(1e-6, 0.1)
+
+        config = BeamConfig()
+        config.include_warping = True
+        beam = BeamElement(1, node_i, node_j, mat, sec, config)
+
+        # Set offset at node i in Z direction
+        beam.offset_i = np.array([0.0, 0.0, 0.5])
+
+        T = beam.offset_transformation_matrix_warping()
+
+        # Translation-rotation coupling should exist
+        # T[0:3, 3:6] should be non-zero (skew-symmetric matrix)
+        # For offset in Z, should see coupling with RX and RY
+        assert abs(T[0, 4]) > 1e-6 or abs(T[0, 5]) > 1e-6, "Should have trans-rot coupling"
+
+    def test_stiffness_with_offsets_and_warping(self):
+        """Stiffness matrix with offsets and warping is symmetric"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 6.0, 0.0, 0.0)
+
+        node_i.enable_warping_dof()
+        node_j.enable_warping_dof()
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "I-Beam", A=0.01, Iy=2e-4, Iz=5e-5, J=1e-5)
+        sec.enable_warping(1e-6, 0.1)
+
+        config = BeamConfig()
+        config.include_warping = True
+        beam = BeamElement(1, node_i, node_j, mat, sec, config)
+
+        # Set offsets
+        beam.offset_i = np.array([0.0, 0.2, 0.1])
+        beam.offset_j = np.array([0.0, -0.15, 0.2])
+
+        K = beam.local_stiffness_matrix_warping()
+
+        # Should be symmetric
+        np.testing.assert_allclose(K, K.T, rtol=1e-10)
+
+    def test_mass_with_offsets_and_warping(self):
+        """Mass matrix with offsets and warping is symmetric"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 6.0, 0.0, 0.0)
+
+        node_i.enable_warping_dof()
+        node_j.enable_warping_dof()
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "I-Beam", A=0.01, Iy=2e-4, Iz=5e-5, J=1e-5)
+        sec.enable_warping(1e-6, 0.1)
+
+        config = BeamConfig()
+        config.include_warping = True
+        beam = BeamElement(1, node_i, node_j, mat, sec, config)
+
+        # Set offsets
+        beam.offset_i = np.array([0.0, 0.25, 0.0])
+
+        M = beam.local_mass_matrix_warping()
+
+        # Should be symmetric
+        np.testing.assert_allclose(M, M.T, rtol=1e-10)
+
+    def test_global_matrices_with_offsets_and_warping(self):
+        """Global stiffness and mass matrices work with offsets and warping"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 6.0, 0.0, 0.0)
+
+        node_i.enable_warping_dof()
+        node_j.enable_warping_dof()
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "I-Beam", A=0.01, Iy=2e-4, Iz=5e-5, J=1e-5)
+        sec.enable_warping(1e-6, 0.1)
+
+        config = BeamConfig()
+        config.include_warping = True
+        beam = BeamElement(1, node_i, node_j, mat, sec, config)
+
+        # Set offsets
+        beam.offset_i = np.array([0.0, 0.3, 0.0])
+        beam.offset_j = np.array([0.0, -0.2, 0.0])
+
+        K_global = beam.global_stiffness_matrix_warping()
+        M_global = beam.global_mass_matrix_warping()
+
+        # Both should be symmetric
+        np.testing.assert_allclose(K_global, K_global.T, rtol=1e-10)
+        np.testing.assert_allclose(M_global, M_global.T, rtol=1e-10)
+
+        # Verify matrices are well-formed
+        # Stiffness should have non-zero diagonal
+        assert np.all(np.abs(np.diag(K_global)) > 1e-12), "Stiffness should have non-zero diagonal"
+
+        # Mass matrix warping DOF (indices 6 and 13) are zero (expected - warping inertia neglected)
+        # All other diagonal terms should be positive
+        for i in range(14):
+            if i not in [6, 13]:
+                assert np.abs(M_global[i, i]) > 1e-12, f"Mass diagonal at {i} should be non-zero"
+
+    def test_offset_consistency_12dof_vs_14dof(self):
+        """Offset behavior is consistent between 12-DOF and 14-DOF elements"""
+        node_i = Node(1, 0.0, 0.0, 0.0)
+        node_j = Node(2, 6.0, 0.0, 0.0)
+
+        # Enable warping for 14-DOF test
+        node_i.enable_warping_dof()
+        node_j.enable_warping_dof()
+
+        mat = Material(1, "Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        sec = Section(1, "I-Beam", A=0.01, Iy=2e-4, Iz=5e-5, J=1e-5)
+        sec.enable_warping(1e-6, 0.1)
+
+        # Create 12-DOF beam with offset
+        beam_12 = BeamElement(1, node_i, node_j, mat, sec)
+        beam_12.offset_i = np.array([0.0, 0.2, 0.0])
+
+        # Create 14-DOF beam with same offset
+        config = BeamConfig()
+        config.include_warping = True
+        beam_14 = BeamElement(2, node_i, node_j, mat, sec, config)
+        beam_14.offset_i = np.array([0.0, 0.2, 0.0])
+
+        K_12 = beam_12.local_stiffness_matrix()
+        K_14 = beam_14.local_stiffness_matrix_warping()
+
+        # Extract the 12×12 sub-block from the 14×14 matrix
+        # Mapping: [0-2, 3-5] from 12×12 → [0-2, 3-5] in 14×14 (node i without warp)
+        #          [6-8, 9-11] from 12×12 → [7-9, 10-12] in 14×14 (node j without warp)
+
+        # Check translation terms (should match exactly)
+        np.testing.assert_allclose(K_14[0:3, 0:3], K_12[0:3, 0:3], rtol=1e-10)
+        np.testing.assert_allclose(K_14[0:3, 7:10], K_12[0:3, 6:9], rtol=1e-10)
+        np.testing.assert_allclose(K_14[7:10, 0:3], K_12[6:9, 0:3], rtol=1e-10)
+        np.testing.assert_allclose(K_14[7:10, 7:10], K_12[6:9, 6:9], rtol=1e-10)
+
+        # Bending terms (RY) should match
+        # RY at node i: index 4 in both
+        np.testing.assert_allclose(K_14[4, 4], K_12[4, 4], rtol=1e-10)
+
+        # Note: Torsion (RX and RZ) will differ because 14-DOF includes warping torsion coupling
 
 
 if __name__ == "__main__":
