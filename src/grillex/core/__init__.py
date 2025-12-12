@@ -7,7 +7,8 @@ from .data_types import (
     are_elements_collinear,
     DOFHandler, WarpingDOFInfo, WarpingCoupling,
     Assembler,
-    DOFIndex, FixedDOF, BCHandler
+    DOFIndex, FixedDOF, BCHandler,
+    SolverMethod, LinearSolver
 )
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     'are_elements_collinear',
     'DOFHandler', 'WarpingDOFInfo', 'WarpingCoupling',
     'Assembler',
-    'DOFIndex', 'FixedDOF', 'BCHandler'
+    'DOFIndex', 'FixedDOF', 'BCHandler',
+    'SolverMethod', 'LinearSolver'
 ]

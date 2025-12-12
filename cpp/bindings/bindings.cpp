@@ -12,6 +12,7 @@
 #include "grillex/dof_handler.hpp"
 #include "grillex/assembler.hpp"
 #include "grillex/boundary_condition.hpp"
+#include "grillex/solver.hpp"
 
 namespace py = pybind11;
 
@@ -549,5 +550,67 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Get const reference to fixed DOFs list")
         .def("__repr__", [](const grillex::BCHandler &bc) {
             return "<BCHandler num_fixed=" + std::to_string(bc.num_fixed_dofs()) + ">";
+        });
+
+    // ========================================================================
+    // Phase 3 (continued): Linear Solver
+    // ========================================================================
+
+    // LinearSolver::Method enum
+    py::enum_<grillex::LinearSolver::Method>(m, "SolverMethod",
+        "Solver method for linear systems")
+        .value("SparseLU", grillex::LinearSolver::Method::SparseLU,
+               "Direct solver using SparseLU (general sparse matrices)")
+        .value("SimplicialLDLT", grillex::LinearSolver::Method::SimplicialLDLT,
+               "Direct solver using SimplicialLDLT (symmetric matrices, default)")
+        .value("ConjugateGradient", grillex::LinearSolver::Method::ConjugateGradient,
+               "Iterative solver using Conjugate Gradient (large systems)")
+        .export_values();
+
+    // LinearSolver class
+    py::class_<grillex::LinearSolver>(m, "LinearSolver",
+        "Linear solver for finite element systems K * u = F")
+        .def(py::init<grillex::LinearSolver::Method>(),
+             py::arg("method") = grillex::LinearSolver::Method::SimplicialLDLT,
+             "Construct a linear solver with specified method (default: SimplicialLDLT)")
+        .def("solve", &grillex::LinearSolver::solve,
+             py::arg("K"),
+             py::arg("F"),
+             "Solve linear system K * u = F, returns displacement vector u")
+        .def("is_singular", &grillex::LinearSolver::is_singular,
+             "Check if the last solve detected a singular system")
+        .def("get_error_message", &grillex::LinearSolver::get_error_message,
+             "Get error message from last solve (empty if no error)")
+        .def("get_method", &grillex::LinearSolver::get_method,
+             "Get current solver method")
+        .def("set_method", &grillex::LinearSolver::set_method,
+             py::arg("method"),
+             "Set solver method")
+        .def("get_iterations", &grillex::LinearSolver::get_iterations,
+             "Get number of iterations (for iterative solvers, 1 for direct solvers)")
+        .def("get_error", &grillex::LinearSolver::get_error,
+             "Get estimated error (for iterative solvers, 0.0 for direct solvers)")
+        .def("set_max_iterations", &grillex::LinearSolver::set_max_iterations,
+             py::arg("max_iter"),
+             "Set maximum iterations for iterative solvers (default: 1000)")
+        .def("set_tolerance", &grillex::LinearSolver::set_tolerance,
+             py::arg("tol"),
+             "Set convergence tolerance for iterative solvers (default: 1e-10)")
+        .def("__repr__", [](const grillex::LinearSolver &s) {
+            std::string method_name;
+            switch (s.get_method()) {
+                case grillex::LinearSolver::Method::SparseLU:
+                    method_name = "SparseLU";
+                    break;
+                case grillex::LinearSolver::Method::SimplicialLDLT:
+                    method_name = "SimplicialLDLT";
+                    break;
+                case grillex::LinearSolver::Method::ConjugateGradient:
+                    method_name = "ConjugateGradient";
+                    break;
+                default:
+                    method_name = "Unknown";
+            }
+            return "<LinearSolver method=" + method_name + ">";
         });
 }

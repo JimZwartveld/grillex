@@ -19,6 +19,8 @@ This module provides Python-friendly access to the C++ core data structures:
 - DOFIndex: Enum for local DOF indices (UX, UY, UZ, RX, RY, RZ, WARP)
 - FixedDOF: Represents a fixed degree of freedom with prescribed value
 - BCHandler: Boundary condition handler for managing fixed DOFs
+- SolverMethod: Enum for linear solver methods (SparseLU, SimplicialLDLT, ConjugateGradient)
+- LinearSolver: Linear solver for finite element systems (K * u = F)
 """
 
 from grillex._grillex_cpp import (
@@ -40,7 +42,9 @@ from grillex._grillex_cpp import (
     Assembler,
     DOFIndex,
     FixedDOF,
-    BCHandler
+    BCHandler,
+    SolverMethod,
+    LinearSolver
 )
 
 __all__ = [
@@ -50,5 +54,6 @@ __all__ = [
     'are_elements_collinear',
     'DOFHandler', 'WarpingDOFInfo', 'WarpingCoupling',
     'Assembler',
-    'DOFIndex', 'FixedDOF', 'BCHandler'
+    'DOFIndex', 'FixedDOF', 'BCHandler',
+    'SolverMethod', 'LinearSolver'
 ]
