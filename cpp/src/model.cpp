@@ -31,37 +31,76 @@ BeamElement* Model::create_beam(Node* node_i, Node* node_j,
     return ptr;
 }
 
-void Model::add_nodal_load(int node_id, int local_dof, double value) {
-    // Check if load already exists for this node/DOF
+// Load case management
+
+LoadCase* Model::create_load_case(const std::string& name, LoadCaseType type) {
+    auto lc = std::make_unique<LoadCase>(next_load_case_id_++, name, type);
+    LoadCase* ptr = lc.get();
+    load_cases_.push_back(std::move(lc));
+
+    // If this is the first load case, make it active
+    if (load_cases_.size() == 1) {
+        active_load_case_ = ptr;
+    }
+
+    // Mark as not analyzed
+    analyzed_ = false;
+
+    return ptr;
+}
+
+LoadCase* Model::get_default_load_case() {
+    ensure_default_load_case();
+    return default_load_case_;
+}
+
+void Model::ensure_default_load_case() {
+    if (default_load_case_ == nullptr) {
+        default_load_case_ = create_load_case("Default", LoadCaseType::Permanent);
+    }
+}
+
+void Model::set_active_load_case(LoadCase* load_case) {
+    // Verify load case belongs to this model
     bool found = false;
-    for (auto& load : nodal_loads_) {
-        if (std::get<0>(load) == node_id && std::get<1>(load) == local_dof) {
-            // Accumulate load
-            std::get<2>(load) += value;
+    for (const auto& lc : load_cases_) {
+        if (lc.get() == load_case) {
             found = true;
             break;
         }
     }
 
     if (!found) {
-        nodal_loads_.push_back(std::make_tuple(node_id, local_dof, value));
+        throw std::runtime_error("LoadCase does not belong to this Model");
     }
 
-    // Mark as not analyzed (need to re-analyze)
-    analyzed_ = false;
+    active_load_case_ = load_case;
 }
 
-void Model::clear_loads() {
-    nodal_loads_.clear();
-    analyzed_ = false;
+std::vector<LoadCase*> Model::get_load_cases() const {
+    std::vector<LoadCase*> result;
+    result.reserve(load_cases_.size());
+    for (const auto& lc : load_cases_) {
+        result.push_back(lc.get());
+    }
+    return result;
+}
+
+const LoadCaseResult& Model::get_result(LoadCase* load_case) const {
+    auto it = results_.find(load_case->id());
+    if (it == results_.end()) {
+        throw std::runtime_error("Result not found for load case: " + load_case->name() +
+                                ". Make sure analyze() has been called.");
+    }
+
+    return it->second;
 }
 
 bool Model::analyze() {
     // Reset state
     analyzed_ = false;
     error_msg_ = "";
-    displacements_ = Eigen::VectorXd();
-    reactions_ = Eigen::VectorXd();
+    results_.clear();
     total_dofs_ = 0;
 
     try {
@@ -71,8 +110,12 @@ bool Model::analyze() {
             return false;
         }
 
-        // Step 1: Number DOFs
-        // Check if we need element-specific warping DOF handling
+        if (load_cases_.empty()) {
+            error_msg_ = "No load cases defined. Create at least one load case.";
+            return false;
+        }
+
+        // Step 1: Number DOFs (same for all cases)
         bool has_warping = needs_warping_analysis();
 
         if (has_warping) {
@@ -95,7 +138,7 @@ bool Model::analyze() {
             return false;
         }
 
-        // Step 2: Assemble global stiffness matrix
+        // Step 2: Assemble global stiffness matrix (same for all cases)
         assembler_ = std::make_unique<Assembler>(dof_handler_);
 
         std::vector<BeamElement*> elem_ptrs;
@@ -106,61 +149,63 @@ bool Model::analyze() {
 
         Eigen::SparseMatrix<double> K = assembler_->assemble_stiffness(elem_ptrs);
 
-        // Step 3: Build load vector
-        Eigen::VectorXd F = build_load_vector();
+        // Step 3: Analyze each load case
+        bool all_success = true;
 
-        // Store original K and F for reaction computation
-        Eigen::SparseMatrix<double> K_original = K;
-        Eigen::VectorXd F_applied = F;
+        for (const auto& lc_ptr : load_cases_) {
+            LoadCase* lc = lc_ptr.get();
+            LoadCaseResult result(lc);
 
-        // Step 4: Apply boundary conditions
-        auto [K_mod, F_mod] = boundary_conditions.apply_to_system(K, F, dof_handler_);
+            try {
+                // Assemble load vector for this case
+                Eigen::VectorXd F = lc->assemble_load_vector(*this, dof_handler_);
+                Eigen::VectorXd F_applied = F;  // Store for reactions
 
-        // Step 5: Solve linear system
-        displacements_ = solver_.solve(K_mod, F_mod);
+                // Apply boundary conditions (same K structure, modifies values)
+                Eigen::SparseMatrix<double> K_bc = K;  // Copy K for modification
+                Eigen::VectorXd F_bc = F;              // Copy F for modification
+                auto [K_mod, F_mod] = boundary_conditions.apply_to_system(K_bc, F_bc, dof_handler_);
 
-        if (solver_.is_singular()) {
-            error_msg_ = "Solver detected singular system: " + solver_.get_error_message();
-            return false;
+                // Solve
+                result.displacements = solver_.solve(K_mod, F_mod);
+
+                if (solver_.is_singular()) {
+                    result.success = false;
+                    result.error_message = "Solver detected singular system: " + solver_.get_error_message();
+                    all_success = false;
+                } else {
+                    result.success = true;
+
+                    // Compute reactions: R = K * u - F_applied
+                    result.reactions = K * result.displacements - F_applied;
+                }
+
+            } catch (const std::exception& e) {
+                result.success = false;
+                result.error_message = std::string("Load case analysis failed: ") + e.what();
+                all_success = false;
+            }
+
+            results_[lc->id()] = result;
         }
 
-        // Step 6: Compute reactions
-        compute_reactions(K_original, F_applied);
+        analyzed_ = all_success;
 
-        // Success
-        analyzed_ = true;
-        return true;
+        if (!all_success) {
+            error_msg_ = "One or more load cases failed to analyze";
+        }
+
+        // Ensure there's an active load case
+        if (active_load_case_ == nullptr && !load_cases_.empty()) {
+            active_load_case_ = load_cases_[0].get();
+        }
+
+        return all_success;
 
     } catch (const std::exception& e) {
         error_msg_ = std::string("Analysis failed: ") + e.what();
         return false;
     }
-}
-
-Eigen::VectorXd Model::build_load_vector() const {
-    Eigen::VectorXd F = Eigen::VectorXd::Zero(total_dofs_);
-
-    for (const auto& load : nodal_loads_) {
-        int node_id = std::get<0>(load);
-        int local_dof = std::get<1>(load);
-        double value = std::get<2>(load);
-
-        // Get global DOF number
-        int global_dof = dof_handler_.get_global_dof(node_id, local_dof);
-
-        if (global_dof >= 0 && global_dof < total_dofs_) {
-            F(global_dof) += value;
-        }
-    }
-
-    return F;
-}
-
-void Model::compute_reactions(const Eigen::SparseMatrix<double>& K_original,
-                              const Eigen::VectorXd& F_applied) {
-    // Reactions: R = K * u - F_applied
-    // Only non-zero at constrained DOFs
-    reactions_ = K_original * displacements_ - F_applied;
 }
 
 bool Model::needs_warping_analysis() const {
@@ -176,12 +221,29 @@ Eigen::VectorXd Model::get_displacements() const {
     if (!analyzed_) {
         throw std::runtime_error("Model not analyzed. Call analyze() first.");
     }
-    return displacements_;
+    if (active_load_case_ == nullptr) {
+        throw std::runtime_error("No active load case. Call set_active_load_case() first.");
+    }
+
+    const auto& result = get_result(active_load_case_);
+    if (!result.success) {
+        throw std::runtime_error("Active load case analysis failed: " + result.error_message);
+    }
+
+    return result.displacements;
 }
 
 double Model::get_node_displacement(int node_id, int local_dof) const {
     if (!analyzed_) {
         throw std::runtime_error("Model not analyzed. Call analyze() first.");
+    }
+    if (active_load_case_ == nullptr) {
+        throw std::runtime_error("No active load case. Call set_active_load_case() first.");
+    }
+
+    const auto& result = get_result(active_load_case_);
+    if (!result.success) {
+        throw std::runtime_error("Active load case analysis failed: " + result.error_message);
     }
 
     int global_dof = dof_handler_.get_global_dof(node_id, local_dof);
@@ -191,36 +253,47 @@ double Model::get_node_displacement(int node_id, int local_dof) const {
         return 0.0;
     }
 
-    if (global_dof >= displacements_.size()) {
+    if (global_dof >= result.displacements.size()) {
         throw std::runtime_error("Invalid global DOF index");
     }
 
-    return displacements_(global_dof);
+    return result.displacements(global_dof);
 }
 
 Eigen::VectorXd Model::get_reactions() const {
     if (!analyzed_) {
         throw std::runtime_error("Model not analyzed. Call analyze() first.");
     }
-    return reactions_;
+    if (active_load_case_ == nullptr) {
+        throw std::runtime_error("No active load case. Call set_active_load_case() first.");
+    }
+
+    const auto& result = get_result(active_load_case_);
+    if (!result.success) {
+        throw std::runtime_error("Active load case analysis failed: " + result.error_message);
+    }
+
+    return result.reactions;
 }
 
 void Model::clear() {
     materials.clear();
     sections.clear();
     elements.clear();
-    nodal_loads_.clear();
+    load_cases_.clear();
     boundary_conditions.clear();
 
     analyzed_ = false;
     total_dofs_ = 0;
-    displacements_ = Eigen::VectorXd();
-    reactions_ = Eigen::VectorXd();
+    results_.clear();
     error_msg_ = "";
+    default_load_case_ = nullptr;
+    active_load_case_ = nullptr;
 
     next_material_id_ = 1;
     next_section_id_ = 1;
     next_element_id_ = 1;
+    next_load_case_id_ = 1;
 }
 
 } // namespace grillex

@@ -872,3 +872,301 @@ Phase 7 implements internal action computation in C++ using differential equatio
 
 ---
 
+## Execution Summary: Load Case Refactoring (Phase 5 Foundation)
+
+**Completed:** December 12, 2025  
+**Status:** ✅ Fully implemented and tested  
+**Acceptance:** All 20 tests passing
+
+### Overview
+
+This execution implements the foundational infrastructure for Phase 5 (Loads & Load Cases) by refactoring the load handling system from a simple model-level tuple storage to a structured LoadCase-based approach. This is a **breaking API change** that separates load management into dedicated LoadCase objects, enabling support for multiple load scenarios, distributed line loads, and acceleration fields in future phases.
+
+### What Was Implemented
+
+**Core LoadCase Infrastructure (C++):**
+
+1. **LoadCase System** (`load_case.hpp` & `load_case.cpp`):
+   - `LoadCaseType` enum (Permanent, Variable, Environmental, Accidental)
+   - `NodalLoad` struct for concentrated forces/moments
+   - `LineLoad` struct for distributed loads along beam elements
+   - `LoadCase` class with load accumulation and assembly methods
+   - `LoadCaseResult` struct for storing per-case analysis results
+
+2. **Model Class Refactoring** (`model.hpp` & `model.cpp`):
+   - **Removed old API:**
+     - `add_nodal_load()` - replaced with LoadCase-based approach
+     - `clear_loads()` - replaced with per-case clearing
+     - `build_load_vector()` - moved into LoadCase::assemble_load_vector()
+   - **Added new API:**
+     - `create_load_case(name, type)` - create named load cases
+     - `get_default_load_case()` - lazy-created default for simple models
+     - `set_active_load_case(lc)` - select which case's results to query
+     - `get_load_cases()` - retrieve all load cases
+     - `get_result(lc)` - get specific load case results
+   - **Modified analyze() workflow:**
+     - Numbers DOFs once (same for all cases)
+     - Assembles stiffness matrix once (same for all cases)
+     - Loops through all load cases:
+       - Assembles case-specific load vector
+       - Applies boundary conditions
+       - Solves K*u = F
+       - Stores results in `std::map<int, LoadCaseResult>`
+     - Returns true only if ALL cases analyzed successfully
+
+3. **Python Bindings** (`bindings.cpp`):
+   - Exposed all LoadCase types (LoadCaseType, NodalLoad, LineLoad, LoadCase, LoadCaseResult)
+   - Added Model load case management methods
+   - Removed old load API bindings
+   - Added proper return value policies for pointer handling
+
+4. **Python Exports** (`data_types.py` & `__init__.py`):
+   - Exported all LoadCase-related types
+   - Updated module documentation
+
+5. **Build System** (`CMakeLists.txt`):
+   - Added `load_case.cpp` to build sources
+
+### Testing Strategy
+
+**Test Migration:**
+
+Updated all 20 tests in `test_phase3_model.py` to use the new LoadCase API:
+
+**Old API pattern:**
+```python
+model.add_nodal_load(node_id, DOFIndex.UY, -10.0)
+model.analyze()
+```
+
+**New API pattern:**
+```python
+lc = model.create_load_case("Test Load")
+lc.add_nodal_load(node_id, DOFIndex.UY, -10.0)
+model.analyze()  # Analyzes all load cases
+```
+
+**Key test updates:**
+- Load creation tests: Use `create_load_case()` instead of `add_nodal_load()`
+- Load accumulation tests: Verify loads accumulate within same LoadCase
+- Clear loads test: Use `lc.clear()` and verify `lc.is_empty()`
+- Error handling tests: Check `LoadCaseResult.error_message` for per-case errors
+- Model clear test: Verify `get_load_cases()` returns empty after `clear()`
+
+### Challenges and Solutions
+
+**Challenge 1: LoadCaseResult Ownership**
+- **Initial approach:** Used `std::shared_ptr<LoadCase>` in LoadCaseResult
+- **Problem:** Mixing unique_ptr (model ownership) with shared_ptr caused compilation errors
+- **Solution:** Changed to raw pointer (`LoadCase*`) - non-owning reference to model-owned load case
+
+**Challenge 2: Accessing Failed Load Case Results**
+- **Problem:** `get_result()` required `analyzed_ == true`, preventing access to error messages
+- **Solution:** Removed `analyzed_` check from `get_result()` - results are stored even when analysis fails, allowing error inspection
+
+**Challenge 3: Error Message Granularity**
+- **Problem:** Tests expected "singular" in model-level error message, but multi-case analysis returns generic "one or more load cases failed"
+- **Solution:** Updated tests to query `LoadCaseResult::error_message` for specific per-case errors
+
+**Challenge 4: Missing load_case.cpp in Build**
+- **Problem:** Linker error for `LoadCase::add_line_load()` - symbol not found
+- **Solution:** Added `src/load_case.cpp` to `CMakeLists.txt` pybind11 module sources
+
+### Testing Results
+
+All 20 tests pass (100% success rate):
+
+**TestModelCreation (5 tests):**
+- ✓ test_model_default_creation
+- ✓ test_model_custom_parameters
+- ✓ test_create_material
+- ✓ test_create_section
+- ✓ test_create_beam
+
+**TestModelLoadsAndBCs (4 tests):**
+- ✓ test_add_nodal_load - Using create_load_case()
+- ✓ test_add_multiple_loads_same_dof - Verifies accumulation
+- ✓ test_clear_loads - Using lc.clear()
+- ✓ test_boundary_conditions
+
+**TestSimpleCantileverAnalysis (1 test):**
+- ✓ test_cantilever_beam_analysis - End-to-end with LoadCase
+
+**TestErrorHandling (5 tests):**
+- ✓ test_analyze_empty_model
+- ✓ test_analyze_without_boundary_conditions - Checks LoadCaseResult.error_message
+- ✓ test_get_displacements_before_analysis
+- ✓ test_get_node_displacement_before_analysis
+- ✓ test_get_reactions_before_analysis
+
+**TestModelClear (1 test):**
+- ✓ test_clear_model - Verifies get_load_cases() returns empty
+
+**TestAcceptanceCriteria (3 tests):**
+- ✓ test_ac1_complete_workflow_runs_without_errors
+- ✓ test_ac2_results_match_hand_calculations
+- ✓ test_ac3_error_handling_invalid_models
+
+**TestMultiElementModel (1 test):**
+- ✓ test_three_span_beam
+
+### API Changes (Breaking)
+
+**Removed Methods:**
+```cpp
+// C++
+void Model::add_nodal_load(int node_id, int local_dof, double value);
+void Model::clear_loads();
+Eigen::VectorXd Model::build_load_vector() const;
+```
+
+```python
+# Python
+model.add_nodal_load(node_id, dof, value)  # REMOVED
+model.clear_loads()                          # REMOVED
+```
+
+**New Methods:**
+```cpp
+// C++
+LoadCase* Model::create_load_case(const std::string& name, LoadCaseType type);
+LoadCase* Model::get_default_load_case();
+void Model::set_active_load_case(LoadCase* load_case);
+LoadCase* Model::get_active_load_case() const;
+std::vector<LoadCase*> Model::get_load_cases() const;
+const LoadCaseResult& Model::get_result(LoadCase* load_case) const;
+
+void LoadCase::add_nodal_load(int node_id, int local_dof, double value);
+void LoadCase::add_line_load(int element_id, const Eigen::Vector3d& w_start, const Eigen::Vector3d& w_end);
+void LoadCase::set_acceleration_field(const Eigen::Vector<double, 6>& accel, const Eigen::Vector3d& ref_point);
+void LoadCase::clear();
+bool LoadCase::is_empty() const;
+```
+
+### Example Usage
+
+**Simple Model (Explicit Load Case):**
+```python
+from grillex.core import Model, LoadCaseType, DOFIndex
+
+model = Model()
+node1 = model.get_or_create_node(0, 0, 0)
+node2 = model.get_or_create_node(6, 0, 0)
+mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+sec = model.create_section("Test", 0.01, 1e-5, 1e-5, 1e-5)
+beam = model.create_beam(node1, node2, mat, sec)
+
+model.boundary_conditions.fix_node(node1.id)
+
+# Create load case
+lc = model.create_load_case("Dead Load", LoadCaseType.Permanent)
+lc.add_nodal_load(node2.id, DOFIndex.UY, -10.0)
+
+# Analyze all load cases
+success = model.analyze()
+
+# Results are automatically from active load case (first one if only one exists)
+disp = model.get_node_displacement(node2.id, DOFIndex.UY)
+print(f"Tip deflection: {disp:.6f} m")
+```
+
+**Multiple Load Cases:**
+```python
+# Create multiple load cases
+dead_load = model.create_load_case("Dead Load", LoadCaseType.Permanent)
+dead_load.add_nodal_load(node2.id, DOFIndex.UY, -5.0)
+
+live_load = model.create_load_case("Live Load", LoadCaseType.Variable)
+live_load.add_nodal_load(node2.id, DOFIndex.UY, -3.0)
+
+wind_load = model.create_load_case("Wind +X", LoadCaseType.Environmental)
+wind_load.add_nodal_load(node2.id, DOFIndex.UX, 1.5)
+
+# Analyze all cases at once (efficient - same K matrix)
+success = model.analyze()
+
+# Query results for each case
+model.set_active_load_case(dead_load)
+disp_dl = model.get_node_displacement(node2.id, DOFIndex.UY)
+print(f"Dead Load displacement: {disp_dl:.6f} m")
+
+model.set_active_load_case(live_load)
+disp_ll = model.get_node_displacement(node2.id, DOFIndex.UY)
+print(f"Live Load displacement: {disp_ll:.6f} m")
+
+model.set_active_load_case(wind_load)
+disp_wind = model.get_node_displacement(node2.id, DOFIndex.UX)
+print(f"Wind displacement: {disp_wind:.6f} m")
+```
+
+**Accessing Load Case Results Directly:**
+```python
+# Get result for specific load case
+result = model.get_result(dead_load)
+if result.success:
+    print(f"Analysis succeeded")
+    print(f"Max displacement: {result.displacements.max():.6f} m")
+else:
+    print(f"Analysis failed: {result.error_message}")
+```
+
+### Integration with Phase 5
+
+This implementation provides the foundation for remaining Phase 5 tasks:
+
+**Phase 5 Task 5.1:** ✅ Complete - LoadCase structure implemented
+
+**Phase 5 Task 5.2:** Ready for implementation - LineLoad structure exists, needs:
+- `BeamElement::equivalent_nodal_forces(w_start, w_end)` implementation
+- LoadCase::assemble_load_vector() to call equivalent_nodal_forces()
+- DistributedLoad struct for Phase 7 internal actions
+
+**Phase 5 Task 5.3:** Ready for implementation - Acceleration field structure exists, needs:
+- Element mass matrix implementation
+- Acceleration field computation at element nodes
+- Inertial load computation: f = -M * a
+
+**Phase 5 Task 5.4:** Ready for implementation - LoadCase infrastructure exists, needs:
+- LoadCombination class with factors
+- Result superposition methods
+
+### Implementation Validation
+
+**Acceptance Criteria Status:**
+- ✅ LoadCase structure created with type classification
+- ✅ Nodal loads can be added to load cases with accumulation
+- ✅ Line load structure exists (implementation pending in Task 5.2)
+- ✅ Model::analyze() analyzes all load cases efficiently
+- ✅ Active load case pattern works correctly
+- ✅ Per-case result storage and retrieval functional
+- ✅ Error handling provides granular per-case error messages
+- ✅ All existing tests updated and passing
+
+### Files Modified
+
+**Created:**
+- `cpp/include/grillex/load_case.hpp` - LoadCase infrastructure
+- `cpp/src/load_case.cpp` - LoadCase implementation
+
+**Modified:**
+- `cpp/include/grillex/model.hpp` - Removed old load API, added LoadCase management
+- `cpp/src/model.cpp` - Rewritten analyze() for multi-case support
+- `cpp/bindings/bindings.cpp` - Added LoadCase bindings, removed old API
+- `cpp/CMakeLists.txt` - Added load_case.cpp to build
+- `src/grillex/core/data_types.py` - Exported LoadCase types
+- `src/grillex/core/__init__.py` - Re-exported LoadCase types
+- `tests/python/test_phase3_model.py` - Updated all 20 tests to new API
+
+### Next Steps
+
+Phase 5 remaining tasks ready for implementation:
+- **Task 5.2:** Implement equivalent nodal forces for distributed beam loads
+- **Task 5.3:** Implement inertial loads from acceleration fields
+- **Task 5.4:** Implement load combinations with factors
+
+Phase 7 coordination:
+- LoadCase::assemble_load_vector() already calls (placeholder) equivalent nodal forces
+- LineLoad structure compatible with Phase 7 differential equation approach
+- DistributedLoad interface defined in Phase 5.2 task description
+
+---

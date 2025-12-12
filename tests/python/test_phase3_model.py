@@ -19,7 +19,7 @@ import numpy as np
 from grillex.core import (
     Model, Material, Section, Node,
     BeamFormulation, BeamConfig, DOFIndex,
-    SolverMethod
+    SolverMethod, LoadCaseType
 )
 
 
@@ -76,7 +76,9 @@ class TestModelLoadsAndBCs:
         model = Model()
         node1 = model.get_or_create_node(0, 0, 0)
 
-        model.add_nodal_load(node1.id, DOFIndex.UY, -10.0)
+        # Create load case and add load
+        lc = model.create_load_case("Test Load")
+        lc.add_nodal_load(node1.id, DOFIndex.UY, -10.0)
         # Model should not be analyzed after adding load
         assert not model.is_analyzed()
 
@@ -85,8 +87,10 @@ class TestModelLoadsAndBCs:
         model = Model()
         node1 = model.get_or_create_node(0, 0, 0)
 
-        model.add_nodal_load(node1.id, DOFIndex.UY, -5.0)
-        model.add_nodal_load(node1.id, DOFIndex.UY, -5.0)
+        # Create load case and add multiple loads to same DOF
+        lc = model.create_load_case("Test Load")
+        lc.add_nodal_load(node1.id, DOFIndex.UY, -5.0)
+        lc.add_nodal_load(node1.id, DOFIndex.UY, -5.0)
         # Loads should accumulate (tested implicitly in analysis)
 
     def test_clear_loads(self):
@@ -94,9 +98,12 @@ class TestModelLoadsAndBCs:
         model = Model()
         node1 = model.get_or_create_node(0, 0, 0)
 
-        model.add_nodal_load(node1.id, DOFIndex.UY, -10.0)
-        model.clear_loads()
-        # Should clear loads
+        # Create load case and add load
+        lc = model.create_load_case("Test Load")
+        lc.add_nodal_load(node1.id, DOFIndex.UY, -10.0)
+        # Clear loads from the load case
+        lc.clear()
+        assert lc.is_empty()
 
     def test_boundary_conditions(self):
         """Test setting boundary conditions"""
@@ -140,7 +147,8 @@ class TestSimpleCantileverAnalysis:
         model.boundary_conditions.fix_node(node1.id)
 
         # Apply load (10 kN downward at tip)
-        model.add_nodal_load(node2.id, DOFIndex.UY, -10.0)
+        lc = model.create_load_case("Tip Load")
+        lc.add_nodal_load(node2.id, DOFIndex.UY, -10.0)
 
         # Run analysis
         success = model.analyze()
@@ -201,10 +209,17 @@ class TestErrorHandling:
         sec = model.create_section("Test", 0.01, 1e-5, 1e-5, 1e-5)
         model.create_beam(node1, node2, mat, sec)
 
+        # Create a load case with a load
+        lc = model.create_load_case("Test Load")
+        lc.add_nodal_load(node2.id, DOFIndex.UY, -10.0)
+
         # No boundary conditions - should detect singular system
         success = model.analyze()
         assert not success
-        assert "singular" in model.get_error_message().lower()
+        # Check the load case result for the singular system message
+        result = model.get_result(lc)
+        assert not result.success
+        assert "singular" in result.error_message.lower()
 
     def test_get_displacements_before_analysis(self):
         """Test that getting displacements before analysis raises error"""
@@ -238,7 +253,10 @@ class TestModelClear:
         sec = model.create_section("Test", 0.01, 1e-5, 1e-5, 1e-5)
         model.create_beam(node1, node2, mat, sec)
         model.boundary_conditions.fix_node(node1.id)
-        model.add_nodal_load(node2.id, DOFIndex.UY, -10.0)
+
+        # Create load case and add load
+        lc = model.create_load_case("Test Load")
+        lc.add_nodal_load(node2.id, DOFIndex.UY, -10.0)
 
         # Clear model
         model.clear()
@@ -247,6 +265,7 @@ class TestModelClear:
         assert len(model.sections) == 0
         assert len(model.elements) == 0
         assert model.boundary_conditions.num_fixed_dofs() == 0
+        assert len(model.get_load_cases()) == 0
         assert not model.is_analyzed()
 
 
@@ -264,7 +283,10 @@ class TestAcceptanceCriteria:
         sec = model.create_section("Test", 0.01, 1e-5, 1e-5, 1e-5)
         model.create_beam(n1, n2, mat, sec)
         model.boundary_conditions.fix_node(n1.id)
-        model.add_nodal_load(n2.id, DOFIndex.UY, -1.0)
+
+        # Create load case and add load
+        lc = model.create_load_case("Test Load")
+        lc.add_nodal_load(n2.id, DOFIndex.UY, -1.0)
 
         # Full workflow
         success = model.analyze()
@@ -300,7 +322,10 @@ class TestAcceptanceCriteria:
         sec = model.create_section("Test", 0.01, I, I, 1e-5)
         model.create_beam(n1, n2, mat, sec)
         model.boundary_conditions.fix_node(n1.id)
-        model.add_nodal_load(n2.id, DOFIndex.UY, -P)
+
+        # Create load case and add load
+        lc = model.create_load_case("Point Load")
+        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
 
         success = model.analyze()
         assert success
@@ -325,8 +350,16 @@ class TestAcceptanceCriteria:
         mat = model2.create_material("Steel", 210e6, 0.3, 7.85e-6)
         sec = model2.create_section("Test", 0.01, 1e-5, 1e-5, 1e-5)
         model2.create_beam(n1, n2, mat, sec)
+
+        # Create a load case
+        lc = model2.create_load_case("Test Load")
+        lc.add_nodal_load(n2.id, DOFIndex.UY, -1.0)
+
         assert not model2.analyze()
-        assert "singular" in model2.get_error_message().lower()
+        # Check the load case result for the singular system message
+        result = model2.get_result(lc)
+        assert not result.success
+        assert "singular" in result.error_message.lower()
 
         # Test 3: Accessing results before analysis
         model3 = Model()
@@ -361,7 +394,8 @@ class TestMultiElementModel:
         model.boundary_conditions.add_fixed_dof(nodes[3].id, DOFIndex.RZ, 0.0)
 
         # Apply load at middle
-        model.add_nodal_load(nodes[1].id, DOFIndex.UY, -10.0)
+        lc = model.create_load_case("Middle Load")
+        lc.add_nodal_load(nodes[1].id, DOFIndex.UY, -10.0)
 
         success = model.analyze()
         assert success, f"Analysis failed: {model.get_error_message()}"

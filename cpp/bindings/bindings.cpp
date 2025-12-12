@@ -13,6 +13,7 @@
 #include "grillex/assembler.hpp"
 #include "grillex/boundary_condition.hpp"
 #include "grillex/solver.hpp"
+#include "grillex/load_case.hpp"
 #include "grillex/model.hpp"
 
 namespace py = pybind11;
@@ -616,6 +617,110 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         });
 
     // ========================================================================
+    // Phase 5: Load Cases
+    // ========================================================================
+
+    // LoadCaseType enum
+    py::enum_<grillex::LoadCaseType>(m, "LoadCaseType",
+        "Load case type classification")
+        .value("Permanent", grillex::LoadCaseType::Permanent,
+               "Dead loads, self-weight, fixed equipment")
+        .value("Variable", grillex::LoadCaseType::Variable,
+               "Live loads, imposed loads, traffic")
+        .value("Environmental", grillex::LoadCaseType::Environmental,
+               "Wind, snow, temperature")
+        .value("Accidental", grillex::LoadCaseType::Accidental,
+               "Impact, explosion, seismic (ultimate limit)")
+        .export_values();
+
+    // NodalLoad struct
+    py::class_<grillex::NodalLoad>(m, "NodalLoad",
+        "Concentrated force/moment at a node")
+        .def(py::init<int, int, double>(),
+             py::arg("node_id"),
+             py::arg("local_dof"),
+             py::arg("value"),
+             "Construct a nodal load")
+        .def_readwrite("node_id", &grillex::NodalLoad::node_id, "Node where load is applied")
+        .def_readwrite("local_dof", &grillex::NodalLoad::local_dof, "Local DOF index (0-6)")
+        .def_readwrite("value", &grillex::NodalLoad::value, "Load magnitude [kN] or [kN·m]")
+        .def("__repr__", [](const grillex::NodalLoad &nl) {
+            return "<NodalLoad node=" + std::to_string(nl.node_id) +
+                   " dof=" + std::to_string(nl.local_dof) +
+                   " value=" + std::to_string(nl.value) + ">";
+        });
+
+    // LineLoad struct
+    py::class_<grillex::LineLoad>(m, "LineLoad",
+        "Distributed load along a beam element")
+        .def(py::init<int, const Eigen::Vector3d&, const Eigen::Vector3d&>(),
+             py::arg("element_id"),
+             py::arg("w_start"),
+             py::arg("w_end"),
+             "Construct a line load")
+        .def_readwrite("element_id", &grillex::LineLoad::element_id, "Beam element ID")
+        .def_readwrite("w_start", &grillex::LineLoad::w_start, "Load intensity at start [kN/m]")
+        .def_readwrite("w_end", &grillex::LineLoad::w_end, "Load intensity at end [kN/m]")
+        .def("__repr__", [](const grillex::LineLoad &ll) {
+            return "<LineLoad elem=" + std::to_string(ll.element_id) + ">";
+        });
+
+    // LoadCase class
+    py::class_<grillex::LoadCase>(m, "LoadCase",
+        "Load case containing all loads for a specific scenario")
+        .def_property_readonly("id", &grillex::LoadCase::id, "Load case ID")
+        .def_property_readonly("name", &grillex::LoadCase::name, "Load case name")
+        .def_property_readonly("type", &grillex::LoadCase::type, "Load case type")
+        .def("add_nodal_load", &grillex::LoadCase::add_nodal_load,
+             py::arg("node_id"),
+             py::arg("local_dof"),
+             py::arg("value"),
+             "Add a nodal load (accumulated if called multiple times for same DOF)")
+        .def("add_line_load", &grillex::LoadCase::add_line_load,
+             py::arg("element_id"),
+             py::arg("w_start"),
+             py::arg("w_end"),
+             "Add a distributed line load to a beam element")
+        .def("set_acceleration_field", &grillex::LoadCase::set_acceleration_field,
+             py::arg("acceleration"),
+             py::arg("ref_point") = Eigen::Vector3d::Zero(),
+             "Set acceleration field for gravity or rotating reference frame")
+        .def("clear", &grillex::LoadCase::clear,
+             "Clear all loads in this load case")
+        .def("is_empty", &grillex::LoadCase::is_empty,
+             "Check if load case has any loads")
+        .def("get_nodal_loads", &grillex::LoadCase::get_nodal_loads,
+             py::return_value_policy::reference_internal,
+             "Get list of nodal loads")
+        .def("get_line_loads", &grillex::LoadCase::get_line_loads,
+             py::return_value_policy::reference_internal,
+             "Get list of line loads")
+        .def("get_acceleration", &grillex::LoadCase::get_acceleration,
+             "Get acceleration field [ax, ay, az, αx, αy, αz]")
+        .def("get_acceleration_ref_point", &grillex::LoadCase::get_acceleration_ref_point,
+             "Get acceleration field reference point")
+        .def("__repr__", [](const grillex::LoadCase &lc) {
+            return "<LoadCase '" + lc.name() + "' id=" + std::to_string(lc.id()) + ">";
+        });
+
+    // LoadCaseResult struct
+    py::class_<grillex::LoadCaseResult>(m, "LoadCaseResult",
+        "Results for a single load case analysis")
+        .def_readonly("load_case", &grillex::LoadCaseResult::load_case,
+                     "Associated load case")
+        .def_readonly("displacements", &grillex::LoadCaseResult::displacements,
+                     "Global displacement vector")
+        .def_readonly("reactions", &grillex::LoadCaseResult::reactions,
+                     "Reaction forces at constraints")
+        .def_readonly("success", &grillex::LoadCaseResult::success,
+                     "Analysis succeeded")
+        .def_readonly("error_message", &grillex::LoadCaseResult::error_message,
+                     "Error message if failed")
+        .def("__repr__", [](const grillex::LoadCaseResult &res) {
+            return "<LoadCaseResult success=" + std::string(res.success ? "True" : "False") + ">";
+        });
+
+    // ========================================================================
     // Phase 3 (continued): Model Class (Orchestration)
     // ========================================================================
 
@@ -685,15 +790,30 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              py::arg("config") = grillex::BeamConfig{},
              "Create a beam element and add to model",
              py::return_value_policy::reference_internal)
-        .def("add_nodal_load", &grillex::Model::add_nodal_load,
-             py::arg("node_id"),
-             py::arg("local_dof"),
-             py::arg("value"),
-             "Add a nodal load to the model (accumulated if called multiple times)")
-        .def("clear_loads", &grillex::Model::clear_loads,
-             "Clear all nodal loads")
+        // Load case management
+        .def("create_load_case", &grillex::Model::create_load_case,
+             py::arg("name"),
+             py::arg("type") = grillex::LoadCaseType::Permanent,
+             "Create a new load case",
+             py::return_value_policy::reference_internal)
+        .def("get_default_load_case", &grillex::Model::get_default_load_case,
+             "Get the default load case (auto-created if needed)",
+             py::return_value_policy::reference_internal)
+        .def("set_active_load_case", &grillex::Model::set_active_load_case,
+             py::arg("load_case"),
+             "Set the active load case for result queries")
+        .def("get_active_load_case", &grillex::Model::get_active_load_case,
+             "Get the currently active load case",
+             py::return_value_policy::reference_internal)
+        .def("get_load_cases", &grillex::Model::get_load_cases,
+             "Get all load cases in the model",
+             py::return_value_policy::reference_internal)
+        .def("get_result", &grillex::Model::get_result,
+             py::arg("load_case"),
+             "Get result for a specific load case",
+             py::return_value_policy::reference_internal)
         .def("analyze", &grillex::Model::analyze,
-             "Run the analysis (DOF numbering, assembly, BC application, solving)")
+             "Run analysis for all load cases")
         .def("is_analyzed", &grillex::Model::is_analyzed,
              "Check if model has been analyzed successfully")
         .def("get_displacements", &grillex::Model::get_displacements,

@@ -8,10 +8,12 @@
 #include "grillex/assembler.hpp"
 #include "grillex/boundary_condition.hpp"
 #include "grillex/solver.hpp"
+#include "grillex/load_case.hpp"
 
 #include <vector>
 #include <memory>
 #include <string>
+#include <map>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
@@ -22,11 +24,11 @@ namespace grillex {
  *
  * The Model class provides a high-level interface for creating and analyzing
  * structural models. It manages all model entities (nodes, materials, sections,
- * elements) and orchestrates the analysis workflow:
+ * elements, load cases) and orchestrates the analysis workflow:
  *
  * 1. Model definition (create entities)
- * 2. Boundary conditions and loads
- * 3. Analysis (DOF numbering, assembly, solving)
+ * 2. Load cases and boundary conditions
+ * 3. Analysis (DOF numbering, assembly, solving for all load cases)
  * 4. Results extraction (displacements, reactions, element forces)
  *
  * Usage:
@@ -37,9 +39,11 @@ namespace grillex {
  *   auto n2 = model.nodes.get_or_create_node(6, 0, 0);
  *   auto elem = model.create_beam(n1, n2, mat, sec);
  *   model.boundary_conditions.fix_node(n1->id);
- *   model.add_nodal_load(n2->id, DOFIndex::UY, -10.0);
- *   bool success = model.analyze();
+ *   auto lc = model.create_load_case("Dead Load");
+ *   lc->add_nodal_load(n2->id, DOFIndex::UY, -10.0);
+ *   bool success = model.analyze();  // Analyzes all load cases
  *   if (success) {
+ *       model.set_active_load_case(lc);
  *       Eigen::VectorXd u = model.get_displacements();
  *   }
  */
@@ -102,39 +106,78 @@ public:
                              Material* material, Section* section,
                              const BeamConfig& config = BeamConfig{});
 
-    /**
-     * @brief Add a nodal load to the model
-     * @param node_id Node ID
-     * @param local_dof Local DOF index (0-6: UX, UY, UZ, RX, RY, RZ, WARP)
-     * @param value Load value [kN] or [kN·m] for moments
-     *
-     * Loads are accumulated if multiple calls are made for the same DOF.
-     */
-    void add_nodal_load(int node_id, int local_dof, double value);
+    // Load case management
 
     /**
-     * @brief Clear all nodal loads
+     * @brief Create a new load case
+     * @param name Descriptive name (e.g., "Dead Load", "Wind +X")
+     * @param type Load case type classification
+     * @return Pointer to created LoadCase (owned by model)
+     *
+     * Example:
+     *   auto lc = model.create_load_case("Dead Load", LoadCaseType::Permanent);
+     *   lc->add_nodal_load(node_id, DOFIndex::UY, -10.0);
      */
-    void clear_loads();
+    LoadCase* create_load_case(const std::string& name,
+                               LoadCaseType type = LoadCaseType::Permanent);
 
     /**
-     * @brief Run the analysis
-     * @return true if analysis succeeded, false if error occurred
+     * @brief Get the default load case (auto-created if needed)
+     * @return Pointer to default LoadCase
      *
-     * Analysis steps:
-     * 1. Number DOFs (standard or with element-specific warping)
-     * 2. Assemble global stiffness matrix
-     * 3. Build load vector from nodal loads
-     * 4. Apply boundary conditions
-     * 5. Solve linear system K * u = F
-     * 6. Store displacements
-     * 7. Compute reactions
+     * Convenience method for simple models. Returns a load case named "Default"
+     * that is automatically created on first access.
+     */
+    LoadCase* get_default_load_case();
+
+    /**
+     * @brief Set the active load case for result queries
+     * @param load_case Pointer to load case (must be owned by this model)
      *
-     * After successful analysis, results can be queried via:
+     * Determines which load case's results are returned by:
      * - get_displacements()
-     * - get_reactions()
      * - get_node_displacement()
-     * - is_analyzed()
+     * - get_reactions()
+     *
+     * Throws std::runtime_error if load_case not found in model.
+     */
+    void set_active_load_case(LoadCase* load_case);
+
+    /**
+     * @brief Get the currently active load case
+     * @return Pointer to active LoadCase (nullptr if none set)
+     */
+    LoadCase* get_active_load_case() const { return active_load_case_; }
+
+    /**
+     * @brief Get all load cases in the model
+     * @return Vector of LoadCase pointers
+     */
+    std::vector<LoadCase*> get_load_cases() const;
+
+    /**
+     * @brief Get result for a specific load case
+     * @param load_case Pointer to load case
+     * @return LoadCaseResult reference
+     * @throws std::runtime_error if load case not analyzed
+     */
+    const LoadCaseResult& get_result(LoadCase* load_case) const;
+
+    /**
+     * @brief Run analysis for all load cases
+     * @return true if ALL load cases analyzed successfully
+     *
+     * Analysis workflow:
+     * 1. Number DOFs (once - same for all cases)
+     * 2. Assemble stiffness matrix (once - same for all cases)
+     * 3. For each load case:
+     *    a. Assemble load vector for this case
+     *    b. Apply boundary conditions (same K, different F)
+     *    c. Solve K*u = F
+     *    d. Store displacements and reactions
+     *
+     * After successful analysis, use set_active_load_case() to choose which
+     * case's results to query via get_displacements(), etc.
      */
     bool analyze();
 
@@ -145,28 +188,34 @@ public:
     bool is_analyzed() const { return analyzed_; }
 
     /**
-     * @brief Get the global displacement vector
+     * @brief Get the global displacement vector (for active load case)
      * @return Displacement vector (size = total_dofs)
-     * @throws std::runtime_error if model not analyzed
+     * @throws std::runtime_error if no active load case or not analyzed
+     *
+     * Use set_active_load_case() to select which load case's results to query.
      */
     Eigen::VectorXd get_displacements() const;
 
     /**
-     * @brief Get displacement at a specific node and DOF
+     * @brief Get displacement at a specific node and DOF (for active load case)
      * @param node_id Node ID
      * @param local_dof Local DOF index (0-6)
      * @return Displacement value [m] or [rad]
-     * @throws std::runtime_error if model not analyzed
+     * @throws std::runtime_error if no active load case or not analyzed
+     *
+     * Use set_active_load_case() to select which load case's results to query.
      */
     double get_node_displacement(int node_id, int local_dof) const;
 
     /**
-     * @brief Get the global reaction vector
+     * @brief Get the global reaction vector (for active load case)
      * @return Reaction vector at fixed DOFs (size = total_dofs)
-     * @throws std::runtime_error if model not analyzed
+     * @throws std::runtime_error if no active load case or not analyzed
      *
      * Reactions are computed as: R = K * u - F_applied
      * Non-zero values appear only at constrained DOFs.
+     *
+     * Use set_active_load_case() to select which load case's results to query.
      */
     Eigen::VectorXd get_reactions() const;
 
@@ -198,7 +247,7 @@ public:
     /**
      * @brief Clear the model (reset to empty state)
      *
-     * Removes all materials, sections, elements, loads, and BCs.
+     * Removes all materials, sections, elements, load cases, and BCs.
      * Does NOT clear nodes (use nodes.clear() if needed).
      */
     void clear();
@@ -209,26 +258,27 @@ private:
     std::unique_ptr<Assembler> assembler_;  // Created during analyze()
     LinearSolver solver_;
 
-    // Load tracking
-    std::vector<std::tuple<int, int, double>> nodal_loads_;  // (node_id, local_dof, value)
+    // Load case management
+    std::vector<std::unique_ptr<LoadCase>> load_cases_;
+    LoadCase* default_load_case_ = nullptr;        // Lazy-created on first access
+    LoadCase* active_load_case_ = nullptr;         // For result queries
 
-    // Results
+    // Results (one per load case)
     bool analyzed_ = false;
     int total_dofs_ = 0;
-    Eigen::VectorXd displacements_;
-    Eigen::VectorXd reactions_;
+    std::map<int, LoadCaseResult> results_;        // Keyed by LoadCase::id()
     std::string error_msg_;
 
     // ID counters
     int next_material_id_ = 1;
     int next_section_id_ = 1;
     int next_element_id_ = 1;
+    int next_load_case_id_ = 1;
 
     /**
-     * @brief Build the global load vector from nodal loads
-     * @return Load vector F (size = total_dofs)
+     * @brief Ensure default load case exists
      */
-    Eigen::VectorXd build_load_vector() const;
+    void ensure_default_load_case();
 
     /**
      * @brief Compute reactions after solving

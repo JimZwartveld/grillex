@@ -21,6 +21,7 @@ pybind11_add_module(_grillex_cpp
     src/assembler.cpp
     src/boundary_condition.cpp
     src/solver.cpp
+    src/load_case.cpp
     src/model.cpp
 )
 

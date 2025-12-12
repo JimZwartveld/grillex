@@ -9,6 +9,7 @@ from .data_types import (
     Assembler,
     DOFIndex, FixedDOF, BCHandler,
     SolverMethod, LinearSolver,
+    LoadCaseType, NodalLoad, LineLoad, LoadCase, LoadCaseResult,
     Model
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     'Assembler',
     'DOFIndex', 'FixedDOF', 'BCHandler',
     'SolverMethod', 'LinearSolver',
+    'LoadCaseType', 'NodalLoad', 'LineLoad', 'LoadCase', 'LoadCaseResult',
     'Model'
 ]
