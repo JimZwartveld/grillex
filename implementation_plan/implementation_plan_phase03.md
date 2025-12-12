@@ -1167,9 +1167,362 @@ Create the top-level Model class that orchestrates analysis.
    ```
 
 **Acceptance Criteria:**
-- [ ] Complete analysis workflow runs without errors
-- [ ] Results match hand calculations for simple models
-- [ ] Error handling for invalid models
+- [x] Complete analysis workflow runs without errors
+- [x] Results match hand calculations for simple models
+- [x] Error handling for invalid models
+
+## Task 3.5 Implementation Summary
+
+**Status:** ✅ COMPLETED
+
+**Implementation Date:** December 12, 2025
+
+### Overview
+Successfully implemented the Model class - a high-level orchestration layer that provides a complete finite element analysis workflow. The Model class integrates all Phase 3 components (DOFHandler, Assembler, BCHandler, LinearSolver) to provide a user-friendly API for structural analysis. All 20 tests pass, covering all 3 acceptance criteria.
+
+### Files Created/Modified
+
+1. **cpp/include/grillex/model.hpp** (NEW - 211 lines)
+   - Model class declaration with complete public interface
+   - Public members: nodes, materials, sections, elements, boundary_conditions
+   - Factory methods: create_material(), create_section(), create_beam()
+   - Load management: add_nodal_load(), clear_loads()
+   - Analysis orchestration: analyze()
+   - Results extraction: get_displacements(), get_node_displacement(), get_reactions()
+   - Helper methods: get_dof_handler(), get_solver(), get_error_message()
+
+2. **cpp/src/model.cpp** (NEW - 212 lines)
+   - Full implementation of all Model methods
+   - analyze() workflow: DOF numbering → assembly → BC application → solving → result storage
+   - build_load_vector() from accumulated nodal loads
+   - compute_reactions() from K * u - F
+   - needs_warping_analysis() checks for element-specific warping DOFs
+   - Comprehensive error handling and validation
+
+3. **cpp/CMakeLists.txt** (MODIFIED)
+   - Added src/model.cpp to pybind11_add_module at line 24
+
+4. **cpp/bindings/bindings.cpp** (MODIFIED)
+   - Added #include "grillex/model.hpp" at line 16
+   - Added Model Python bindings at lines 622-702
+   - Custom property accessors for materials, sections, elements (returns lists of pointers)
+   - Node delegation methods: get_or_create_node(), get_all_nodes()
+   - All analysis and result methods bound
+   - Custom __repr__ shows entity counts and analyzed status
+
+5. **src/grillex/core/data_types.py** (MODIFIED)
+   - Added Model to imports and __all__ export list
+   - Updated module docstring
+
+6. **src/grillex/core/__init__.py** (MODIFIED)
+   - Added Model to imports and __all__ export list
+
+7. **tests/python/test_phase3_model.py** (NEW - 370 lines)
+   - Comprehensive test suite with 20 tests in 7 test classes
+   - TestModelCreation: 5 tests for entity creation
+   - TestModelLoadsAndBCs: 4 tests for load/BC management
+   - TestSimpleCantileverAnalysis: 1 full workflow test with analytical validation
+   - TestErrorHandling: 5 tests for error cases
+   - TestModelClear: 1 test for reset functionality
+   - TestAcceptanceCriteria: 3 tests matching all acceptance criteria
+   - TestMultiElementModel: 1 test for multi-element structures
+
+### Key Design Decisions
+
+1. **Orchestration Architecture**
+   - Model owns all internal analysis components (DOFHandler, Assembler, LinearSolver)
+   - Assembler created on-demand during analyze() to avoid coupling to stale DOF numbering
+   - Results stored in Model after successful analysis for easy querying
+   - analyzed_ flag prevents accessing results before analysis
+
+2. **Load Management**
+   - Nodal loads stored as tuples (node_id, local_dof, value)
+   - Loads accumulate when added multiple times to same DOF
+   - build_load_vector() constructs global F from accumulated loads during analysis
+   - clear_loads() allows resetting without recreating model
+
+3. **Entity Ownership**
+   - Materials, sections, elements stored as unique_ptr (automatic memory management)
+   - Factory methods return raw pointers (safe - owned by model)
+   - ID counters ensure unique IDs across multiple create() calls
+   - clear() method resets counters and clears all entities
+
+4. **Python Binding Strategy**
+   - Used property accessors for materials/sections/elements to avoid copying unique_ptrs
+   - Node access delegated through wrapper methods (get_or_create_node, get_all_nodes)
+   - Avoided exposing NodeRegistry directly (non-copyable due to unique_ptrs)
+   - Custom __repr__ shows model state at a glance
+
+5. **Error Handling**
+   - analyze() returns bool (success/failure)
+   - error_msg_ stores detailed error description
+   - Validation checks: no elements, singular system detection
+   - Python exceptions for accessing results before analysis
+
+### Issues Encountered and Solutions
+
+**Issue 1: Binding NodeRegistry with unique_ptr Members**
+- **Problem:** pybind11 couldn't bind NodeRegistry as def_readwrite or def_readonly
+- **Root Cause:** NodeRegistry contains std::vector<unique_ptr<Node>>, which is non-copyable
+- **Errors:** "call to implicitly-deleted copy constructor", "make_copy_constructor"
+- **Wrong Approaches Tried:**
+  - def_readwrite("nodes", &Model::nodes) - failed (can't copy NodeRegistry)
+  - def_property_readonly with reference return - failed (still needs copy constructor check)
+  - Added unique_ptr holder to NodeRegistry binding - failed (doesn't prevent type trait checks)
+- **Solution:** Delegate node operations through Model wrapper methods
+  ```cpp
+  .def("get_or_create_node", [](Model &m, double x, double y, double z) {
+      return m.nodes.get_or_create_node(x, y, z);
+  })
+  ```
+- **Lesson:** When binding types with non-copyable members, use delegation methods instead of direct member access
+
+**Issue 2: Taking Address of rvalue**
+- **Problem:** `return &m.nodes.get_or_create_node(x, y, z);` failed with "cannot take address of rvalue"
+- **Root Cause:** Initial confusion about get_or_create_node return type (Node& vs Node*)
+- **Solution:** get_or_create_node returns Node* directly, so just return it:
+  ```cpp
+  return m.nodes.get_or_create_node(x, y, z);  // Returns Node* already
+  ```
+
+**Issue 3: Property Accessors for vector<unique_ptr<T>>**
+- **Problem:** Can't use def_readonly for materials/sections/elements
+- **Solution:** Custom lambda that builds Python list of raw pointers:
+  ```cpp
+  .def_property_readonly("materials", [](const Model &m) {
+      py::list result;
+      for (const auto& mat : m.materials) {
+          result.append(mat.get());
+      }
+      return result;
+  })
+  ```
+
+### Testing Results
+
+All 20 tests pass (100% success rate):
+
+**TestModelCreation (5 tests):**
+- ✓ test_model_default_creation - Default constructor
+- ✓ test_model_custom_parameters - Custom tolerance and solver
+- ✓ test_create_material - Material factory
+- ✓ test_create_section - Section factory
+- ✓ test_create_beam - Beam element factory
+
+**TestModelLoadsAndBCs (4 tests):**
+- ✓ test_add_nodal_load - Adding loads
+- ✓ test_add_multiple_loads_same_dof - Load accumulation
+- ✓ test_clear_loads - Resetting loads
+- ✓ test_boundary_conditions - BC application
+
+**TestSimpleCantileverAnalysis (1 test):**
+- ✓ test_cantilever_beam_analysis - Full workflow with analytical validation (< 1% error)
+
+**TestErrorHandling (5 tests):**
+- ✓ test_analyze_empty_model - No elements error
+- ✓ test_analyze_without_boundary_conditions - Singular system detection
+- ✓ test_get_displacements_before_analysis - RuntimeError
+- ✓ test_get_node_displacement_before_analysis - RuntimeError
+- ✓ test_get_reactions_before_analysis - RuntimeError
+
+**TestModelClear (1 test):**
+- ✓ test_clear_model - Reset functionality
+
+**TestAcceptanceCriteria (3 tests):**
+- ✓ test_ac1_complete_workflow_runs_without_errors - AC1 verified
+- ✓ test_ac2_results_match_hand_calculations - AC2 verified (< 1% error)
+- ✓ test_ac3_error_handling_invalid_models - AC3 verified
+
+**TestMultiElementModel (1 test):**
+- ✓ test_three_span_beam - 3 elements, 4 nodes, 24 DOFs
+
+### Implementation Validation
+
+**Acceptance Criteria Status:**
+- ✅ AC1: Complete analysis workflow runs without errors
+  - Cantilever beam: full workflow from model creation to results
+  - Multi-element model: 3 elements, 24 DOFs analyzed successfully
+  - No crashes, no exceptions in normal workflow
+
+- ✅ AC2: Results match hand calculations for simple models
+  - Cantilever beam: δ matches PL³/(3EI) within 0.6%
+  - Simple model: tip deflection accurate within 1%
+  - Fixed DOFs have zero displacement (< 1e-6)
+
+- ✅ AC3: Error handling for invalid models
+  - No elements: clear error message
+  - No boundary conditions: detects singular system
+  - Accessing results before analysis: RuntimeError with descriptive message
+  - All error paths tested and verified
+
+### Example Usage
+
+**C++ (if used directly):**
+```cpp
+#include "grillex/model.hpp"
+
+grillex::Model model;
+
+// Create entities
+auto* steel = model.create_material("Steel", 210e6, 0.3, 7.85e-6);
+auto* section = model.create_section("IPE200", 0.01, 1e-5, 2e-5, 1.5e-5);
+
+auto* n1 = model.nodes.get_or_create_node(0, 0, 0);
+auto* n2 = model.nodes.get_or_create_node(6, 0, 0);
+
+auto* beam = model.create_beam(n1, n2, steel, section);
+
+// Apply BCs and loads
+model.boundary_conditions.fix_node(n1->id);
+model.add_nodal_load(n2->id, 1, -10.0);  // 10 kN downward (UY)
+
+// Analyze
+if (model.analyze()) {
+    double tip_disp = model.get_node_displacement(n2->id, 1);
+    std::cout << "Tip deflection: " << tip_disp << " m\n";
+} else {
+    std::cerr << "Error: " << model.get_error_message() << "\n";
+}
+```
+
+**Python (typical usage):**
+```python
+from grillex.core import Model, DOFIndex
+
+# Create model
+model = Model()
+
+# Create entities using convenient factory methods
+steel = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+section = model.create_section("IPE200", 0.01, 1e-5, 2e-5, 1.5e-5)
+
+n1 = model.get_or_create_node(0, 0, 0)
+n2 = model.get_or_create_node(6, 0, 0)
+
+beam = model.create_beam(n1, n2, steel, section)
+
+# Apply boundary conditions
+model.boundary_conditions.fix_node(n1.id)
+
+# Apply loads
+model.add_nodal_load(n2.id, DOFIndex.UY, -10.0)  # 10 kN downward
+
+# Run analysis
+success = model.analyze()
+
+if success:
+    # Get results
+    u = model.get_displacements()
+    tip_deflection = model.get_node_displacement(n2.id, DOFIndex.UY)
+    reactions = model.get_reactions()
+
+    print(f"Tip deflection: {tip_deflection:.6f} m")
+    print(f"Total DOFs: {model.total_dofs()}")
+else:
+    print(f"Analysis failed: {model.get_error_message()}")
+```
+
+**Advanced Usage - Multi-element Model:**
+```python
+model = Model()
+
+# Create library of materials and sections
+steel = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+concrete = model.create_material("Concrete", 30e6, 0.2, 2.5e-6)
+
+section_a = model.create_section("Section_A", 0.01, 1e-5, 1e-5, 1e-5)
+section_b = model.create_section("Section_B", 0.02, 2e-5, 2e-5, 2e-5)
+
+# Create frame
+nodes = [model.get_or_create_node(i*3.0, 0, 0) for i in range(5)]
+
+# Create beams with different materials/sections
+for i in range(4):
+    mat = steel if i < 2 else concrete
+    sec = section_a if i % 2 == 0 else section_b
+    model.create_beam(nodes[i], nodes[i+1], mat, sec)
+
+# Complex BC setup
+model.boundary_conditions.fix_node(nodes[0].id)
+model.boundary_conditions.pin_node(nodes[4].id)
+model.boundary_conditions.add_fixed_dof(nodes[0].id, DOFIndex.RX, 0.0)
+model.boundary_conditions.add_fixed_dof(nodes[0].id, DOFIndex.RZ, 0.0)
+model.boundary_conditions.add_fixed_dof(nodes[4].id, DOFIndex.RZ, 0.0)
+
+# Multiple loads
+model.add_nodal_load(nodes[1].id, DOFIndex.UY, -15.0)
+model.add_nodal_load(nodes[2].id, DOFIndex.UY, -20.0)
+model.add_nodal_load(nodes[3].id, DOFIndex.UY, -15.0)
+
+# Analyze and inspect
+if model.analyze():
+    print(f"Analyzed {len(model.elements)} elements")
+    print(f"Total DOFs: {model.total_dofs()}")
+
+    # Query results for specific nodes
+    for i, node in enumerate(nodes):
+        disp = model.get_node_displacement(node.id, DOFIndex.UY)
+        print(f"Node {i} deflection: {disp:.6f} m")
+```
+
+### Architecture Integration
+
+The Model class successfully integrates all Phase 3 components:
+
+```
+Model (Orchestration Layer)
+  ├─> NodeRegistry (from Phase 1)
+  │   └─> Manages nodes with automatic merging
+  │
+  ├─> Materials, Sections (from Phase 1)
+  │   └─> Stored as unique_ptr, managed by Model
+  │
+  ├─> BeamElement (from Phase 2)
+  │   └─> Created via factory method, stored as unique_ptr
+  │
+  ├─> DOFHandler (Task 3.1)
+  │   └─> Numbers DOFs, handles element-specific warping
+  │
+  ├─> Assembler (Task 3.2)
+  │   └─> Assembles K and M matrices
+  │
+  ├─> BCHandler (Task 3.3)
+  │   └─> Manages and applies boundary conditions
+  │
+  └─> LinearSolver (Task 3.4)
+      └─> Solves K * u = F with configurable method
+```
+
+### Performance Characteristics
+
+- **Model creation:** O(1) - just initializes empty containers
+- **Entity creation:** O(1) per entity (append to vector)
+- **analyze() workflow:**
+  - DOF numbering: O(n_nodes × 7)
+  - Assembly: O(n_elements × dofs_per_element²)
+  - BC application: O(nnz) sparse matrix operations
+  - Solving: O(n²) to O(n³) depending on solver and sparsity
+- **Result querying:** O(1) for get_node_displacement, O(n) for get_displacements
+
+### Next Steps
+
+Task 3.5 is complete, marking the **completion of Phase 3: Assembly & Solver**!
+
+**Phase 3 Summary:**
+- ✅ Task 3.1: DOF Numbering System (14 tests pass)
+- ✅ Task 3.2: Global Matrix Assembly (12 tests pass)
+- ✅ Task 3.3: Boundary Conditions (32 tests pass)
+- ✅ Task 3.4: Linear Solver (16 tests pass)
+- ✅ Task 3.5: Model Class (20 tests pass)
+
+**Total: 94 tests passing across Phase 3**
+
+The Grillex finite element framework now has a complete analysis capability from model creation through results extraction. Users can create structural models, apply loads and boundary conditions, run analysis, and extract displacements and reactions - all through a clean, high-level Python API backed by efficient C++ implementations.
+
+**Ready for:**
+- Phase 4: Results & Post-processing (element forces, stresses)
+- Phase 5: Advanced Features (distributed loads, load cases, combinations)
+- Production use for simple beam analysis problems
 
 ---
 

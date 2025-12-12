@@ -53,9 +53,12 @@ Create the load case and load combination structures.
 **Requirements:** R-LOAD-001
 **Dependencies:** Task 5.1
 **Difficulty:** Medium
+**Note:** Phase 7 (Task 7.2) internal actions computation depends on this task being complete
 
 **Description:**
 Compute equivalent nodal forces for distributed beam loads.
+
+**Important:** This task is **critical for Phase 7** internal actions computation. Phase 7 uses the differential equation approach which requires knowledge of distributed loads along elements to compute accurate internal actions (moment, shear, normal force). Without this infrastructure, Phase 7 will be limited to computing end forces only and using simple linear interpolation for internal actions.
 
 **Steps:**
 1. Add to BeamElement:
@@ -77,10 +80,33 @@ Compute equivalent nodal forces for distributed beam loads.
 
 3. Handle trapezoidal loads (linear variation)
 
+4. **Coordinate with Phase 7:** Ensure LineLoad structure is accessible from BeamElement:
+   ```cpp
+   // BeamElement should be able to query its distributed loads
+   class BeamElement {
+       // ...
+       DistributedLoad get_distributed_load_y() const;
+       DistributedLoad get_distributed_load_z() const;
+       DistributedLoad get_distributed_load_axial() const;
+       // These query the current load case for loads applied to this element
+   };
+   ```
+
+   The `DistributedLoad` struct should match the format expected by Phase 7:
+   ```cpp
+   struct DistributedLoad {
+       double q_start;  // Load intensity at element start [kN/m]
+       double q_end;    // Load intensity at element end [kN/m]
+       // Linear interpolation: q(x) = q_start + (q_end - q_start) * x / L
+   };
+   ```
+
 **Acceptance Criteria:**
 - [ ] Uniform load produces correct reactions
 - [ ] Fixed-end moments match theory
 - [ ] Trapezoidal loads work correctly
+- [ ] BeamElement can query its distributed loads for Phase 7 internal actions computation
+- [ ] DistributedLoad structure is compatible with Phase 7 differential equation approach
 
 ---
 
@@ -163,6 +189,106 @@ Implement load combination definitions.
 - [ ] Combinations sum loads correctly
 - [ ] Factors are applied correctly
 - [ ] Multiple load cases combine properly
+
+---
+
+## Dependencies and Impact on Other Phases
+
+### Phase 7 Dependency: Internal Actions Computation
+
+Phase 7 (Internal Actions and Results) has a **critical dependency** on Phase 5, specifically Task 5.2 (Line Load Equivalent Nodal Forces).
+
+**Why this dependency exists:**
+
+Phase 7 uses a **differential equation approach** (similar to pystructeng) to compute internal actions (moment, shear, normal force) along beam elements. This approach requires knowledge of the distributed loads q(x) along each element. The differential equations are:
+
+```
+Axial:       dN/dx + q_x = 0
+Bending-Y:   dV_y/dx + q_y = 0,  dM_z/dx - V_y = 0
+Bending-Z:   dV_z/dx + q_z = 0,  dM_y/dx - V_z = 0
+```
+
+Without distributed load information, Phase 7 can only:
+- Compute element end forces using `f_local = K_local * u_local`
+- Use simple linear interpolation for internal actions between end points
+- This is **inaccurate** for beams with distributed loads
+
+With Phase 5 complete, Phase 7 can:
+- Use analytical closed-form solutions for each release combination
+- Account for distributed loads in moment/shear diagrams
+- Provide accurate results matching hand calculations
+
+**Implementation Phasing:**
+
+To allow independent development, Phase 7 is split into sub-phases:
+
+1. **Phase 7a (Minimum Viable):** Can be implemented WITHOUT Phase 5
+   - Task 7.1: Element end forces using `f = K*u`
+   - Simple linear interpolation for internal actions
+   - **Limitation:** Inaccurate for distributed loads
+   - **Acceptance:** End forces match reactions for point-loaded beams
+
+2. **Phase 7b (Enhanced):** Requires Phase 5 (Tasks 5.1-5.2)
+   - Update Task 7.1 to subtract fixed-end forces
+   - **Acceptance:** End forces correct even with distributed loads present
+
+3. **Phase 7c (Full Differential Equation Approach):** Requires Phase 5 complete
+   - Task 7.2: All release combination formulas
+   - Accurate internal actions accounting for q(x)
+   - **Acceptance:** Internal actions match analytical solutions
+
+**Coordination Requirements:**
+
+1. **Data Structure Compatibility:**
+   - Phase 5's `LineLoad` must be convertible to Phase 7's `DistributedLoad`
+   - Both use trapezoidal (linearly varying) load representation
+   - Load intensities in same units (kN/m or kN/m²)
+
+2. **Load Querying Interface:**
+   - BeamElement needs methods to query current distributed loads:
+     ```cpp
+     DistributedLoad BeamElement::get_distributed_load_y() const;
+     DistributedLoad BeamElement::get_distributed_load_z() const;
+     DistributedLoad BeamElement::get_distributed_load_axial() const;
+     ```
+   - These query the active LoadCase for loads applied to this element
+
+3. **Global vs Local Coordinates:**
+   - Phase 5 stores loads in **global coordinates** (user-friendly input)
+   - Phase 7 needs loads in **local element coordinates** (for differential equations)
+   - Transformation handled by BeamElement::get_distributed_load_*() methods
+
+**Testing Strategy:**
+
+Test the dependency by creating a cantilever with uniform load:
+
+```python
+# Test case: cantilever with UDL
+model = Model()
+n1 = model.get_or_create_node(0, 0, 0)
+n2 = model.get_or_create_node(6, 0, 0)
+mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+sec = model.create_section("Test", 0.01, 1e-5, 2e-5, 1e-5)
+beam = model.create_beam(n1, n2, mat, sec)
+
+model.boundary_conditions.fix_node(n1.id)
+
+# Add distributed load (Phase 5)
+load_case = model.create_load_case("DL")
+load_case.add_line_load(beam.id, w_start=[0, -10, 0], w_end=[0, -10, 0])
+
+model.analyze(load_case)
+
+# Query internal actions (Phase 7)
+# Should get: M(x) = w*x²/2 - w*L*x
+actions_mid = beam.get_internal_actions_at(3.0, model)
+M_expected = -10 * (3.0**2 / 2 - 6.0 * 3.0)  # = 45 kN⋅m
+assert abs(actions_mid.Mz - M_expected) / abs(M_expected) < 0.01
+```
+
+**Recommendation:**
+
+Implement Phase 5 (at least Tasks 5.1-5.2) **before** Phase 7 to enable full functionality. If Phase 7 is needed urgently, implement Phase 7a as a stopgap, but clearly document its limitations for beams with distributed loads.
 
 ---
 

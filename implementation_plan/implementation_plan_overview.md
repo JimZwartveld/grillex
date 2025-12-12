@@ -53,7 +53,26 @@ The implementation plan is organized into 15 phases:
 → [See full Phase 6 details](implementation_plan_phase06.md)
 
 ### Phase 7: Internal Actions & Results
-**Requirements:** R-RES-001 **Dependencies:** Task 3.5 **Difficulty:** Medium **Description:** Compute element end forces from displacements.
+**Requirements:** R-RES-001
+**Dependencies:** Task 3.5 (required), Phase 5 Tasks 5.1-5.2 (recommended for full functionality)
+**Difficulty:** High
+**Description:** Compute element end forces and internal actions (moment, shear, normal force, torsion) along beam elements using **differential equation approach** with analytical closed-form solutions. Supports both Euler-Bernoulli and Timoshenko beam theories with release-specific formulas for all boundary condition combinations.
+
+**Key Features:**
+- **Differential Equation Methodology:** Uses analytical solutions to beam equilibrium differential equations (similar to pystructeng) rather than simple shape function interpolation
+- **Release-Specific Formulas:** Implements separate analytical formulas for each end release combination (16 for bending, 4 for axial/torsion)
+- **Multi-Element Beam Plotting:** Python `Beam` class aggregates results from multiple `BeamElement` objects to provide continuous internal action diagrams across element boundaries
+- **Distributed Load Support:** Accounts for linearly varying distributed loads q(x) in internal action computation
+- **Beam Theories:** Supports both Euler-Bernoulli (classical) and Timoshenko (includes shear deformation) formulations
+- **Warping/Bimoment:** For 14-DOF elements with warping restraint, computes bimoment distribution and warping stresses
+- **Visualization:** Matplotlib integration for plotting moment, shear, and force diagrams with extrema marking
+
+**Implementation Phasing:**
+- **Phase 7a:** Basic end forces using `f = K*u` (no Phase 5 dependency)
+- **Phase 7b:** Enhanced with distributed load support (requires Phase 5)
+- **Phase 7c:** Full differential equation approach with all release combinations
+
+**Note:** Phase 7 has a **critical dependency** on Phase 5 (distributed loads) for accurate internal action computation. Without Phase 5, internal actions will be limited to linear interpolation between end forces, which is inaccurate for beams with distributed loads. See Phase 5 documentation for detailed dependency discussion.
 
 → [See full Phase 7 details](implementation_plan_phase07.md)
 

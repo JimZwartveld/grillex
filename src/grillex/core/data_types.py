@@ -21,6 +21,7 @@ This module provides Python-friendly access to the C++ core data structures:
 - BCHandler: Boundary condition handler for managing fixed DOFs
 - SolverMethod: Enum for linear solver methods (SparseLU, SimplicialLDLT, ConjugateGradient)
 - LinearSolver: Linear solver for finite element systems (K * u = F)
+- Model: Top-level orchestration class for complete structural analysis workflow
 """
 
 from grillex._grillex_cpp import (
@@ -44,7 +45,8 @@ from grillex._grillex_cpp import (
     FixedDOF,
     BCHandler,
     SolverMethod,
-    LinearSolver
+    LinearSolver,
+    Model
 )
 
 __all__ = [
@@ -55,5 +57,6 @@ __all__ = [
     'DOFHandler', 'WarpingDOFInfo', 'WarpingCoupling',
     'Assembler',
     'DOFIndex', 'FixedDOF', 'BCHandler',
-    'SolverMethod', 'LinearSolver'
+    'SolverMethod', 'LinearSolver',
+    'Model'
 ]

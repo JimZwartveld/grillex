@@ -21,6 +21,7 @@ pybind11_add_module(_grillex_cpp
     src/assembler.cpp
     src/boundary_condition.cpp
     src/solver.cpp
+    src/model.cpp
 )
 
 target_link_libraries(_grillex_cpp PRIVATE grillex_core)

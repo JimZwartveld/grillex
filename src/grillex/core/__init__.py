@@ -8,7 +8,8 @@ from .data_types import (
     DOFHandler, WarpingDOFInfo, WarpingCoupling,
     Assembler,
     DOFIndex, FixedDOF, BCHandler,
-    SolverMethod, LinearSolver
+    SolverMethod, LinearSolver,
+    Model
 )
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     'DOFHandler', 'WarpingDOFInfo', 'WarpingCoupling',
     'Assembler',
     'DOFIndex', 'FixedDOF', 'BCHandler',
-    'SolverMethod', 'LinearSolver'
+    'SolverMethod', 'LinearSolver',
+    'Model'
 ]

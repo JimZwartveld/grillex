@@ -13,6 +13,7 @@
 #include "grillex/assembler.hpp"
 #include "grillex/boundary_condition.hpp"
 #include "grillex/solver.hpp"
+#include "grillex/model.hpp"
 
 namespace py = pybind11;
 
@@ -68,7 +69,7 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         });
 
     // NodeRegistry class
-    py::class_<grillex::NodeRegistry>(m, "NodeRegistry",
+    py::class_<grillex::NodeRegistry, std::unique_ptr<grillex::NodeRegistry, py::nodelete>>(m, "NodeRegistry",
         "Registry for managing nodes with automatic merging based on tolerance")
         .def(py::init<double>(), py::arg("tolerance") = 1e-6,
              "Construct a NodeRegistry with specified tolerance [m]")
@@ -612,5 +613,117 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                     method_name = "Unknown";
             }
             return "<LinearSolver method=" + method_name + ">";
+        });
+
+    // ========================================================================
+    // Phase 3 (continued): Model Class (Orchestration)
+    // ========================================================================
+
+    // Model class
+    py::class_<grillex::Model>(m, "Model",
+        "Top-level Model class for structural analysis")
+        .def(py::init<double, grillex::LinearSolver::Method>(),
+             py::arg("node_tolerance") = 1e-6,
+             py::arg("solver_method") = grillex::LinearSolver::Method::SimplicialLDLT,
+             "Construct an empty model with node tolerance and solver method")
+        // Node access methods (delegate to internal NodeRegistry)
+        .def("get_or_create_node", [](grillex::Model &m, double x, double y, double z) {
+            return m.nodes.get_or_create_node(x, y, z);
+        }, py::arg("x"), py::arg("y"), py::arg("z"),
+           py::return_value_policy::reference_internal,
+           "Get existing node or create new one at (x, y, z)")
+        .def("get_all_nodes", [](grillex::Model &m) {
+            py::list result;
+            for (const auto& node : m.nodes.all_nodes()) {
+                result.append(node.get());
+            }
+            return result;
+        }, "Get all nodes in the model")
+        .def_property_readonly("materials", [](const grillex::Model &m) {
+            py::list result;
+            for (const auto& mat : m.materials) {
+                result.append(mat.get());
+            }
+            return result;
+        }, "List of materials in the model")
+        .def_property_readonly("sections", [](const grillex::Model &m) {
+            py::list result;
+            for (const auto& sec : m.sections) {
+                result.append(sec.get());
+            }
+            return result;
+        }, "List of sections in the model")
+        .def_property_readonly("elements", [](const grillex::Model &m) {
+            py::list result;
+            for (const auto& elem : m.elements) {
+                result.append(elem.get());
+            }
+            return result;
+        }, "List of beam elements in the model")
+        .def_readwrite("boundary_conditions", &grillex::Model::boundary_conditions,
+                      "BCHandler for managing boundary conditions")
+        .def("create_material", &grillex::Model::create_material,
+             py::arg("name"),
+             py::arg("E"),
+             py::arg("nu"),
+             py::arg("rho"),
+             "Create a material and add to model",
+             py::return_value_policy::reference_internal)
+        .def("create_section", &grillex::Model::create_section,
+             py::arg("name"),
+             py::arg("A"),
+             py::arg("Iy"),
+             py::arg("Iz"),
+             py::arg("J"),
+             "Create a section and add to model",
+             py::return_value_policy::reference_internal)
+        .def("create_beam", &grillex::Model::create_beam,
+             py::arg("node_i"),
+             py::arg("node_j"),
+             py::arg("material"),
+             py::arg("section"),
+             py::arg("config") = grillex::BeamConfig{},
+             "Create a beam element and add to model",
+             py::return_value_policy::reference_internal)
+        .def("add_nodal_load", &grillex::Model::add_nodal_load,
+             py::arg("node_id"),
+             py::arg("local_dof"),
+             py::arg("value"),
+             "Add a nodal load to the model (accumulated if called multiple times)")
+        .def("clear_loads", &grillex::Model::clear_loads,
+             "Clear all nodal loads")
+        .def("analyze", &grillex::Model::analyze,
+             "Run the analysis (DOF numbering, assembly, BC application, solving)")
+        .def("is_analyzed", &grillex::Model::is_analyzed,
+             "Check if model has been analyzed successfully")
+        .def("get_displacements", &grillex::Model::get_displacements,
+             "Get global displacement vector (requires analyze() first)")
+        .def("get_node_displacement", &grillex::Model::get_node_displacement,
+             py::arg("node_id"),
+             py::arg("local_dof"),
+             "Get displacement at a specific node and DOF")
+        .def("get_reactions", &grillex::Model::get_reactions,
+             "Get global reaction vector (requires analyze() first)")
+        .def("total_dofs", &grillex::Model::total_dofs,
+             "Get total number of DOFs in the model")
+        .def("get_dof_handler", &grillex::Model::get_dof_handler,
+             "Get the DOFHandler (for advanced users)",
+             py::return_value_policy::reference_internal)
+        .def("get_solver", py::overload_cast<>(&grillex::Model::get_solver),
+             "Get the LinearSolver for configuration",
+             py::return_value_policy::reference_internal)
+        .def("get_error_message", &grillex::Model::get_error_message,
+             "Get analysis error message (if analyze() failed)")
+        .def("clear", &grillex::Model::clear,
+             "Clear the model (remove all entities except nodes)")
+        .def("__repr__", [](const grillex::Model &mdl) {
+            std::ostringstream oss;
+            oss << "<Model nodes=" << mdl.nodes.all_nodes().size()
+                << " materials=" << mdl.materials.size()
+                << " sections=" << mdl.sections.size()
+                << " elements=" << mdl.elements.size()
+                << " analyzed=" << (mdl.is_analyzed() ? "True" : "False")
+                << ">";
+            return oss.str();
         });
 }
