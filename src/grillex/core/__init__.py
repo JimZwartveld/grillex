@@ -13,6 +13,11 @@ from .data_types import (
     Model
 )
 
+from .model_wrapper import (
+    Beam,
+    StructuralModel
+)
+
 __all__ = [
     'Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes',
     'BeamElement', 'BeamFormulation', 'EndRelease',
@@ -23,5 +28,6 @@ __all__ = [
     'DOFIndex', 'FixedDOF', 'BCHandler',
     'SolverMethod', 'LinearSolver',
     'LoadCaseType', 'NodalLoad', 'LineLoad', 'LoadCase', 'LoadCaseResult',
-    'Model'
+    'Model',
+    'Beam', 'StructuralModel'
 ]
