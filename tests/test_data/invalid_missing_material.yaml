@@ -1,0 +1,21 @@
+# Invalid: Beam references non-existent material
+name: "Invalid Model"
+
+materials:
+  - name: Steel
+    E: 210000000
+    nu: 0.3
+    rho: 7.85e-6
+
+sections:
+  - name: IPE300
+    A: 0.00538
+    Iy: 8.36e-5
+    Iz: 6.04e-6
+    J: 2.01e-7
+
+beams:
+  - start: [0, 0, 0]
+    end: [6, 0, 0]
+    section: IPE300
+    material: Aluminum  # Does not exist!

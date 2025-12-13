@@ -1,0 +1,59 @@
+# Multi-span continuous beam
+name: "Two-Span Beam"
+
+materials:
+  - name: Steel
+    E: 210000000
+    nu: 0.3
+    rho: 7.85e-6
+  - name: Aluminum
+    E: 70000000
+    nu: 0.33
+    rho: 2.7e-6
+
+sections:
+  - name: IPE300
+    A: 0.00538
+    Iy: 8.36e-5
+    Iz: 6.04e-6
+    J: 2.01e-7
+  - name: IPE400
+    A: 0.00845
+    Iy: 2.31e-4
+    Iz: 1.32e-5
+    J: 5.13e-7
+
+beams:
+  - start: [0, 0, 0]
+    end: [8, 0, 0]
+    section: IPE400
+    material: Steel
+  - start: [8, 0, 0]
+    end: [16, 0, 0]
+    section: IPE400
+    material: Steel
+
+boundary_conditions:
+  - node: [0, 0, 0]
+    type: fixed
+  - node: [8, 0, 0]
+    type: pinned
+  - node: [16, 0, 0]
+    type: pinned
+
+load_cases:
+  - name: "Dead Load"
+    type: Permanent
+    loads:
+      - node: [8, 0, 0]  # Middle support
+        dof: UY
+        value: -5.0
+  - name: "Live Load"
+    type: Variable
+    loads:
+      - node: [8, 0, 0]  # Middle support
+        dof: UY
+        value: -10.0
+      - node: [16, 0, 0]  # Right support
+        dof: UY
+        value: -10.0
