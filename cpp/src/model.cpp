@@ -31,6 +31,21 @@ BeamElement* Model::create_beam(Node* node_i, Node* node_j,
     return ptr;
 }
 
+bool Model::remove_element(int element_id) {
+    // Find element with matching ID
+    for (auto it = elements.begin(); it != elements.end(); ++it) {
+        if ((*it)->id == element_id) {
+            // Found - erase and return true
+            elements.erase(it);
+            // Mark as not analyzed since model changed
+            analyzed_ = false;
+            return true;
+        }
+    }
+    // Not found
+    return false;
+}
+
 // Load case management
 
 LoadCase* Model::create_load_case(const std::string& name, LoadCaseType type) {

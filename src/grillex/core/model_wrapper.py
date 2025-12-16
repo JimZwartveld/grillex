@@ -509,3 +509,229 @@ class StructuralModel:
     def boundary_conditions(self):
         """Direct access to boundary conditions handler."""
         return self._cpp_model.boundary_conditions
+
+    # ===== Beam Subdivision (Task 4.4) =====
+
+    def _point_on_line_segment(
+        self,
+        point: np.ndarray,
+        line_start: np.ndarray,
+        line_end: np.ndarray,
+        tolerance: float = 1e-6
+    ) -> Tuple[bool, float]:
+        """Check if a point lies on a line segment.
+
+        Args:
+            point: Point to check [x, y, z]
+            line_start: Start of line segment [x, y, z]
+            line_end: End of line segment [x, y, z]
+            tolerance: Distance tolerance for point-to-line check
+
+        Returns:
+            Tuple of (is_on_line, parameter_t) where:
+            - is_on_line: True if point is on the line segment (not at endpoints)
+            - parameter_t: Parametric position along line (0 = start, 1 = end)
+        """
+        # Vector from start to end
+        line_vec = line_end - line_start
+        line_length = np.linalg.norm(line_vec)
+
+        if line_length < tolerance:
+            # Degenerate line (zero length)
+            return False, 0.0
+
+        # Normalize line vector
+        line_unit = line_vec / line_length
+
+        # Vector from start to point
+        point_vec = point - line_start
+
+        # Project point onto line (parameter t)
+        t = np.dot(point_vec, line_unit) / line_length
+
+        # Check if t is in valid range (exclusive of endpoints)
+        if t <= tolerance / line_length or t >= 1.0 - tolerance / line_length:
+            return False, t
+
+        # Compute perpendicular distance from point to line
+        projection = line_start + t * line_vec
+        distance = np.linalg.norm(point - projection)
+
+        if distance <= tolerance:
+            return True, t
+        else:
+            return False, t
+
+    def _find_internal_nodes(self, beam: Beam) -> List[Tuple[float, Node]]:
+        """Find nodes that lie on the line segment between beam endpoints.
+
+        Args:
+            beam: Beam to check for internal nodes
+
+        Returns:
+            List of (distance_from_start, node) tuples, sorted by distance.
+            Does not include the beam's endpoint nodes.
+        """
+        internal_nodes = []
+        start_pos = beam.start_pos
+        end_pos = beam.end_pos
+
+        # Get all nodes from the C++ model
+        all_nodes = self._cpp_model.get_all_nodes()
+
+        # Get endpoint node IDs to exclude them
+        start_node = self.find_node_at(start_pos.tolist())
+        end_node = self.find_node_at(end_pos.tolist())
+
+        start_id = start_node.id if start_node else -1
+        end_id = end_node.id if end_node else -1
+
+        for node in all_nodes:
+            # Skip endpoint nodes
+            if node.id == start_id or node.id == end_id:
+                continue
+
+            # Get node position
+            node_pos = np.array([node.x, node.y, node.z])
+
+            # Check if node lies on the beam line segment
+            is_on_line, t = self._point_on_line_segment(
+                node_pos, start_pos, end_pos
+            )
+
+            if is_on_line:
+                # Distance from start
+                distance = t * beam.length
+                internal_nodes.append((distance, node))
+
+        # Sort by distance from start
+        internal_nodes.sort(key=lambda x: x[0])
+
+        return internal_nodes
+
+    def _split_beam_at_nodes(
+        self,
+        beam: Beam,
+        internal_nodes: List[Tuple[float, Node]]
+    ) -> List[Beam]:
+        """Split a beam at internal nodes into multiple sub-beams.
+
+        Args:
+            beam: Original beam to split
+            internal_nodes: List of (distance, node) tuples sorted by distance
+
+        Returns:
+            List of new Beam objects replacing the original beam
+        """
+        if not internal_nodes:
+            return [beam]
+
+        # Get material and section
+        material = beam.material
+        section = beam.section
+
+        # Get start and end nodes
+        start_node = self.find_node_at(beam.start_pos.tolist())
+        end_node = self.find_node_at(beam.end_pos.tolist())
+
+        # Build list of all nodes in order: start -> internal nodes -> end
+        all_nodes = [start_node]
+        for _, node in internal_nodes:
+            all_nodes.append(node)
+        all_nodes.append(end_node)
+
+        # Remove the original beam's element from C++ model elements list
+        # (We need to access the underlying C++ model's elements)
+        if beam.elements:
+            old_element = beam.elements[0]
+            # The C++ model maintains its own list - we'll let the old element
+            # remain but create new ones. The model.analyze() will use all elements.
+
+        # Create new sub-beams
+        new_beams = []
+        for i in range(len(all_nodes) - 1):
+            node_i = all_nodes[i]
+            node_j = all_nodes[i + 1]
+
+            start_pos = [node_i.x, node_i.y, node_i.z]
+            end_pos = [node_j.x, node_j.y, node_j.z]
+
+            # Create new beam element in C++ model
+            cpp_element = self._cpp_model.create_beam(node_i, node_j, material, section)
+
+            # Create Python Beam object
+            sub_beam = Beam(start_pos, end_pos, section, material, beam_id=self._beam_id_counter)
+            self._beam_id_counter += 1
+            sub_beam.add_element(cpp_element)
+            new_beams.append(sub_beam)
+
+        return new_beams
+
+    def _subdivide_beams(self) -> int:
+        """Find and subdivide beams that have internal nodes.
+
+        This method checks all beams for nodes that lie along their length
+        (but are not endpoints) and splits them into multiple elements.
+
+        Returns:
+            Number of beams that were subdivided
+        """
+        subdivided_count = 0
+        new_beams_list = []
+
+        for beam in self.beams[:]:  # Copy list to allow modification
+            internal_nodes = self._find_internal_nodes(beam)
+
+            if internal_nodes:
+                # Remove original beam's element from the model
+                # We need to mark it for removal
+                if beam.elements:
+                    old_element = beam.elements[0]
+                    # Remove from C++ model's elements list
+                    self._remove_element_from_cpp_model(old_element)
+
+                # Split the beam
+                new_beams = self._split_beam_at_nodes(beam, internal_nodes)
+                new_beams_list.extend(new_beams)
+                subdivided_count += 1
+            else:
+                # Keep the original beam
+                new_beams_list.append(beam)
+
+        # Replace beams list with new list
+        self.beams = new_beams_list
+
+        return subdivided_count
+
+    def _remove_element_from_cpp_model(self, element: _CppBeamElement) -> bool:
+        """Remove an element from the C++ model's elements list.
+
+        Args:
+            element: Element to remove
+
+        Returns:
+            True if element was found and removed, False otherwise
+        """
+        return self._cpp_model.remove_element(element.id)
+
+    def subdivide_beams(self) -> int:
+        """Public method to subdivide beams at internal nodes.
+
+        Call this method after creating all beams but before analysis
+        if you want beams to be automatically subdivided where they
+        cross other nodes.
+
+        Returns:
+            Number of beams that were subdivided
+
+        Example:
+            model = StructuralModel()
+            # Create materials and sections...
+            model.add_beam_by_coords([0,0,0], [12,0,0], "IPE300", "Steel")
+            # Create a node at the midpoint
+            model.get_or_create_node(6, 0, 0)
+            # Now subdivide - the beam becomes two 6m elements
+            n_split = model.subdivide_beams()
+            print(f"Subdivided {n_split} beams")
+        """
+        return self._subdivide_beams()

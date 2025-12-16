@@ -599,9 +599,107 @@ Automatically subdivide beams when internal nodes exist along their length.
    ```
 
 **Acceptance Criteria:**
-- [ ] Beam with one internal node becomes two elements
-- [ ] Beam with multiple internal nodes becomes multiple elements
-- [ ] Section/material properties propagate to sub-beams
+- [x] Beam with one internal node becomes two elements
+- [x] Beam with multiple internal nodes becomes multiple elements
+- [x] Section/material properties propagate to sub-beams
+
+---
+
+### Task 4.4 Execution Summary
+
+**Implementation Date:** 2025-12-16
+
+**What Was Implemented:**
+
+1. **Point-on-line detection algorithm** (`_point_on_line_segment` method):
+   - Projects point onto line segment using dot product
+   - Returns parametric position (t value between 0-1)
+   - Uses configurable tolerance for floating-point comparison
+   - Correctly excludes endpoints from internal node detection
+
+2. **Internal node detection** (`_find_internal_nodes` method):
+   - Iterates through all nodes in the C++ model
+   - Excludes beam endpoint nodes from consideration
+   - Returns sorted list of (distance_from_start, node) tuples
+   - Handles 3D line segments correctly
+
+3. **Beam splitting** (`_split_beam_at_nodes` method):
+   - Creates new sub-beams for each segment
+   - Properly propagates material and section properties
+   - Creates new C++ BeamElement instances for each sub-beam
+   - Maintains beam ID sequence
+
+4. **Orchestration** (`_subdivide_beams` and `subdivide_beams` methods):
+   - Iterates through all beams checking for internal nodes
+   - Removes original beam elements from C++ model
+   - Replaces beam list with subdivided beams
+   - Returns count of subdivided beams
+
+5. **C++ Model enhancement** (`remove_element` method):
+   - Added new method to C++ Model class to remove elements by ID
+   - Exposed through Python bindings
+
+**Files Created:**
+- `tests/python/test_phase4_beam_subdivision.py` - 26 comprehensive tests
+
+**Files Modified:**
+- `src/grillex/core/model_wrapper.py` - Added subdivision methods (~150 lines)
+- `cpp/include/grillex/model.hpp` - Added `remove_element` declaration
+- `cpp/src/model.cpp` - Added `remove_element` implementation
+- `cpp/bindings/bindings.cpp` - Added Python binding for `remove_element`
+
+**Design Decisions:**
+
+1. **Tolerance-based geometry**: Used a default tolerance of 1e-6m (1 micrometer) for point-on-line detection, which is appropriate for structural engineering applications.
+
+2. **Manual subdivision call**: Subdivision is triggered manually via `subdivide_beams()` rather than automatically during `analyze()`. This gives users more control over when subdivision occurs.
+
+3. **Element removal approach**: Added `remove_element` method to C++ Model class rather than trying to work around element management at the Python level. This is cleaner and more maintainable.
+
+4. **Sorted internal nodes**: Internal nodes are sorted by distance from beam start, ensuring consistent ordering regardless of the order nodes were created.
+
+**Issues Encountered and Solutions:**
+
+1. **Issue:** C++ module not rebuilding after edits
+   - **Solution:** The package uses CMake for C++ compilation. Must run `cmake ..` and `make` in the build directory to recompile, then use editable install (`pip install -e .`) to use local source.
+
+2. **Issue:** Initial implementation tried to track "removed" element IDs in Python without actually removing from C++ model
+   - **Solution:** Added proper `remove_element` method to C++ Model class with corresponding Python binding, providing clean element removal.
+
+3. **Issue:** Endpoint nodes were initially being detected as internal nodes
+   - **Solution:** Enhanced `_point_on_line_segment` to exclude points at t ≈ 0 or t ≈ 1 (within tolerance).
+
+**Test Coverage:**
+- 26 tests covering all acceptance criteria
+- Tests include: point-on-line detection, internal node finding, beam splitting, full subdivision workflow, property propagation, analysis with subdivided beams, and edge cases
+- All 26 new tests pass
+- All 34 existing Phase 4 wrapper tests still pass
+
+**Usage Example:**
+```python
+from grillex.core import StructuralModel, DOFIndex
+
+model = StructuralModel()
+model.add_material("Steel", 210e6, 0.3, 7.85e-6)
+model.add_section("IPE300", 0.01, 1e-5, 2e-5, 1.5e-5)
+
+# Create a 12m beam
+model.add_beam_by_coords([0, 0, 0], [12, 0, 0], "IPE300", "Steel")
+
+# Create internal nodes at 4m and 8m
+model.get_or_create_node(4, 0, 0)
+model.get_or_create_node(8, 0, 0)
+
+# Subdivide - beam becomes 3 elements (0-4m, 4-8m, 8-12m)
+n_split = model.subdivide_beams()
+print(f"Subdivided {n_split} beams")  # Output: "Subdivided 1 beams"
+print(f"Model now has {len(model.beams)} beams")  # Output: "Model now has 3 beams"
+
+# Continue with analysis...
+model.fix_node_at([0, 0, 0])
+model.add_point_load([12, 0, 0], DOFIndex.UY, -10.0)
+model.analyze()
+```
 
 ---
 

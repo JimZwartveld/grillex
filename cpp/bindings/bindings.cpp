@@ -790,6 +790,11 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              py::arg("config") = grillex::BeamConfig{},
              "Create a beam element and add to model",
              py::return_value_policy::reference_internal)
+        .def("remove_element", &grillex::Model::remove_element,
+             py::arg("element_id"),
+             "Remove a beam element from the model by ID.\n\n"
+             "Used for beam subdivision when a beam needs to be split at internal nodes.\n"
+             "Returns True if element was found and removed, False otherwise.")
         // Load case management
         .def("create_load_case", &grillex::Model::create_load_case,
              py::arg("name"),

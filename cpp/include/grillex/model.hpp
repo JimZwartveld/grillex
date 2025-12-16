@@ -106,6 +106,16 @@ public:
                              Material* material, Section* section,
                              const BeamConfig& config = BeamConfig{});
 
+    /**
+     * @brief Remove a beam element from the model by ID
+     * @param element_id ID of the element to remove
+     * @return true if element was found and removed, false otherwise
+     *
+     * Used for beam subdivision when a beam needs to be split at internal nodes.
+     * The element is removed from the elements vector and destroyed.
+     */
+    bool remove_element(int element_id);
+
     // Load case management
 
     /**
