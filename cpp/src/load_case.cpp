@@ -5,6 +5,51 @@
 
 namespace grillex {
 
+/**
+ * @brief Compute acceleration at a point given an acceleration field
+ *
+ * For quasi-static analysis with rigid body kinematics:
+ *   a(P) = a(ref) + α × r
+ * where r = P - ref_point
+ *
+ * The full formula including centrifugal effects would be:
+ *   a(P) = a(ref) + α × r + ω × (ω × r)
+ * but for quasi-static analysis we ignore centrifugal terms.
+ *
+ * @param point Position where acceleration is computed [m]
+ * @param accel 6-component acceleration field [ax, ay, az, αx, αy, αz]
+ *              Linear accelerations in [m/s²], angular in [rad/s²]
+ * @param ref_point Reference point for the acceleration field [m]
+ * @return 6-component acceleration at the point [ax, ay, az, αx, αy, αz]
+ *         The angular acceleration is the same everywhere in a rigid body
+ */
+static Eigen::Vector<double, 6> compute_acceleration_at_point(
+    const Eigen::Vector3d& point,
+    const Eigen::Vector<double, 6>& accel,
+    const Eigen::Vector3d& ref_point)
+{
+    // Extract linear and angular accelerations
+    Eigen::Vector3d a_linear = accel.head<3>();   // [ax, ay, az]
+    Eigen::Vector3d alpha = accel.tail<3>();       // [αx, αy, αz]
+
+    // Position vector from reference point to current point
+    Eigen::Vector3d r = point - ref_point;
+
+    // Compute tangential acceleration: α × r
+    Eigen::Vector3d a_tangential = alpha.cross(r);
+
+    // Total linear acceleration at point
+    Eigen::Vector3d a_at_point = a_linear + a_tangential;
+
+    // Build result: [ax, ay, az, αx, αy, αz]
+    // Angular acceleration is the same everywhere in a rigid body
+    Eigen::Vector<double, 6> result;
+    result.head<3>() = a_at_point;
+    result.tail<3>() = alpha;
+
+    return result;
+}
+
 LoadCase::LoadCase(int id, const std::string& name, LoadCaseType type)
     : id_(id), name_(name), type_(type)
 {
@@ -91,16 +136,249 @@ Eigen::VectorXd LoadCase::assemble_load_vector(
         }
     }
 
-    // 3. Inertial loads from acceleration field (Phase 5 Task 5.3)
-    // TODO: Implement when element mass matrices are available
-    // if (acceleration_.norm() > 1e-10) {
-    //     // For each element, compute inertial forces
-    //     // f_inertial = -M * a
-    //     // where M is element mass matrix, a is nodal accelerations
-    //     // ... (implementation in Phase 5)
-    // }
+    // 3. Inertial loads from acceleration field
+    // For quasi-static analysis: f_inertial = -M * a
+    // where M is element mass matrix, a is nodal accelerations
+    if (acceleration_.norm() > 1e-10) {
+        for (const auto& elem_ptr : model.elements) {
+            BeamElement* elem = elem_ptr.get();
+            if (!elem) continue;
+
+            // Get node positions (accounting for offsets if present)
+            Eigen::Vector3d pos_i = elem->node_i->position();
+            Eigen::Vector3d pos_j = elem->node_j->position();
+
+            // For elements with offsets, compute acceleration at beam ends
+            // The beam ends are offset from the nodes
+            if (elem->has_offsets()) {
+                Eigen::Vector3d offset_i_global = elem->local_axes.to_global(elem->offset_i);
+                Eigen::Vector3d offset_j_global = elem->local_axes.to_global(elem->offset_j);
+                pos_i = pos_i + offset_i_global;
+                pos_j = pos_j + offset_j_global;
+            }
+
+            // Compute acceleration at element nodes
+            Eigen::Vector<double, 6> a_i = compute_acceleration_at_point(
+                pos_i, acceleration_, acceleration_ref_point_);
+            Eigen::Vector<double, 6> a_j = compute_acceleration_at_point(
+                pos_j, acceleration_, acceleration_ref_point_);
+
+            // Stack into element acceleration vector (12x1)
+            Eigen::Vector<double, 12> a_elem;
+            a_elem.head<6>() = a_i;
+            a_elem.tail<6>() = a_j;
+
+            // Get element global mass matrix
+            Eigen::Matrix<double, 12, 12> M = elem->global_mass_matrix();
+
+            // Body forces from acceleration field: f = M * a
+            // For quasi-static analysis, this represents the equivalent nodal forces
+            // from body forces due to the acceleration field (e.g., gravity)
+            // Note: For gravity (a = [0,0,-g]), this gives downward forces as expected
+            Eigen::Vector<double, 12> f_inertial = M * a_elem;
+
+            // Get location array mapping local DOFs to global DOFs
+            std::vector<int> location = dof_handler.get_location_array(*elem);
+
+            // Add inertial forces to global load vector
+            for (int i = 0; i < 12; i++) {
+                int global_dof = location[i];
+                if (global_dof >= 0 && global_dof < total_dofs) {
+                    F(global_dof) += f_inertial(i);
+                }
+            }
+        }
+    }
 
     return F;
+}
+
+// =============================================================================
+// LoadCombination Implementation
+// =============================================================================
+
+LoadCombination::LoadCombination(int id, const std::string& name,
+                                 double permanent_factor,
+                                 double variable_factor,
+                                 double environmental_factor,
+                                 double accidental_factor)
+    : id_(id), name_(name),
+      permanent_factor_(permanent_factor),
+      variable_factor_(variable_factor),
+      environmental_factor_(environmental_factor),
+      accidental_factor_(accidental_factor)
+{
+}
+
+double LoadCombination::get_type_factor(LoadCaseType type) const {
+    switch (type) {
+        case LoadCaseType::Permanent:
+            return permanent_factor_;
+        case LoadCaseType::Variable:
+            return variable_factor_;
+        case LoadCaseType::Environmental:
+            return environmental_factor_;
+        case LoadCaseType::Accidental:
+            return accidental_factor_;
+        default:
+            return 1.0;
+    }
+}
+
+void LoadCombination::set_type_factor(LoadCaseType type, double factor) {
+    switch (type) {
+        case LoadCaseType::Permanent:
+            permanent_factor_ = factor;
+            break;
+        case LoadCaseType::Variable:
+            variable_factor_ = factor;
+            break;
+        case LoadCaseType::Environmental:
+            environmental_factor_ = factor;
+            break;
+        case LoadCaseType::Accidental:
+            accidental_factor_ = factor;
+            break;
+    }
+}
+
+void LoadCombination::add_load_case(LoadCase* load_case) {
+    if (!load_case) return;
+
+    // Check if already added
+    for (const auto& term : terms_) {
+        if (term.load_case == load_case) {
+            return;  // Already exists, don't add duplicate
+        }
+    }
+
+    // Get factor based on load case type
+    double factor = get_type_factor(load_case->type());
+    terms_.emplace_back(load_case, factor, false);  // Not explicit
+}
+
+void LoadCombination::add_load_case(LoadCase* load_case, double factor) {
+    if (!load_case) return;
+
+    // Check if already added - if so, update the factor
+    for (auto& term : terms_) {
+        if (term.load_case == load_case) {
+            term.factor = factor;
+            term.explicit_factor = true;
+            return;
+        }
+    }
+
+    // New load case with explicit factor
+    terms_.emplace_back(load_case, factor, true);
+}
+
+bool LoadCombination::remove_load_case(LoadCase* load_case) {
+    for (auto it = terms_.begin(); it != terms_.end(); ++it) {
+        if (it->load_case == load_case) {
+            terms_.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
+void LoadCombination::clear() {
+    terms_.clear();
+}
+
+Eigen::VectorXd LoadCombination::get_combined_displacements(
+    const std::map<int, LoadCaseResult>& results) const
+{
+    if (terms_.empty()) {
+        return Eigen::VectorXd();
+    }
+
+    // Find vector size from first available result
+    int size = 0;
+    for (const auto& term : terms_) {
+        auto it = results.find(term.load_case->id());
+        if (it != results.end() && it->second.success) {
+            size = static_cast<int>(it->second.displacements.size());
+            break;
+        }
+    }
+
+    if (size == 0) {
+        throw std::runtime_error("No valid load case results found for combination");
+    }
+
+    Eigen::VectorXd combined = Eigen::VectorXd::Zero(size);
+
+    for (const auto& term : terms_) {
+        auto it = results.find(term.load_case->id());
+        if (it == results.end()) {
+            throw std::runtime_error("Missing result for load case '" +
+                                   term.load_case->name() + "' (ID: " +
+                                   std::to_string(term.load_case->id()) + ")");
+        }
+
+        if (!it->second.success) {
+            throw std::runtime_error("Load case '" + term.load_case->name() +
+                                   "' analysis failed: " + it->second.error_message);
+        }
+
+        if (it->second.displacements.size() != size) {
+            throw std::runtime_error("Inconsistent displacement vector size for load case '" +
+                                   term.load_case->name() + "'");
+        }
+
+        combined += term.factor * it->second.displacements;
+    }
+
+    return combined;
+}
+
+Eigen::VectorXd LoadCombination::get_combined_reactions(
+    const std::map<int, LoadCaseResult>& results) const
+{
+    if (terms_.empty()) {
+        return Eigen::VectorXd();
+    }
+
+    // Find vector size from first available result
+    int size = 0;
+    for (const auto& term : terms_) {
+        auto it = results.find(term.load_case->id());
+        if (it != results.end() && it->second.success) {
+            size = static_cast<int>(it->second.reactions.size());
+            break;
+        }
+    }
+
+    if (size == 0) {
+        throw std::runtime_error("No valid load case results found for combination");
+    }
+
+    Eigen::VectorXd combined = Eigen::VectorXd::Zero(size);
+
+    for (const auto& term : terms_) {
+        auto it = results.find(term.load_case->id());
+        if (it == results.end()) {
+            throw std::runtime_error("Missing result for load case '" +
+                                   term.load_case->name() + "' (ID: " +
+                                   std::to_string(term.load_case->id()) + ")");
+        }
+
+        if (!it->second.success) {
+            throw std::runtime_error("Load case '" + term.load_case->name() +
+                                   "' analysis failed: " + it->second.error_message);
+        }
+
+        if (it->second.reactions.size() != size) {
+            throw std::runtime_error("Inconsistent reaction vector size for load case '" +
+                                   term.load_case->name() + "'");
+        }
+
+        combined += term.factor * it->second.reactions;
+    }
+
+    return combined;
 }
 
 } // namespace grillex

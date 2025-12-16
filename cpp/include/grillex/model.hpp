@@ -181,6 +181,19 @@ public:
     const LoadCaseResult& get_result(LoadCase* load_case) const;
 
     /**
+     * @brief Get all load case results (for use with LoadCombination)
+     * @return Map of load case ID to LoadCaseResult
+     *
+     * Use this to get combined results from a LoadCombination:
+     *   auto combo = LoadCombination(1, "ULS", 1.35, 1.5);
+     *   combo.add_load_case(dead_load);
+     *   combo.add_load_case(live_load);
+     *   model.analyze();
+     *   auto combined_u = combo.get_combined_displacements(model.get_all_results());
+     */
+    const std::map<int, LoadCaseResult>& get_all_results() const { return results_; }
+
+    /**
      * @brief Run analysis for all load cases
      * @return true if ALL load cases analyzed successfully
      *

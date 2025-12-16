@@ -751,6 +751,87 @@ PYBIND11_MODULE(_grillex_cpp, m) {
             return "<LoadCaseResult success=" + std::string(res.success ? "True" : "False") + ">";
         });
 
+    // LoadCombinationTerm struct
+    py::class_<grillex::LoadCombinationTerm>(m, "LoadCombinationTerm",
+        "Term in a load combination (load case + factor)")
+        .def(py::init<grillex::LoadCase*, double, bool>(),
+             py::arg("load_case"),
+             py::arg("factor"),
+             py::arg("explicit_factor") = false,
+             "Construct a combination term")
+        .def_readonly("load_case", &grillex::LoadCombinationTerm::load_case,
+                     "Load case (non-owning pointer)")
+        .def_readonly("factor", &grillex::LoadCombinationTerm::factor,
+                     "Load factor to apply")
+        .def_readonly("explicit_factor", &grillex::LoadCombinationTerm::explicit_factor,
+                     "True if factor was explicitly set")
+        .def("__repr__", [](const grillex::LoadCombinationTerm &term) {
+            std::string lc_name = term.load_case ? term.load_case->name() : "null";
+            return "<LoadCombinationTerm '" + lc_name +
+                   "' factor=" + std::to_string(term.factor) +
+                   " explicit=" + (term.explicit_factor ? "True" : "False") + ">";
+        });
+
+    // LoadCombination class
+    py::class_<grillex::LoadCombination>(m, "LoadCombination",
+        "Load combination for code-based analysis (ULS, SLS, etc.)\n\n"
+        "Combines multiple load cases with factors. Two approaches:\n"
+        "1. Type-based factors: Set factors for Permanent, Variable, Environmental,\n"
+        "   Accidental types in constructor. Load cases automatically get their type factor.\n"
+        "2. Explicit factors: Override type-based factor when adding a load case.\n\n"
+        "Example (Eurocode ULS):\n"
+        "    combo = LoadCombination(1, 'ULS-STR', 1.35, 1.5, 1.5, 1.0)\n"
+        "    combo.add_load_case(dead_load)   # Uses 1.35 (Permanent)\n"
+        "    combo.add_load_case(live_load)   # Uses 1.5 (Variable)\n"
+        "    combo.add_load_case(special, 0.9)  # Explicit factor 0.9")
+        .def(py::init<int, const std::string&, double, double, double, double>(),
+             py::arg("id"),
+             py::arg("name"),
+             py::arg("permanent_factor") = 1.0,
+             py::arg("variable_factor") = 1.0,
+             py::arg("environmental_factor") = 1.0,
+             py::arg("accidental_factor") = 1.0,
+             "Construct a load combination with type-based factors")
+        .def_property_readonly("id", &grillex::LoadCombination::id, "Combination ID")
+        .def_property_readonly("name", &grillex::LoadCombination::name, "Combination name")
+        .def("get_type_factor", &grillex::LoadCombination::get_type_factor,
+             py::arg("type"),
+             "Get factor for a load case type")
+        .def("set_type_factor", &grillex::LoadCombination::set_type_factor,
+             py::arg("type"),
+             py::arg("factor"),
+             "Set factor for a load case type")
+        .def("add_load_case", py::overload_cast<grillex::LoadCase*>(&grillex::LoadCombination::add_load_case),
+             py::arg("load_case"),
+             "Add a load case using its type-based factor")
+        .def("add_load_case", py::overload_cast<grillex::LoadCase*, double>(&grillex::LoadCombination::add_load_case),
+             py::arg("load_case"),
+             py::arg("factor"),
+             "Add a load case with an explicit factor (overrides type-based)")
+        .def("remove_load_case", &grillex::LoadCombination::remove_load_case,
+             py::arg("load_case"),
+             "Remove a load case from the combination")
+        .def("clear", &grillex::LoadCombination::clear,
+             "Clear all load cases from the combination")
+        .def("get_terms", &grillex::LoadCombination::get_terms,
+             py::return_value_policy::reference_internal,
+             "Get all terms (load cases + factors)")
+        .def("__len__", &grillex::LoadCombination::size,
+             "Get number of load cases in the combination")
+        .def("empty", &grillex::LoadCombination::empty,
+             "Check if the combination is empty")
+        .def("get_combined_displacements", &grillex::LoadCombination::get_combined_displacements,
+             py::arg("results"),
+             "Get combined displacements from individual load case results")
+        .def("get_combined_reactions", &grillex::LoadCombination::get_combined_reactions,
+             py::arg("results"),
+             "Get combined reactions from individual load case results")
+        .def("__repr__", [](const grillex::LoadCombination &combo) {
+            return "<LoadCombination '" + combo.name() +
+                   "' id=" + std::to_string(combo.id()) +
+                   " terms=" + std::to_string(combo.size()) + ">";
+        });
+
     // ========================================================================
     // Phase 3 (continued): Model Class (Orchestration)
     // ========================================================================
@@ -853,6 +934,9 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              py::arg("load_case"),
              "Get result for a specific load case",
              py::return_value_policy::reference_internal)
+        .def("get_all_results", &grillex::Model::get_all_results,
+             py::return_value_policy::reference_internal,
+             "Get all load case results (for use with LoadCombination)")
         .def("analyze", &grillex::Model::analyze,
              "Run analysis for all load cases")
         .def("is_analyzed", &grillex::Model::is_analyzed,

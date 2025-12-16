@@ -4,6 +4,8 @@
 #include <vector>
 #include <memory>
 #include <cmath>
+#include <map>
+#include <stdexcept>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
@@ -208,6 +210,170 @@ struct LoadCaseResult {
     LoadCaseResult() : load_case(nullptr), success(false) {}
     LoadCaseResult(LoadCase* lc)
         : load_case(lc), success(false) {}
+};
+
+/**
+ * @brief Term in a load combination (load case + factor)
+ */
+struct LoadCombinationTerm {
+    LoadCase* load_case;                   ///< Load case (non-owning pointer)
+    double factor;                         ///< Load factor to apply
+    bool explicit_factor;                  ///< True if factor was explicitly set
+
+    LoadCombinationTerm(LoadCase* lc, double f, bool is_explicit = false)
+        : load_case(lc), factor(f), explicit_factor(is_explicit) {}
+};
+
+/**
+ * @brief Load combination for code-based analysis (ULS, SLS, etc.)
+ *
+ * A LoadCombination combines multiple load cases with factors to produce
+ * combined results. Two approaches are supported:
+ *
+ * 1. **Type-based factors**: Set default factors for each load case type
+ *    (Permanent, Variable, Environmental, Accidental) in the constructor.
+ *    When adding load cases, they automatically get the factor for their type.
+ *
+ * 2. **Explicit factors**: Override the type-based factor by specifying
+ *    an explicit factor when adding a load case.
+ *
+ * Usage Example 1 (type-based, Eurocode ULS):
+ * @code
+ *   auto combo = LoadCombination(1, "ULS-STR", 1.35, 1.5, 1.5, 1.0);
+ *   combo.add_load_case(dead_load);   // Uses 1.35 (Permanent type)
+ *   combo.add_load_case(live_load);   // Uses 1.5 (Variable type)
+ *   combo.add_load_case(wind);        // Uses 1.5 (Environmental type)
+ * @endcode
+ *
+ * Usage Example 2 (explicit factors):
+ * @code
+ *   auto combo = LoadCombination(2, "Custom");
+ *   combo.add_load_case(dead_load, 1.0);    // Explicit factor 1.0
+ *   combo.add_load_case(live_load, 0.7);    // Explicit factor 0.7 (reduction)
+ * @endcode
+ *
+ * Usage Example 3 (mixed):
+ * @code
+ *   auto combo = LoadCombination(3, "Wind-ULS", 1.0, 0.5, 1.5, 1.0);
+ *   combo.add_load_case(dead_load);       // Uses 1.0 (Permanent type)
+ *   combo.add_load_case(live_load);       // Uses 0.5 (Variable type)
+ *   combo.add_load_case(wind);            // Uses 1.5 (Environmental type)
+ *   combo.add_load_case(special, 0.9);    // Explicit factor 0.9
+ * @endcode
+ */
+class LoadCombination {
+public:
+    /**
+     * @brief Construct a load combination with type-based factors
+     * @param id Unique identifier
+     * @param name Descriptive name (e.g., "ULS-STR", "SLS-Characteristic")
+     * @param permanent_factor Factor for Permanent load cases (default: 1.0)
+     * @param variable_factor Factor for Variable load cases (default: 1.0)
+     * @param environmental_factor Factor for Environmental load cases (default: 1.0)
+     * @param accidental_factor Factor for Accidental load cases (default: 1.0)
+     */
+    LoadCombination(int id, const std::string& name,
+                   double permanent_factor = 1.0,
+                   double variable_factor = 1.0,
+                   double environmental_factor = 1.0,
+                   double accidental_factor = 1.0);
+
+    // Getters
+    int id() const { return id_; }
+    const std::string& name() const { return name_; }
+
+    /**
+     * @brief Get the factor for a load case type
+     * @param type Load case type
+     * @return Factor for that type
+     */
+    double get_type_factor(LoadCaseType type) const;
+
+    /**
+     * @brief Set the factor for a load case type
+     * @param type Load case type
+     * @param factor Factor to use for that type
+     */
+    void set_type_factor(LoadCaseType type, double factor);
+
+    /**
+     * @brief Add a load case using the type-based factor
+     * @param load_case Load case to add
+     *
+     * The factor is determined by the load case's type.
+     */
+    void add_load_case(LoadCase* load_case);
+
+    /**
+     * @brief Add a load case with an explicit factor
+     * @param load_case Load case to add
+     * @param factor Explicit factor to use (overrides type-based)
+     */
+    void add_load_case(LoadCase* load_case, double factor);
+
+    /**
+     * @brief Remove a load case from the combination
+     * @param load_case Load case to remove
+     * @return true if found and removed, false if not found
+     */
+    bool remove_load_case(LoadCase* load_case);
+
+    /**
+     * @brief Clear all load cases from the combination
+     */
+    void clear();
+
+    /**
+     * @brief Get all terms (load cases + factors) in the combination
+     */
+    const std::vector<LoadCombinationTerm>& get_terms() const { return terms_; }
+
+    /**
+     * @brief Get the number of load cases in the combination
+     */
+    size_t size() const { return terms_.size(); }
+
+    /**
+     * @brief Check if the combination is empty
+     */
+    bool empty() const { return terms_.empty(); }
+
+    /**
+     * @brief Get combined displacements from individual load case results
+     * @param results Map of load case ID to LoadCaseResult
+     * @return Combined displacement vector (factored sum)
+     *
+     * Combined result = Σ (factor_i * displacement_i)
+     *
+     * @throws std::runtime_error if a required load case result is missing
+     */
+    Eigen::VectorXd get_combined_displacements(
+        const std::map<int, LoadCaseResult>& results) const;
+
+    /**
+     * @brief Get combined reactions from individual load case results
+     * @param results Map of load case ID to LoadCaseResult
+     * @return Combined reaction vector (factored sum)
+     *
+     * Combined result = Σ (factor_i * reaction_i)
+     *
+     * @throws std::runtime_error if a required load case result is missing
+     */
+    Eigen::VectorXd get_combined_reactions(
+        const std::map<int, LoadCaseResult>& results) const;
+
+private:
+    int id_;
+    std::string name_;
+
+    // Type-based factors (used when no explicit factor is given)
+    double permanent_factor_;
+    double variable_factor_;
+    double environmental_factor_;
+    double accidental_factor_;
+
+    // Terms: (load_case, factor, explicit_flag)
+    std::vector<LoadCombinationTerm> terms_;
 };
 
 } // namespace grillex

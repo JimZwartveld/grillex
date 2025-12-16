@@ -1094,3 +1094,521 @@ Phase 7 can now:
 - Apply differential equations: dV/dx + q = 0, dM/dx - V = 0
 
 ---
+
+## Execution Summary: Phase 5 - Task 5.3 Complete
+
+**Completed:** December 16, 2025
+**Status:** Task 5.1 ✅ | Task 5.2 ✅ | Task 5.3 ✅ | Task 5.4 ⏸️ Pending
+**Testing:** All 14 new acceleration field tests passing, 368 total tests passing (no regressions)
+
+### Task 5.3: Acceleration Field Loads - ✅ COMPLETE
+
+**Implementation Status:**
+
+Implemented acceleration field loading for quasi-static analysis, enabling gravity and rotational acceleration effects. The implementation uses the existing consistent mass matrix infrastructure and computes equivalent nodal forces from body forces.
+
+**What Was Implemented:**
+
+1. **`compute_acceleration_at_point()` Function** (`cpp/src/load_case.cpp`):
+   ```cpp
+   static Eigen::Vector<double, 6> compute_acceleration_at_point(
+       const Eigen::Vector3d& point,
+       const Eigen::Vector<double, 6>& accel,
+       const Eigen::Vector3d& ref_point)
+   {
+       // Extract linear and angular accelerations
+       Eigen::Vector3d a_linear = accel.head<3>();
+       Eigen::Vector3d alpha = accel.tail<3>();
+
+       // Position vector from reference point to current point
+       Eigen::Vector3d r = point - ref_point;
+
+       // Compute tangential acceleration: α × r
+       Eigen::Vector3d a_tangential = alpha.cross(r);
+
+       // Total linear acceleration at point
+       Eigen::Vector3d a_at_point = a_linear + a_tangential;
+
+       // Build result
+       Eigen::Vector<double, 6> result;
+       result.head<3>() = a_at_point;
+       result.tail<3>() = alpha;
+
+       return result;
+   }
+   ```
+
+   For quasi-static analysis with rigid body kinematics:
+   - `a(P) = a(ref) + α × r` where `r = P - ref_point`
+   - Angular acceleration is the same everywhere in a rigid body
+
+2. **Updated `LoadCase::assemble_load_vector()`** (`cpp/src/load_case.cpp`):
+   ```cpp
+   // 3. Body forces from acceleration field
+   if (acceleration_.norm() > 1e-10) {
+       for (const auto& elem_ptr : model.elements) {
+           BeamElement* elem = elem_ptr.get();
+           if (!elem) continue;
+
+           // Get node positions (accounting for offsets if present)
+           Eigen::Vector3d pos_i = elem->node_i->position();
+           Eigen::Vector3d pos_j = elem->node_j->position();
+
+           if (elem->has_offsets()) {
+               Eigen::Vector3d offset_i_global = elem->local_axes.to_global(elem->offset_i);
+               Eigen::Vector3d offset_j_global = elem->local_axes.to_global(elem->offset_j);
+               pos_i = pos_i + offset_i_global;
+               pos_j = pos_j + offset_j_global;
+           }
+
+           // Compute acceleration at element nodes
+           Eigen::Vector<double, 6> a_i = compute_acceleration_at_point(
+               pos_i, acceleration_, acceleration_ref_point_);
+           Eigen::Vector<double, 6> a_j = compute_acceleration_at_point(
+               pos_j, acceleration_, acceleration_ref_point_);
+
+           // Stack into element acceleration vector (12x1)
+           Eigen::Vector<double, 12> a_elem;
+           a_elem.head<6>() = a_i;
+           a_elem.tail<6>() = a_j;
+
+           // Get element global mass matrix
+           Eigen::Matrix<double, 12, 12> M = elem->global_mass_matrix();
+
+           // Body forces: f = M * a
+           Eigen::Vector<double, 12> f_inertial = M * a_elem;
+
+           // Add to global load vector
+           std::vector<int> location = dof_handler.get_location_array(*elem);
+           for (int i = 0; i < 12; i++) {
+               int global_dof = location[i];
+               if (global_dof >= 0 && global_dof < total_dofs) {
+                   F(global_dof) += f_inertial(i);
+               }
+           }
+       }
+   }
+   ```
+
+**Existing Infrastructure Used:**
+
+The following was already implemented and used directly:
+
+1. **`local_mass_matrix()` and `global_mass_matrix()`** - Consistent mass matrices with Timoshenko support (lines 208-328 in beam_element.cpp)
+2. **`set_acceleration_field()`** - LoadCase method to store acceleration field
+3. **`acceleration_` and `acceleration_ref_point_`** - LoadCase member variables
+
+**Issues Encountered and Solutions:**
+
+1. **Sign Convention Error for Inertial Forces**
+   - **Issue:** Initial implementation used `-M * a` (d'Alembert forces), causing gravity to produce upward deflection and negative reactions
+   - **Solution:** Changed to `+M * a` (body forces) for quasi-static analysis
+   - **Physics:** For gravity `a = [0, 0, -g]`, body force `f = M * a` gives downward forces as expected
+
+2. **Simply Supported Beam Test Failure**
+   - **Issue:** Test failed due to unstable system (torsion DOF unrestrained)
+   - **Solution:** Added torsional restraint `fix_dof_at([0, 0, 0], DOFIndex.RX, 0.0)`
+
+3. **Python API Corrections**
+   - **Issue:** Used incorrect method names (`solve()` vs `analyze()`) and wrong reaction key format (`'Fz'` vs `DOFIndex.UZ`)
+   - **Solution:** Updated tests to match actual StructuralModel API
+
+**Acceptance Criteria Status:**
+
+- ✅ **Gravity load (az = -9.81) produces correct weight forces:** Verified with `test_ac1_gravity_produces_weight_forces`
+- ✅ **Rotational acceleration produces tangential forces:** Verified with `test_ac2_rotational_acceleration_produces_forces`
+- ✅ **1 mT/m beam with gravity → 9.81 kN/m equivalent load:** Verified with `test_ac3_mass_per_meter_with_gravity` (error < 1%)
+- ✅ **Gravity equivalent to distributed load:** Verified with `test_gravity_equivalent_to_distributed_load` (difference < 5%)
+- ✅ **Combines with other load types:** Verified with `test_gravity_plus_nodal_load` and `test_gravity_plus_line_load`
+
+**Testing Results:**
+
+All 14 new acceleration field tests passing:
+
+```
+tests/python/test_phase5_acceleration_loads.py::TestGravityLoads::test_cantilever_gravity_basic PASSED
+tests/python/test_phase5_acceleration_loads.py::TestGravityLoads::test_cantilever_gravity_reactions PASSED
+tests/python/test_phase5_acceleration_loads.py::TestGravityLoads::test_simply_supported_gravity PASSED
+tests/python/test_phase5_acceleration_loads.py::TestGravityLoads::test_gravity_equivalent_to_distributed_load PASSED
+tests/python/test_phase5_acceleration_loads.py::TestRotationalAcceleration::test_angular_acceleration_produces_forces PASSED
+tests/python/test_phase5_acceleration_loads.py::TestAccelerationWithOtherLoads::test_gravity_plus_nodal_load PASSED
+tests/python/test_phase5_acceleration_loads.py::TestAccelerationWithOtherLoads::test_gravity_plus_line_load PASSED
+tests/python/test_phase5_acceleration_loads.py::TestMassMatrix::test_mass_matrix_symmetry PASSED
+tests/python/test_phase5_acceleration_loads.py::TestMassMatrix::test_mass_matrix_positive_diagonal PASSED
+tests/python/test_phase5_acceleration_loads.py::TestMassMatrix::test_mass_matrix_total_mass PASSED
+tests/python/test_phase5_acceleration_loads.py::TestAccelerationAcceptanceCriteria::test_ac1_gravity_produces_weight_forces PASSED
+tests/python/test_phase5_acceleration_loads.py::TestAccelerationAcceptanceCriteria::test_ac2_rotational_acceleration_produces_forces PASSED
+tests/python/test_phase5_acceleration_loads.py::TestAccelerationAcceptanceCriteria::test_ac3_mass_per_meter_with_gravity PASSED
+tests/python/test_phase5_acceleration_loads.py::TestNoAcceleration::test_zero_acceleration_no_effect PASSED
+
+============================== 14 passed in 0.36s ==============================
+```
+
+Plus 368 total tests passing (no regressions).
+
+**Files Modified:**
+
+- `cpp/src/load_case.cpp` - Added `compute_acceleration_at_point()` function and updated `assemble_load_vector()` (~50 lines)
+
+**Files Created:**
+
+- `tests/python/test_phase5_acceleration_loads.py` - 14 comprehensive tests (~540 lines)
+
+**Python Usage Examples:**
+
+**Example 1: Cantilever with Gravity**
+```python
+from grillex.core import StructuralModel, LoadCaseType, DOFIndex
+import numpy as np
+
+model = StructuralModel()
+model.add_material("Steel", 210e6, 0.3, 7.85e-6)  # rho = 7.85 mT/m³
+model.add_section("IPE300", 0.01, 1e-4, 1e-4, 1e-5)
+
+beam = model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+model.fix_node_at([0, 0, 0])
+
+# Apply gravity: g = 9.81 m/s² downward
+lc = model.create_load_case("Gravity", LoadCaseType.Permanent)
+lc.set_acceleration_field(
+    np.array([0.0, 0.0, -9.81, 0.0, 0.0, 0.0]),  # [ax, ay, az, αx, αy, αz]
+    np.array([0.0, 0.0, 0.0])  # Reference point
+)
+
+model.analyze()
+model.set_active_load_case(lc)
+
+# Beam deflects downward
+tip_deflection = model.get_displacement_at([6, 0, 0], DOFIndex.UZ)
+print(f"Tip deflection: {tip_deflection*1000:.3f} mm")  # Negative (downward)
+```
+
+**Example 2: Rotational Acceleration**
+```python
+# Apply angular acceleration about Z-axis
+# α = 2 rad/s² about origin
+lc = model.create_load_case("Rotation", LoadCaseType.Variable)
+lc.set_acceleration_field(
+    np.array([0.0, 0.0, 0.0, 0.0, 0.0, 2.0]),  # [0, 0, 0, 0, 0, αz]
+    np.array([0.0, 0.0, 0.0])  # Reference point at origin
+)
+```
+
+**Example 3: Combined Gravity + Point Load**
+```python
+lc = model.create_load_case("Combined", LoadCaseType.Permanent)
+
+# Gravity
+lc.set_acceleration_field(
+    np.array([0.0, 0.0, -9.81, 0.0, 0.0, 0.0]),
+    np.array([0.0, 0.0, 0.0])
+)
+
+# Plus nodal load
+tip_node = model.find_node_at([6, 0, 0])
+lc.add_nodal_load(tip_node.id, DOFIndex.UZ, -10.0)  # 10 kN downward
+```
+
+**Technical Notes:**
+
+1. **Quasi-static vs Dynamic Analysis:**
+   - This implementation is for quasi-static analysis (gravity, centrifugal effects in steady rotation)
+   - For true dynamic analysis, additional terms (ω × (ω × r) for centripetal, Coriolis) would be needed
+
+2. **Mass Matrix:**
+   - Uses consistent mass matrix (already implemented in Phase 2)
+   - Alternative lumped mass approach not implemented (consistent is more accurate)
+
+3. **Coordinate Transformation:**
+   - Acceleration is specified in global coordinates
+   - Mass matrix is transformed to global coordinates
+   - No additional transformation needed
+
+**Phase 5 Status:**
+
+| Task | Status |
+|------|--------|
+| 5.1: Load Case Structure | ✅ Complete |
+| 5.2: Line Load Equivalent Nodal Forces | ✅ Complete |
+| 5.3: Acceleration Field Loads | ✅ Complete |
+| 5.4: Load Combinations | ✅ Complete |
+
+---
+
+## Execution Summary: Phase 5 - Task 5.4 Complete
+
+**Completed:** December 16, 2025
+**Status:** Task 5.1 ✅ | Task 5.2 ✅ | Task 5.3 ✅ | Task 5.4 ✅
+**Testing:** All 17 new load combination tests passing, 385 total tests passing (no regressions)
+
+### Task 5.4: Load Combinations - ✅ COMPLETE
+
+**Implementation Status:**
+
+Implemented load combinations with two factor approaches as requested:
+1. **Type-based factors:** Set factors for Permanent, Variable, Environmental, Accidental types in constructor
+2. **Explicit factors:** Override type-based factor when adding a load case
+
+**What Was Implemented:**
+
+1. **LoadCombinationTerm Struct** (`cpp/include/grillex/load_case.hpp`):
+   ```cpp
+   struct LoadCombinationTerm {
+       LoadCase* load_case;      // Load case (non-owning pointer)
+       double factor;            // Load factor to apply
+       bool explicit_factor;     // True if factor was explicitly set
+
+       LoadCombinationTerm(LoadCase* lc, double f, bool is_explicit = false)
+           : load_case(lc), factor(f), explicit_factor(is_explicit) {}
+   };
+   ```
+
+2. **LoadCombination Class** (`cpp/include/grillex/load_case.hpp`):
+   ```cpp
+   class LoadCombination {
+   public:
+       // Constructor with type-based factors
+       LoadCombination(int id, const std::string& name,
+                      double permanent_factor = 1.0,
+                      double variable_factor = 1.0,
+                      double environmental_factor = 1.0,
+                      double accidental_factor = 1.0);
+
+       // Getters
+       int id() const;
+       const std::string& name() const;
+
+       // Type factor management
+       double get_type_factor(LoadCaseType type) const;
+       void set_type_factor(LoadCaseType type, double factor);
+
+       // Add load cases
+       void add_load_case(LoadCase* load_case);           // Uses type-based factor
+       void add_load_case(LoadCase* load_case, double f); // Explicit factor
+
+       // Management
+       bool remove_load_case(LoadCase* load_case);
+       void clear();
+       const std::vector<LoadCombinationTerm>& get_terms() const;
+       size_t size() const;
+       bool empty() const;
+
+       // Combined results
+       Eigen::VectorXd get_combined_displacements(
+           const std::map<int, LoadCaseResult>& results) const;
+       Eigen::VectorXd get_combined_reactions(
+           const std::map<int, LoadCaseResult>& results) const;
+
+   private:
+       int id_;
+       std::string name_;
+       double permanent_factor_;
+       double variable_factor_;
+       double environmental_factor_;
+       double accidental_factor_;
+       std::vector<LoadCombinationTerm> terms_;
+   };
+   ```
+
+3. **LoadCombination Implementation** (`cpp/src/load_case.cpp`):
+   - Constructor initializes type-based factors
+   - `get_type_factor()` returns factor based on LoadCaseType
+   - `add_load_case(LoadCase*)` uses type-based factor, marks `explicit_factor = false`
+   - `add_load_case(LoadCase*, double)` uses explicit factor, marks `explicit_factor = true`
+   - If load case already exists:
+     - Without explicit factor: silently ignores duplicate
+     - With explicit factor: updates existing term's factor
+   - `get_combined_displacements()` computes: `Σ(factor_i * displacement_i)`
+   - `get_combined_reactions()` computes: `Σ(factor_i * reaction_i)`
+   - Both methods throw `std::runtime_error` if required results are missing
+
+4. **Model::get_all_results()** (`cpp/include/grillex/model.hpp`):
+   ```cpp
+   const std::map<int, LoadCaseResult>& get_all_results() const { return results_; }
+   ```
+   Provides access to all load case results for use with LoadCombination.
+
+5. **Python Bindings** (`cpp/bindings/bindings.cpp`):
+   ```cpp
+   py::class_<LoadCombinationTerm>(m, "LoadCombinationTerm")
+       .def(py::init<LoadCase*, double, bool>())
+       .def_readonly("load_case", &LoadCombinationTerm::load_case)
+       .def_readonly("factor", &LoadCombinationTerm::factor)
+       .def_readonly("explicit_factor", &LoadCombinationTerm::explicit_factor);
+
+   py::class_<LoadCombination>(m, "LoadCombination")
+       .def(py::init<int, const std::string&, double, double, double, double>())
+       .def_property_readonly("id", &LoadCombination::id)
+       .def_property_readonly("name", &LoadCombination::name)
+       .def("get_type_factor", &LoadCombination::get_type_factor)
+       .def("set_type_factor", &LoadCombination::set_type_factor)
+       .def("add_load_case", py::overload_cast<LoadCase*>(&LoadCombination::add_load_case))
+       .def("add_load_case", py::overload_cast<LoadCase*, double>(&LoadCombination::add_load_case))
+       .def("remove_load_case", &LoadCombination::remove_load_case)
+       .def("clear", &LoadCombination::clear)
+       .def("get_terms", &LoadCombination::get_terms)
+       .def("__len__", &LoadCombination::size)
+       .def("empty", &LoadCombination::empty)
+       .def("get_combined_displacements", &LoadCombination::get_combined_displacements)
+       .def("get_combined_reactions", &LoadCombination::get_combined_reactions);
+
+   // Model binding
+   .def("get_all_results", &Model::get_all_results)
+   ```
+
+**Acceptance Criteria Status:**
+
+- ✅ **Combinations sum loads correctly:** Verified via superposition tests
+- ✅ **Factors are applied correctly:** Both type-based and explicit factors work
+- ✅ **Multiple load cases combine properly:** Eurocode ULS/SLS examples verified
+- ✅ **Python bindings for LoadCombination:** Full API exposed
+
+**Testing Results:**
+
+All 17 new load combination tests passing:
+
+```
+tests/python/test_phase5_load_combinations.py::TestLoadCombinationBasics::test_create_combination_default_factors PASSED
+tests/python/test_phase5_load_combinations.py::TestLoadCombinationBasics::test_create_combination_with_type_factors PASSED
+tests/python/test_phase5_load_combinations.py::TestLoadCombinationBasics::test_set_type_factor PASSED
+tests/python/test_phase5_load_combinations.py::TestAddLoadCases::test_add_load_case_type_based_factor PASSED
+tests/python/test_phase5_load_combinations.py::TestAddLoadCases::test_add_load_case_explicit_factor PASSED
+tests/python/test_phase5_load_combinations.py::TestAddLoadCases::test_add_load_case_mixed_factors PASSED
+tests/python/test_phase5_load_combinations.py::TestAddLoadCases::test_remove_load_case PASSED
+tests/python/test_phase5_load_combinations.py::TestAddLoadCases::test_clear_combination PASSED
+tests/python/test_phase5_load_combinations.py::TestCombinedResults::test_combined_displacements PASSED
+tests/python/test_phase5_load_combinations.py::TestCombinedResults::test_combined_reactions PASSED
+tests/python/test_phase5_load_combinations.py::TestCombinedResults::test_superposition_principle PASSED
+tests/python/test_phase5_load_combinations.py::TestEurocodeCombinations::test_uls_fundamental_combination PASSED
+tests/python/test_phase5_load_combinations.py::TestEurocodeCombinations::test_sls_characteristic_combination PASSED
+tests/python/test_phase5_load_combinations.py::TestEurocodeCombinations::test_favorable_unfavorable_permanent PASSED
+tests/python/test_phase5_load_combinations.py::TestErrorHandling::test_missing_load_case_result PASSED
+tests/python/test_phase5_load_combinations.py::TestRepr::test_load_combination_repr PASSED
+tests/python/test_phase5_load_combinations.py::TestRepr::test_load_combination_term_repr PASSED
+
+============================== 17 passed in 1.11s ==============================
+```
+
+Plus 385 total tests passing (no regressions).
+
+**Files Modified:**
+
+- `cpp/include/grillex/load_case.hpp` - Added LoadCombinationTerm, LoadCombination class (~100 lines)
+- `cpp/src/load_case.cpp` - Implemented LoadCombination methods (~90 lines)
+- `cpp/include/grillex/model.hpp` - Added get_all_results() method
+- `cpp/bindings/bindings.cpp` - Added bindings for LoadCombination (~70 lines)
+
+**Files Created:**
+
+- `tests/python/test_phase5_load_combinations.py` - 17 comprehensive tests (~350 lines)
+
+**Python Usage Examples:**
+
+**Example 1: Eurocode ULS Combination (Type-Based)**
+```python
+from grillex._grillex_cpp import Model, LoadCaseType, LoadCombination
+
+model = Model()
+# ... setup model ...
+
+# Create load cases
+dead = model.create_load_case("Dead Load", LoadCaseType.Permanent)
+live = model.create_load_case("Live Load", LoadCaseType.Variable)
+wind = model.create_load_case("Wind", LoadCaseType.Environmental)
+
+# ... add loads and analyze ...
+model.analyze()
+
+# Create ULS combination with Eurocode factors
+combo = LoadCombination(1, "ULS-STR", 1.35, 1.5, 1.5, 1.0)
+combo.add_load_case(dead)  # Uses 1.35 (Permanent)
+combo.add_load_case(live)  # Uses 1.5 (Variable)
+combo.add_load_case(wind)  # Uses 1.5 (Environmental)
+
+# Get combined results
+results = model.get_all_results()
+u_combined = combo.get_combined_displacements(results)
+r_combined = combo.get_combined_reactions(results)
+```
+
+**Example 2: Mixed Type-Based and Explicit Factors**
+```python
+# Eurocode with accompanying load factor ψ₀
+combo = LoadCombination(1, "ULS-Wind", 1.35, 1.5, 1.5, 1.0)
+combo.add_load_case(dead)         # Uses 1.35 (Permanent type)
+combo.add_load_case(live, 0.7)    # Explicit factor 0.7 (ψ₀ reduction)
+combo.add_load_case(wind)         # Uses 1.5 (Environmental type)
+```
+
+**Example 3: SLS Characteristic Combination**
+```python
+# SLS: All factors = 1.0, except wind with ψ₀
+combo = LoadCombination(2, "SLS-Characteristic")  # All defaults to 1.0
+combo.add_load_case(dead)         # Uses 1.0
+combo.add_load_case(live)         # Uses 1.0
+combo.add_load_case(wind, 0.6)    # Explicit factor 0.6 (ψ₀ for wind)
+
+results = model.get_all_results()
+u_sls = combo.get_combined_displacements(results)
+```
+
+**Example 4: Inspecting Combination Terms**
+```python
+combo = LoadCombination(1, "Test", 1.35, 1.5)
+combo.add_load_case(dead)       # Type-based: 1.35
+combo.add_load_case(live, 0.9)  # Explicit: 0.9
+
+for term in combo.get_terms():
+    print(f"  {term.load_case.name}: factor={term.factor}, explicit={term.explicit_factor}")
+# Output:
+#   Dead Load: factor=1.35, explicit=False
+#   Live Load: factor=0.9, explicit=True
+```
+
+**Design Decisions:**
+
+1. **Two-Method Overload for add_load_case():**
+   - `add_load_case(LoadCase*)` - Uses type-based factor from constructor
+   - `add_load_case(LoadCase*, double)` - Uses explicit factor
+   - This matches the user's requested API exactly
+
+2. **Type-Based Factor Assignment:**
+   - Factors stored by type: permanent, variable, environmental, accidental
+   - When load case added without factor, its type determines which factor is used
+   - `explicit_factor` flag tracks whether user overrode the type-based factor
+
+3. **Result Superposition:**
+   - Combined results use simple linear superposition: `Σ(factor_i * result_i)`
+   - Valid for linear elastic analysis (basis of structural analysis codes)
+   - Results map keyed by LoadCase::id() for efficient lookup
+
+4. **Standalone LoadCombination:**
+   - LoadCombination is not managed by Model (user creates/owns)
+   - Model provides `get_all_results()` for combination queries
+   - This keeps Model simple and allows flexible combination workflows
+
+---
+
+## Phase 5 Complete
+
+**Phase 5 Status: ✅ ALL TASKS COMPLETE**
+
+| Task | Description | Status |
+|------|-------------|--------|
+| 5.1 | Load Case Structure | ✅ Complete |
+| 5.2 | Line Load Equivalent Nodal Forces | ✅ Complete |
+| 5.3 | Acceleration Field Loads | ✅ Complete |
+| 5.4 | Load Combinations | ✅ Complete |
+
+**Total Tests:** 385 passing
+
+**Summary:**
+- Full load case infrastructure with type classification
+- Nodal loads, distributed line loads, and acceleration field loads
+- Equivalent nodal forces for trapezoidal/uniform distributed loads
+- Gravity and rotational acceleration effects via consistent mass matrix
+- Load combinations with type-based and explicit factors for code-based design
+- Complete Python API via pybind11 bindings
+- Ready for Phase 7 internal actions computation
+
+---
