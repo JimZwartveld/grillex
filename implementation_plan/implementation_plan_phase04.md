@@ -704,6 +704,14 @@ model.analyze()
 ---
 
 ### Task 4.5: Expose C++ BeamElement Internal Actions Methods
+
+**⚠️ MOVED TO PHASE 7 → See Task 7.2g in `implementation_plan_phase07.md`**
+
+**Reason:** This task depends on Phase 7 (Task 7.2) being implemented first. The C++ methods for internal actions don't exist until Phase 7 is complete, so Python bindings can only be created after the C++ implementation.
+
+---
+
+### Task 4.5 (Original - For Reference)
 **Requirements:** R-RES-001, R-ARCH-003 (for Phase 7 support)
 **Dependencies:** Task 4.1, Phase 7 (Task 7.2)
 **Difficulty:** Medium

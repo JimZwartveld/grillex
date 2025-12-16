@@ -3,6 +3,144 @@
 **Overview:**
 This phase implements computation of internal actions (forces, moments, shears, torsion) along beam elements using **analytical closed-form solutions derived from differential equations**. This approach, similar to pystructeng, provides exact results that properly account for element end releases, distributed loads, and different beam theories (Euler-Bernoulli vs Timoshenko).
 
+---
+
+## Deferred Tasks from Phase 5
+
+**Note:** The following tasks were deferred from Phase 5 and should be implemented as part of Phase 7:
+
+### Task 7.0: BeamElement Distributed Load Query Methods (Deferred from Task 5.2)
+
+**Requirements:** R-LOAD-008, R-LOAD-009 (Phase 7 dependency)
+**Dependencies:** Task 5.2 (Line Load Equivalent Nodal Forces - ✅ Complete)
+**Difficulty:** Low
+
+**Description:**
+Implement methods on `BeamElement` to query the distributed loads applied to it from the active `LoadCase`. This is required by the differential equation approach in Task 7.2 to compute accurate internal actions.
+
+**What Needs Implementation:**
+
+```cpp
+// In BeamElement class (cpp/include/grillex/beam_element.hpp)
+class BeamElement {
+public:
+    /**
+     * @brief Get distributed load in local y direction from active load case
+     * @param load_case Active load case to query
+     * @return DistributedLoad in local y direction [kN/m]
+     *
+     * Transforms global LineLoad to local element coordinates.
+     */
+    DistributedLoad get_distributed_load_y(const LoadCase& load_case) const;
+
+    /**
+     * @brief Get distributed load in local z direction from active load case
+     * @param load_case Active load case to query
+     * @return DistributedLoad in local z direction [kN/m]
+     */
+    DistributedLoad get_distributed_load_z(const LoadCase& load_case) const;
+
+    /**
+     * @brief Get distributed axial load from active load case
+     * @param load_case Active load case to query
+     * @return DistributedLoad in local x (axial) direction [kN/m]
+     */
+    DistributedLoad get_distributed_load_axial(const LoadCase& load_case) const;
+};
+```
+
+**Implementation Notes:**
+
+1. Query `load_case.get_line_loads()` to find loads applied to this element
+2. Transform `w_start` and `w_end` from global to local coordinates using `local_axes.to_local()`
+3. Extract the relevant component (x, y, or z) for each method
+4. Sum multiple line loads if more than one is applied to the element
+5. Return `DistributedLoad{q_start, q_end}` in local coordinates
+
+**Why Deferred:**
+- Task 5.2 focused on `equivalent_nodal_forces()` for global analysis
+- The load query methods are only needed for Phase 7 internal actions computation
+- Global analysis (displacements, reactions) works correctly without these methods
+
+**Acceptance Criteria:**
+- [ ] `get_distributed_load_y()` returns correct local y-component
+- [ ] `get_distributed_load_z()` returns correct local z-component
+- [ ] `get_distributed_load_axial()` returns correct local x-component
+- [ ] Multiple line loads on same element are summed correctly
+- [ ] Global-to-local transformation is handled properly
+- [ ] Returns zero `DistributedLoad` if no line loads on element
+
+---
+
+### Task 7.2g: Python Bindings for Internal Actions (Deferred from Task 4.5)
+
+**Requirements:** R-RES-001, R-ARCH-003
+**Dependencies:** Task 7.2 (Internal Action Functions)
+**Difficulty:** Medium
+
+**Description:**
+Create Python bindings to expose C++ BeamElement methods for computing internal actions. This was originally Task 4.5 in Phase 4, but it depends on Phase 7 implementation.
+
+**What Needs Implementation:**
+
+```cpp
+// In cpp/bindings/bindings.cpp
+void bind_internal_actions(py::module& m) {
+    // Expose InternalActions struct
+    py::class_<InternalActions>(m, "InternalActions")
+        .def_readonly("x", &InternalActions::x)
+        .def_readonly("N", &InternalActions::N)
+        .def_readonly("Vy", &InternalActions::Vy)
+        .def_readonly("Vz", &InternalActions::Vz)
+        .def_readonly("Mx", &InternalActions::Mx)
+        .def_readonly("My", &InternalActions::My)
+        .def_readonly("Mz", &InternalActions::Mz);
+
+    // Expose EndForces struct
+    py::class_<EndForces>(m, "EndForces")
+        .def_readonly("N", &EndForces::N)
+        .def_readonly("Vy", &EndForces::Vy)
+        .def_readonly("Vz", &EndForces::Vz)
+        .def_readonly("Mx", &EndForces::Mx)
+        .def_readonly("My", &EndForces::My)
+        .def_readonly("Mz", &EndForces::Mz)
+        .def_readonly("B", &EndForces::B);
+
+    // Expose DisplacementLine struct
+    py::class_<DisplacementLine>(m, "DisplacementLine")
+        .def_readonly("x", &DisplacementLine::x)
+        .def_readonly("u", &DisplacementLine::u)
+        .def_readonly("v", &DisplacementLine::v)
+        .def_readonly("w", &DisplacementLine::w)
+        .def_readonly("theta_x", &DisplacementLine::theta_x)
+        .def_readonly("theta_y", &DisplacementLine::theta_y)
+        .def_readonly("theta_z", &DisplacementLine::theta_z);
+
+    // Add BeamElement methods
+    py::class_<BeamElement>(m, "BeamElement")
+        // ... existing bindings ...
+        .def("get_internal_actions", &BeamElement::get_internal_actions)
+        .def("compute_end_forces", &BeamElement::compute_end_forces)
+        .def("get_displacements_at", &BeamElement::get_displacements_at)
+        .def("find_moment_extremes", &BeamElement::find_moment_extremes);
+}
+```
+
+**Why Deferred:**
+- Task 4.5 depends on Phase 7 (Task 7.2) being implemented first
+- The C++ methods don't exist until Phase 7 is complete
+- Python bindings can only be created after the C++ implementation
+
+**Acceptance Criteria:**
+- [ ] InternalActions, EndForces, and DisplacementLine structs are accessible from Python
+- [ ] BeamElement methods (get_internal_actions, compute_end_forces, get_displacements_at, find_moment_extremes) are callable from Python
+- [ ] Methods accept Eigen arrays and return appropriate types
+- [ ] Type hints are provided for IDE support
+- [ ] Example usage demonstrates multi-element beam plotting
+- [ ] Unit tests verify Python bindings work correctly
+
+---
+
 **Key Features:**
 - Differential equation-based internal action computation
 - Release-specific formulas for each boundary condition combination

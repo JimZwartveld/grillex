@@ -1261,9 +1261,9 @@ This gives users full control over warping compatibility at complex joints.
 - [x] Collinearity detection correctly identifies parallel elements
 - [x] Non-collinear elements have independent warping DOFs
 - [x] Collinear elements share warping DOFs (continuous warping)
-- [ ] Boundary conditions work for element-specific warping DOFs (deferred to Task 3.3)
-- [ ] T-joint with torque shows no warping coupling between orthogonal beams (requires solver)
-- [ ] Continuous beam shows warping continuity at internal nodes (requires solver)
+- [ ] Boundary conditions work for element-specific warping DOFs *(Phase 3 complete - can now verify)*
+- [ ] T-joint with torque shows no warping coupling between orthogonal beams *(Phase 3 complete - can now verify)*
+- [ ] Continuous beam shows warping continuity at internal nodes *(Phase 3 complete - can now verify)*
 - [x] User can override automatic coupling detection
 - [x] Backward compatible: models without warping unchanged
 
@@ -1500,14 +1500,22 @@ dof_handler.number_dofs_with_elements(registry, [elem1, elem2])
 assert dof_handler.get_warping_dof(1, n2.id) == dof_handler.get_warping_dof(2, n2.id)
 ```
 
-### Remaining Work (Deferred)
+### Remaining Work (Verification Tests)
 
-The following acceptance criteria require the solver (Phase 3) to fully verify:
-- Boundary conditions work for element-specific warping DOFs → Task 3.3
-- T-joint with torque shows no warping coupling → Requires analysis
-- Continuous beam shows warping continuity at internal nodes → Requires analysis
+The following acceptance criteria require the solver (Phase 3) to fully verify.
+**Note:** Phase 3 is now complete, so these can be verified when needed.
 
-The DOF numbering and coupling infrastructure is complete; verification awaits solver implementation.
+- [ ] Boundary conditions work for element-specific warping DOFs
+  - Can now be tested with Phase 3 solver
+  - Create test with 14-DOF elements and warping BCs
+- [ ] T-joint with torque shows no warping coupling between orthogonal beams
+  - Can now be tested with Phase 3 solver
+  - Create T-joint model, apply torque, verify no warping transfer
+- [ ] Continuous beam shows warping continuity at internal nodes
+  - Can now be tested with Phase 3 solver
+  - Create continuous beam with collinear elements, verify warping DOFs are coupled
+
+The DOF numbering and coupling infrastructure is complete. Verification tests can be added to the test suite as integration tests.
 
 ---
 

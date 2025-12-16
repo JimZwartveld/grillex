@@ -985,7 +985,7 @@ Implemented equivalent nodal forces computation for distributed beam loads, enab
 - ✅ **Uniform load produces correct reactions:** Cantilever with 10 kN/m load over 6m → R = 60 kN
 - ✅ **Fixed-end moments match theory:** Fixed-fixed beam with UDL → M = wL²/12 = 30 kN·m
 - ✅ **Trapezoidal loads work correctly:** Linear increasing and decreasing loads verified
-- ⏸️ **BeamElement can query distributed loads:** `get_distributed_load_*()` methods deferred to Phase 7 (not blocking)
+- ➡️ **BeamElement can query distributed loads:** `get_distributed_load_*()` methods → **Moved to Task 7.0** in Phase 7 (not blocking for Phase 5)
 - ✅ **DistributedLoad structure compatible with Phase 7:** Struct has q_start, q_end, at(x, L) method
 
 **Testing Results:**
@@ -1086,7 +1086,7 @@ Task 5.2 provides the foundation for Phase 7 internal actions computation:
 
 1. **DistributedLoad struct** is ready for Phase 7's differential equation approach
 2. **equivalent_nodal_forces()** enables accurate global analysis with distributed loads
-3. **Deferred:** `get_distributed_load_*()` methods on BeamElement - will be implemented in Phase 7 when needed
+3. **Deferred → Moved to Task 7.0:** `get_distributed_load_*()` methods on BeamElement - see `implementation_plan_phase07.md` Task 7.0
 
 Phase 7 can now:
 - Use DistributedLoad to represent q(x) along elements
