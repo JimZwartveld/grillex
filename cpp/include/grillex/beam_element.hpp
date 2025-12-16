@@ -426,6 +426,34 @@ public:
     Eigen::Vector3d direction_vector() const;
 
     /**
+     * @brief Compute equivalent nodal forces for a distributed line load
+     *
+     * Transforms global distributed loads to local coordinates, computes
+     * fixed-end forces using beam theory, and transforms back to global.
+     *
+     * Supports both uniform (w_start == w_end) and trapezoidal (linearly varying) loads.
+     *
+     * Fixed-end moment formulas for load in local z direction:
+     * - Uniform load w:
+     *   f_z_i = wL/2, m_y_i = wL²/12
+     *   f_z_j = wL/2, m_y_j = -wL²/12
+     *
+     * - Trapezoidal load (w1 at start, w2 at end):
+     *   f_z_i = L(7w1 + 3w2)/20
+     *   m_y_i = L²(3w1 + 2w2)/60
+     *   f_z_j = L(3w1 + 7w2)/20
+     *   m_y_j = -L²(2w1 + 3w2)/60
+     *
+     * @param w_start Load intensity vector at element start [kN/m] (global coordinates)
+     * @param w_end Load intensity vector at element end [kN/m] (global coordinates)
+     * @return Eigen::Matrix<double, 12, 1> Equivalent nodal forces in global coordinates
+     *         [Fx_i, Fy_i, Fz_i, Mx_i, My_i, Mz_i, Fx_j, Fy_j, Fz_j, Mx_j, My_j, Mz_j]
+     */
+    Eigen::Matrix<double, 12, 1> equivalent_nodal_forces(
+        const Eigen::Vector3d& w_start,
+        const Eigen::Vector3d& w_end) const;
+
+    /**
      * @brief Compute 12x12 offset transformation matrix
      *
      * Relates beam end DOFs to node DOFs for rigid offsets.

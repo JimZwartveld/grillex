@@ -815,3 +815,282 @@ Phase 7 internal actions computation requires distributed load information from 
 3. Implement Task 5.4 (combinations) for design code compliance
 
 ---
+
+## Execution Summary: Phase 5 - Task 5.2 Complete
+
+**Completed:** December 16, 2025
+**Status:** Task 5.1 ✅ | Task 5.2 ✅ | Tasks 5.3-5.4 ⏸️ Pending
+**Testing:** All 17 new line load tests passing, 60 existing tests still passing (no regressions)
+
+### Task 5.2: Line Load Equivalent Nodal Forces - ✅ COMPLETE
+
+**Implementation Status:**
+
+Implemented equivalent nodal forces computation for distributed beam loads, enabling accurate analysis of beams with uniform and trapezoidal line loads. This provides the foundation for Phase 7 internal actions computation using the differential equation approach.
+
+**What Was Implemented:**
+
+1. **DistributedLoad Struct** (`cpp/include/grillex/load_case.hpp`):
+   ```cpp
+   struct DistributedLoad {
+       double q_start = 0.0;  ///< Load intensity at element start [kN/m]
+       double q_end = 0.0;    ///< Load intensity at element end [kN/m]
+
+       bool is_uniform() const { return std::abs(q_start - q_end) < 1e-10; }
+       bool is_zero() const {
+           return std::abs(q_start) < 1e-10 && std::abs(q_end) < 1e-10;
+       }
+       double at(double x, double L) const {
+           if (L < 1e-10) return q_start;
+           return q_start + (q_end - q_start) * x / L;
+       }
+   };
+   ```
+   - Compatible with Phase 7 differential equation approach
+   - Supports linear interpolation for load intensity at any position
+
+2. **BeamElement::equivalent_nodal_forces()** (`cpp/src/beam_element.cpp`):
+   ```cpp
+   Eigen::Matrix<double, 12, 1> equivalent_nodal_forces(
+       const Eigen::Vector3d& w_start,
+       const Eigen::Vector3d& w_end) const;
+   ```
+
+   **Implementation (~80 lines):**
+   - Transforms global distributed loads to local element coordinates using rotation matrix R
+   - Computes fixed-end forces for each load component (axial, transverse-y, transverse-z):
+     - **Uniform load** (w_start ≈ w_end):
+       - f_i = wL/2, f_j = wL/2
+       - m_i = wL²/12, m_j = -wL²/12
+     - **Trapezoidal load** (linear variation w1 to w2):
+       - f_i = L(7w1 + 3w2)/20
+       - f_j = L(3w1 + 7w2)/20
+       - m_i = L²(3w1 + 2w2)/60
+       - m_j = -L²(2w1 + 3w2)/60
+   - Transforms local forces back to global coordinates
+   - Returns 12x1 vector: [fi_x, fi_y, fi_z, mi_x, mi_y, mi_z, fj_x, fj_y, fj_z, mj_x, mj_y, mj_z]
+
+3. **Model::get_element()** (`cpp/src/model.cpp`):
+   ```cpp
+   BeamElement* Model::get_element(int element_id) const {
+       for (const auto& elem : elements) {
+           if (elem->id == element_id) {
+               return elem.get();
+           }
+       }
+       return nullptr;
+   }
+   ```
+
+4. **LoadCase::assemble_load_vector() Updated** (`cpp/src/load_case.cpp`):
+   ```cpp
+   // Process line loads
+   for (const auto& line_load : line_loads_) {
+       BeamElement* elem = model.get_element(line_load.element_id);
+       if (!elem) continue;
+
+       Eigen::Matrix<double, 12, 1> f_equiv = elem->equivalent_nodal_forces(
+           line_load.w_start, line_load.w_end);
+
+       std::vector<int> location = dof_handler.get_location_array(*elem);
+       for (int i = 0; i < 12; i++) {
+           int global_dof = location[i];
+           if (global_dof >= 0 && global_dof < total_dofs) {
+               F(global_dof) += f_equiv(i);
+           }
+       }
+   }
+   ```
+
+5. **Python Bindings** (`cpp/bindings/bindings.cpp`):
+   ```cpp
+   py::class_<DistributedLoad>(m, "DistributedLoad")
+       .def(py::init<>())
+       .def(py::init<double, double>())
+       .def_readwrite("q_start", &DistributedLoad::q_start)
+       .def_readwrite("q_end", &DistributedLoad::q_end)
+       .def("is_uniform", &DistributedLoad::is_uniform)
+       .def("is_zero", &DistributedLoad::is_zero)
+       .def("at", &DistributedLoad::at);
+
+   // BeamElement binding
+   .def("equivalent_nodal_forces", &BeamElement::equivalent_nodal_forces)
+
+   // Model binding
+   .def("get_element", &Model::get_element, py::return_value_policy::reference)
+   ```
+
+6. **Python Wrapper Methods** (`src/grillex/core/model_wrapper.py`):
+   ```python
+   class StructuralModel:
+       def add_line_load(self, beam: 'Beam', w_start: Tuple[float, float, float],
+                         w_end: Optional[Tuple[float, float, float]] = None,
+                         load_case: Optional['LoadCase'] = None) -> None:
+           """Add distributed line load to beam."""
+
+       def add_line_load_by_coords(self, start_pos: Tuple[float, float, float],
+                                    end_pos: Tuple[float, float, float], ...) -> None:
+           """Add line load by finding beam from endpoint coordinates."""
+
+       def find_beam_by_coords(self, start_pos, end_pos, tolerance=1e-6) -> 'Beam':
+           """Find beam by endpoint coordinates."""
+
+       def get_reactions_at(self, position: Tuple[float, float, float]) -> Dict:
+           """Get reaction forces at a node position."""
+
+       def set_active_load_case(self, load_case: 'LoadCase') -> None:
+           """Set active load case for result queries."""
+
+       def create_load_case(self, name: str, lc_type: LoadCaseType) -> 'LoadCase':
+           """Create and return a new load case."""
+   ```
+
+7. **Python Exports:**
+   - Added `DistributedLoad` to `src/grillex/core/data_types.py`
+   - Added `DistributedLoad` to `src/grillex/core/__init__.py`
+   - Accessible via: `from grillex.core import DistributedLoad`
+
+**Issues Encountered and Solutions:**
+
+1. **C++ Module Not Rebuilding After Edits**
+   - **Issue:** Changes to C++ source files weren't being picked up when running tests
+   - **Solution:** Must run full CMake rebuild: `cd build && cmake .. && make -j4`
+   - **Root Cause:** The pip-installed module was cached; CMake rebuild regenerates the .so file
+
+2. **ImportError: cannot import name 'DistributedLoad'**
+   - **Issue:** DistributedLoad added to C++ bindings but not exported from Python modules
+   - **Solution:** Added to `data_types.py` import list and `__init__.py` exports
+   - **Files Modified:** `data_types.py`, `__init__.py`
+
+3. **AttributeError: 'StructuralModel' object has no attribute 'get_reactions_at'**
+   - **Issue:** Tests needed reaction query method not yet implemented in wrapper
+   - **Solution:** Added `get_reactions_at()` method to StructuralModel wrapper
+   - **Implementation:** Finds node by position, gets fixed DOFs, extracts reactions from result vector
+
+4. **AttributeError: 'StructuralModel' object has no attribute 'set_active_load_case'**
+   - **Issue:** Tests needed to switch active load case for queries
+   - **Solution:** Added `set_active_load_case()` and `create_load_case()` methods
+   - **Implementation:** Delegates to C++ Model methods
+
+5. **Type Annotation Error: '_CppLoadCaseType' not defined**
+   - **Issue:** Used non-existent type name in type hints
+   - **Solution:** Changed to use `LoadCaseType` which was already imported from data_types
+
+6. **Missing Dict Import for Type Hints**
+   - **Issue:** `Dict` used in return type annotation but not imported
+   - **Solution:** Added `Dict` to `from typing import` statement
+
+**Acceptance Criteria Status:**
+
+- ✅ **Uniform load produces correct reactions:** Cantilever with 10 kN/m load over 6m → R = 60 kN
+- ✅ **Fixed-end moments match theory:** Fixed-fixed beam with UDL → M = wL²/12 = 30 kN·m
+- ✅ **Trapezoidal loads work correctly:** Linear increasing and decreasing loads verified
+- ⏸️ **BeamElement can query distributed loads:** `get_distributed_load_*()` methods deferred to Phase 7 (not blocking)
+- ✅ **DistributedLoad structure compatible with Phase 7:** Struct has q_start, q_end, at(x, L) method
+
+**Testing Results:**
+
+All 17 new line load tests passing:
+
+```
+tests/python/test_phase5_line_loads.py::TestUniformLoads::test_uniform_load_cantilever_basic PASSED
+tests/python/test_phase5_line_loads.py::TestUniformLoads::test_uniform_load_cantilever_reactions PASSED
+tests/python/test_phase5_line_loads.py::TestUniformLoads::test_uniform_load_simply_supported PASSED
+tests/python/test_phase5_line_loads.py::TestUniformLoads::test_uniform_load_fixed_fixed PASSED
+tests/python/test_phase5_line_loads.py::TestTrapezoidalLoads::test_trapezoidal_load_linear_increasing PASSED
+tests/python/test_phase5_line_loads.py::TestTrapezoidalLoads::test_trapezoidal_load_linear_decreasing PASSED
+tests/python/test_phase5_line_loads.py::TestTrapezoidalLoads::test_triangular_load PASSED
+tests/python/test_phase5_line_loads.py::TestLoadDirections::test_point_load_vs_line_load PASSED
+tests/python/test_phase5_line_loads.py::TestLoadDirections::test_line_load_global_coordinates PASSED
+tests/python/test_phase5_line_loads.py::TestLoadDirections::test_line_load_y_direction PASSED
+tests/python/test_phase5_line_loads.py::TestLoadDirections::test_line_load_axial PASSED
+tests/python/test_phase5_line_loads.py::TestMultipleLoads::test_multiple_line_loads_same_beam PASSED
+tests/python/test_phase5_line_loads.py::TestMultipleLoads::test_line_loads_multiple_beams PASSED
+tests/python/test_phase5_line_loads.py::TestMultipleLoads::test_line_load_combined_with_nodal_load PASSED
+tests/python/test_phase5_line_loads.py::TestWrapperMethods::test_add_line_load_by_coords PASSED
+tests/python/test_phase5_line_loads.py::TestWrapperMethods::test_distributed_load_struct PASSED
+tests/python/test_phase5_line_loads.py::TestWrapperMethods::test_equivalent_nodal_forces_direct PASSED
+
+============================== 17 passed in 0.42s ==============================
+```
+
+Plus 60 existing tests still passing (no regressions):
+- 11 Phase 1 data structure tests
+- 13 Phase 2 beam element tests
+- 13 Phase 3 DOF handler tests
+- 7 Beam factory tests
+- 16 Phase 3 model tests
+
+**Total: 77/77 tests passing (100%)**
+
+**Files Created/Modified:**
+
+**Modified:**
+- `cpp/include/grillex/load_case.hpp` - Added DistributedLoad struct (25 lines)
+- `cpp/include/grillex/beam_element.hpp` - Added equivalent_nodal_forces declaration
+- `cpp/src/beam_element.cpp` - Implemented equivalent_nodal_forces (~80 lines)
+- `cpp/include/grillex/model.hpp` - Added get_element() declaration
+- `cpp/src/model.cpp` - Implemented get_element()
+- `cpp/src/load_case.cpp` - Updated assemble_load_vector() for line loads (~20 lines)
+- `cpp/bindings/bindings.cpp` - Added bindings for DistributedLoad, equivalent_nodal_forces, get_element
+- `src/grillex/core/data_types.py` - Added DistributedLoad export
+- `src/grillex/core/__init__.py` - Added DistributedLoad export
+- `src/grillex/core/model_wrapper.py` - Added 6 new wrapper methods (~100 lines)
+
+**Created:**
+- `tests/python/test_phase5_line_loads.py` - 17 comprehensive tests (~400 lines)
+
+**Python Usage Examples:**
+
+**Example 1: Cantilever with Uniform Distributed Load**
+```python
+from grillex.core import StructuralModel, LoadCaseType
+
+model = StructuralModel()
+n1 = model.add_node(0, 0, 0)
+n2 = model.add_node(6, 0, 0)
+
+mat = model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-6)
+sec = model.add_section("IPE300", A=0.01, Iy=1e-5, Iz=2e-5, J=1e-5)
+beam = model.add_beam(n1, n2, mat, sec)
+
+model.fix_node(n1)
+model.add_line_load(beam, w_start=(0, -10, 0))  # 10 kN/m downward
+
+model.solve()
+
+# Total load = 10 * 6 = 60 kN
+reactions = model.get_reactions_at((0, 0, 0))
+print(f"Reaction Fy: {reactions['Fy']:.1f} kN")  # 60.0 kN
+```
+
+**Example 2: Trapezoidal Load (Linear Variation)**
+```python
+# Load varies from 5 kN/m at start to 15 kN/m at end
+model.add_line_load(beam, w_start=(0, -5, 0), w_end=(0, -15, 0))
+```
+
+**Example 3: Line Load by Beam Coordinates**
+```python
+# Find beam and add load by endpoint coordinates
+model.add_line_load_by_coords(
+    start_pos=(0, 0, 0),
+    end_pos=(6, 0, 0),
+    w_start=(0, -10, 0)
+)
+```
+
+**Phase 7 Coordination:**
+
+Task 5.2 provides the foundation for Phase 7 internal actions computation:
+
+1. **DistributedLoad struct** is ready for Phase 7's differential equation approach
+2. **equivalent_nodal_forces()** enables accurate global analysis with distributed loads
+3. **Deferred:** `get_distributed_load_*()` methods on BeamElement - will be implemented in Phase 7 when needed
+
+Phase 7 can now:
+- Use DistributedLoad to represent q(x) along elements
+- Query LineLoad data from LoadCase for internal actions computation
+- Apply differential equations: dV/dx + q = 0, dM/dx - V = 0
+
+---

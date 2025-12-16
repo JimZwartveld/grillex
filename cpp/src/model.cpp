@@ -46,6 +46,15 @@ bool Model::remove_element(int element_id) {
     return false;
 }
 
+BeamElement* Model::get_element(int element_id) const {
+    for (const auto& elem : elements) {
+        if (elem->id == element_id) {
+            return elem.get();
+        }
+    }
+    return nullptr;
+}
+
 // Load case management
 
 LoadCase* Model::create_load_case(const std::string& name, LoadCaseType type) {

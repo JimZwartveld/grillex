@@ -116,6 +116,13 @@ public:
      */
     bool remove_element(int element_id);
 
+    /**
+     * @brief Get a beam element by ID
+     * @param element_id ID of the element to find
+     * @return Pointer to element, or nullptr if not found
+     */
+    BeamElement* get_element(int element_id) const;
+
     // Load case management
 
     /**

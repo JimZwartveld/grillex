@@ -1,6 +1,7 @@
 #include "grillex/load_case.hpp"
 #include "grillex/model.hpp"
 #include "grillex/dof_handler.hpp"
+#include "grillex/beam_element.hpp"
 
 namespace grillex {
 
@@ -66,19 +67,29 @@ Eigen::VectorXd LoadCase::assemble_load_vector(
         }
     }
 
-    // 2. Equivalent nodal forces from line loads (Phase 5 Task 5.2)
-    // TODO: Implement when BeamElement::equivalent_nodal_forces() is available
-    // for (const auto& line_load : line_loads_) {
-    //     // Get element
-    //     BeamElement* elem = model.get_element(line_load.element_id);
-    //
-    //     // Compute equivalent nodal forces
-    //     Eigen::VectorXd f_equiv = elem->equivalent_nodal_forces(
-    //         line_load.w_start, line_load.w_end);
-    //
-    //     // Add to global load vector
-    //     // ... (distribute f_equiv to element DOFs)
-    // }
+    // 2. Equivalent nodal forces from line loads
+    for (const auto& line_load : line_loads_) {
+        // Get element
+        BeamElement* elem = model.get_element(line_load.element_id);
+        if (!elem) {
+            continue;  // Skip invalid element IDs
+        }
+
+        // Compute equivalent nodal forces in global coordinates
+        Eigen::Matrix<double, 12, 1> f_equiv = elem->equivalent_nodal_forces(
+            line_load.w_start, line_load.w_end);
+
+        // Get location array mapping local DOFs to global DOFs
+        std::vector<int> location = dof_handler.get_location_array(*elem);
+
+        // Add equivalent nodal forces to global load vector
+        for (int i = 0; i < 12; i++) {
+            int global_dof = location[i];
+            if (global_dof >= 0 && global_dof < total_dofs) {
+                F(global_dof) += f_equiv(i);
+            }
+        }
+    }
 
     // 3. Inertial loads from acceleration field (Phase 5 Task 5.3)
     // TODO: Implement when element mass matrices are available

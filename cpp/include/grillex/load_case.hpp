@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <cmath>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
@@ -11,6 +12,40 @@ namespace grillex {
 // Forward declarations
 class Model;
 class DOFHandler;
+
+/**
+ * @brief Distributed load representation for Phase 7 internal actions
+ *
+ * Represents a linearly varying distributed load along an element in local coordinates.
+ * Used by Phase 7 to compute accurate internal actions using differential equations.
+ *
+ * Load varies linearly: q(x) = q_start + (q_end - q_start) * x / L
+ */
+struct DistributedLoad {
+    double q_start = 0.0;  ///< Load intensity at element start [kN/m]
+    double q_end = 0.0;    ///< Load intensity at element end [kN/m]
+
+    /**
+     * @brief Check if load is uniform (constant along length)
+     */
+    bool is_uniform() const { return std::abs(q_start - q_end) < 1e-10; }
+
+    /**
+     * @brief Check if load is zero
+     */
+    bool is_zero() const { return std::abs(q_start) < 1e-10 && std::abs(q_end) < 1e-10; }
+
+    /**
+     * @brief Get load intensity at position x along element
+     * @param x Position along element [m]
+     * @param L Element length [m]
+     * @return Load intensity [kN/m]
+     */
+    double at(double x, double L) const {
+        if (L < 1e-10) return q_start;
+        return q_start + (q_end - q_start) * x / L;
+    }
+};
 
 /**
  * @brief Type classification for load cases

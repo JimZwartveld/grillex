@@ -866,4 +866,84 @@ bool are_elements_collinear(
     return dot >= cos_threshold;
 }
 
+// ============================================================================
+// Equivalent Nodal Forces for Distributed Loads
+// ============================================================================
+
+Eigen::Matrix<double, 12, 1> BeamElement::equivalent_nodal_forces(
+    const Eigen::Vector3d& w_start,
+    const Eigen::Vector3d& w_end) const
+{
+    // Initialize result vector
+    Eigen::Matrix<double, 12, 1> f_global = Eigen::Matrix<double, 12, 1>::Zero();
+
+    // Get rotation matrix from transformation (extract 3x3 block)
+    Eigen::Matrix<double, 12, 12> T = transformation_matrix();
+    Eigen::Matrix3d R = T.block<3, 3>(0, 0);  // Local-to-global rotation
+
+    // Transform global loads to local coordinates
+    // R transforms local -> global, so R^T transforms global -> local
+    Eigen::Vector3d w_start_local = R.transpose() * w_start;
+    Eigen::Vector3d w_end_local = R.transpose() * w_end;
+
+    // Element length
+    double L = length;
+    double L2 = L * L;
+
+    // Compute equivalent nodal forces in local coordinates
+    // Local DOF ordering: [u_i, v_i, w_i, θx_i, θy_i, θz_i, u_j, v_j, w_j, θx_j, θy_j, θz_j]
+    // Local axes: x = axial, y = transverse (bending about z), z = transverse (bending about y)
+
+    Eigen::Matrix<double, 12, 1> f_local = Eigen::Matrix<double, 12, 1>::Zero();
+
+    // Extract load components in local coordinates
+    double wx1 = w_start_local(0);  // Axial load at start
+    double wy1 = w_start_local(1);  // Transverse y load at start
+    double wz1 = w_start_local(2);  // Transverse z load at start
+    double wx2 = w_end_local(0);    // Axial load at end
+    double wy2 = w_end_local(1);    // Transverse y load at end
+    double wz2 = w_end_local(2);    // Transverse z load at end
+
+    // ---------------------------
+    // Axial loads (local x direction)
+    // ---------------------------
+    // For trapezoidal axial load:
+    // f_x_i = L(2w1 + w2)/6
+    // f_x_j = L(w1 + 2w2)/6
+    f_local(0) = L * (2.0 * wx1 + wx2) / 6.0;     // f_x at node i
+    f_local(6) = L * (wx1 + 2.0 * wx2) / 6.0;     // f_x at node j
+
+    // ---------------------------
+    // Transverse loads in local y (bending about z-axis)
+    // ---------------------------
+    // For trapezoidal load (w1 at start, w2 at end):
+    // Fy_i = L(7w1 + 3w2)/20
+    // Mz_i = L²(3w1 + 2w2)/60
+    // Fy_j = L(3w1 + 7w2)/20
+    // Mz_j = -L²(2w1 + 3w2)/60
+    f_local(1) = L * (7.0 * wy1 + 3.0 * wy2) / 20.0;       // f_y at node i
+    f_local(5) = L2 * (3.0 * wy1 + 2.0 * wy2) / 60.0;      // m_z at node i (positive for CCW)
+    f_local(7) = L * (3.0 * wy1 + 7.0 * wy2) / 20.0;       // f_y at node j
+    f_local(11) = -L2 * (2.0 * wy1 + 3.0 * wy2) / 60.0;    // m_z at node j
+
+    // ---------------------------
+    // Transverse loads in local z (bending about y-axis)
+    // ---------------------------
+    // For trapezoidal load (w1 at start, w2 at end):
+    // Fz_i = L(7w1 + 3w2)/20
+    // My_i = -L²(3w1 + 2w2)/60   (sign convention: positive My causes tension at +z face)
+    // Fz_j = L(3w1 + 7w2)/20
+    // My_j = L²(2w1 + 3w2)/60
+    f_local(2) = L * (7.0 * wz1 + 3.0 * wz2) / 20.0;       // f_z at node i
+    f_local(4) = -L2 * (3.0 * wz1 + 2.0 * wz2) / 60.0;     // m_y at node i
+    f_local(8) = L * (3.0 * wz1 + 7.0 * wz2) / 20.0;       // f_z at node j
+    f_local(10) = L2 * (2.0 * wz1 + 3.0 * wz2) / 60.0;     // m_y at node j
+
+    // Transform back to global coordinates
+    // f_global = T^T * f_local
+    f_global = T.transpose() * f_local;
+
+    return f_global;
+}
+
 } // namespace grillex

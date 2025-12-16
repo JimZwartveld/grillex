@@ -35,7 +35,7 @@ Usage:
     disp = model.get_displacement_at([6, 0, 0], DOFIndex.UY)
 """
 
-from typing import List, Tuple, Optional, Union
+from typing import List, Tuple, Optional, Union, Dict
 import numpy as np
 
 from grillex._grillex_cpp import (
@@ -403,6 +403,127 @@ class StructuralModel:
 
         load_case.add_nodal_load(node.id, dof, value)
 
+    def add_line_load(
+        self,
+        beam: "Beam",
+        w_start: List[float],
+        w_end: Optional[List[float]] = None,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> None:
+        """Add a distributed line load to a beam.
+
+        Args:
+            beam: Beam object to apply load to
+            w_start: Load intensity at start [kN/m] as [wx, wy, wz] in global coordinates
+            w_end: Load intensity at end [kN/m] (uses w_start for uniform load if None)
+            load_case: LoadCase to add to (uses default if None)
+
+        Example:
+            # Uniform vertical load of 10 kN/m
+            model.add_line_load(beam, [0, -10, 0])
+
+            # Trapezoidal load varying from 5 to 15 kN/m
+            model.add_line_load(beam, [0, -5, 0], [0, -15, 0])
+        """
+        if not beam.elements:
+            raise ValueError("Beam has no elements - was it properly created?")
+
+        # Use w_start for both if uniform load
+        if w_end is None:
+            w_end = w_start
+
+        if load_case is None:
+            load_case = self.get_default_load_case()
+
+        # Convert to numpy arrays
+        w_start_vec = np.array(w_start, dtype=float)
+        w_end_vec = np.array(w_end, dtype=float)
+
+        # Add line load to each element of the beam
+        # For multi-element beams (after subdivision), we need to interpolate loads
+        if len(beam.elements) == 1:
+            # Simple case: single element
+            elem = beam.elements[0]
+            load_case.add_line_load(elem.id, w_start_vec, w_end_vec)
+        else:
+            # Multi-element beam: need to interpolate loads for each element
+            # Calculate total beam length
+            total_length = beam.length
+
+            # Track cumulative length for interpolation
+            cumulative_length = 0.0
+
+            for elem in beam.elements:
+                # Fractional positions along original beam
+                t_start = cumulative_length / total_length
+                t_end = (cumulative_length + elem.length) / total_length
+
+                # Interpolate load values
+                w_elem_start = w_start_vec + t_start * (w_end_vec - w_start_vec)
+                w_elem_end = w_start_vec + t_end * (w_end_vec - w_start_vec)
+
+                load_case.add_line_load(elem.id, w_elem_start, w_elem_end)
+
+                cumulative_length += elem.length
+
+    def add_line_load_by_coords(
+        self,
+        start_pos: List[float],
+        end_pos: List[float],
+        w_start: List[float],
+        w_end: Optional[List[float]] = None,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> None:
+        """Add a distributed line load to a beam identified by its endpoint coordinates.
+
+        Args:
+            start_pos: [x, y, z] coordinates of beam start
+            end_pos: [x, y, z] coordinates of beam end
+            w_start: Load intensity at start [kN/m] as [wx, wy, wz] in global coordinates
+            w_end: Load intensity at end [kN/m] (uses w_start for uniform load if None)
+            load_case: LoadCase to add to (uses default if None)
+
+        Example:
+            # Uniform vertical load on beam from (0,0,0) to (6,0,0)
+            model.add_line_load_by_coords([0,0,0], [6,0,0], [0, -10, 0])
+        """
+        # Find beam by coordinates
+        beam = self.find_beam_by_coords(start_pos, end_pos)
+        if beam is None:
+            raise ValueError(f"No beam found from {start_pos} to {end_pos}")
+
+        self.add_line_load(beam, w_start, w_end, load_case)
+
+    def find_beam_by_coords(
+        self,
+        start_pos: List[float],
+        end_pos: List[float],
+        tolerance: float = 1e-6
+    ) -> Optional["Beam"]:
+        """Find a beam by its endpoint coordinates.
+
+        Args:
+            start_pos: [x, y, z] coordinates of beam start
+            end_pos: [x, y, z] coordinates of beam end
+            tolerance: Distance tolerance for coordinate matching
+
+        Returns:
+            Beam object if found, None otherwise
+        """
+        start = np.array(start_pos)
+        end = np.array(end_pos)
+
+        for beam in self.beams:
+            # Check if start/end match (in either order)
+            if (np.linalg.norm(beam.start_pos - start) < tolerance and
+                np.linalg.norm(beam.end_pos - end) < tolerance):
+                return beam
+            if (np.linalg.norm(beam.start_pos - end) < tolerance and
+                np.linalg.norm(beam.end_pos - start) < tolerance):
+                return beam
+
+        return None
+
     # ===== Analysis =====
 
     def analyze(self) -> bool:
@@ -471,6 +592,67 @@ class StructuralModel:
             self._cpp_model.set_active_load_case(load_case)
 
         return self._cpp_model.get_reactions()
+
+    def get_reactions_at(
+        self,
+        position: List[float],
+        load_case: Optional[_CppLoadCase] = None
+    ) -> Dict[DOFIndex, float]:
+        """Get reaction forces at a node.
+
+        Args:
+            position: [x, y, z] coordinates
+            load_case: LoadCase to query (uses active if None)
+
+        Returns:
+            Dictionary mapping DOFIndex to reaction value [kN] or [kN·m]
+        """
+        node = self.find_node_at(position)
+        if node is None:
+            raise ValueError(f"No node found at position {position}")
+
+        if load_case is not None:
+            self._cpp_model.set_active_load_case(load_case)
+
+        reactions = self._cpp_model.get_reactions()
+        dof_handler = self._cpp_model.get_dof_handler()
+
+        result = {}
+        for dof in [DOFIndex.UX, DOFIndex.UY, DOFIndex.UZ,
+                    DOFIndex.RX, DOFIndex.RY, DOFIndex.RZ]:
+            global_dof = dof_handler.get_global_dof(node.id, dof)
+            if global_dof >= 0 and global_dof < len(reactions):
+                result[dof] = reactions[global_dof]
+            else:
+                result[dof] = 0.0
+
+        return result
+
+    def set_active_load_case(self, load_case: _CppLoadCase) -> None:
+        """Set the active load case for result queries.
+
+        Args:
+            load_case: LoadCase to make active
+        """
+        self._cpp_model.set_active_load_case(load_case)
+
+    def create_load_case(
+        self,
+        name: str,
+        load_case_type: Optional[LoadCaseType] = None
+    ) -> _CppLoadCase:
+        """Create a new load case.
+
+        Args:
+            name: Descriptive name (e.g., "Dead Load", "Wind +X")
+            load_case_type: Load case type classification (default: Permanent)
+
+        Returns:
+            Created LoadCase object
+        """
+        if load_case_type is None:
+            return self._cpp_model.create_load_case(name)
+        return self._cpp_model.create_load_case(name, load_case_type)
 
     # ===== Model Information =====
 

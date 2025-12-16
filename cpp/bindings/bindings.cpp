@@ -360,6 +360,15 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Compute 14x14 global mass matrix including warping DOF")
         .def("direction_vector", &grillex::BeamElement::direction_vector,
              "Get the direction vector of the beam (normalized, from node_i to node_j)")
+        .def("equivalent_nodal_forces", &grillex::BeamElement::equivalent_nodal_forces,
+             py::arg("w_start"), py::arg("w_end"),
+             "Compute equivalent nodal forces for a distributed line load.\n\n"
+             "Args:\n"
+             "    w_start: Load intensity vector at start [kN/m] (global coords)\n"
+             "    w_end: Load intensity vector at end [kN/m] (global coords)\n\n"
+             "Returns:\n"
+             "    12x1 vector of equivalent nodal forces in global coordinates\n"
+             "    [Fx_i, Fy_i, Fz_i, Mx_i, My_i, Mz_i, Fx_j, Fy_j, Fz_j, Mx_j, My_j, Mz_j]")
         .def("__repr__", [](const grillex::BeamElement &e) {
             return "<BeamElement id=" + std::to_string(e.id) +
                    " nodes=[" + std::to_string(e.node_i->id) + "," +
@@ -650,6 +659,28 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                    " value=" + std::to_string(nl.value) + ">";
         });
 
+    // DistributedLoad struct (for Phase 7 internal actions)
+    py::class_<grillex::DistributedLoad>(m, "DistributedLoad",
+        "Distributed load representation for internal actions computation.\n\n"
+        "Represents a linearly varying load in local element coordinates.\n"
+        "Load varies: q(x) = q_start + (q_end - q_start) * x / L")
+        .def(py::init<>(), "Construct a zero distributed load")
+        .def_readwrite("q_start", &grillex::DistributedLoad::q_start,
+                       "Load intensity at element start [kN/m]")
+        .def_readwrite("q_end", &grillex::DistributedLoad::q_end,
+                       "Load intensity at element end [kN/m]")
+        .def("is_uniform", &grillex::DistributedLoad::is_uniform,
+             "Check if load is uniform (constant along length)")
+        .def("is_zero", &grillex::DistributedLoad::is_zero,
+             "Check if load is zero")
+        .def("at", &grillex::DistributedLoad::at,
+             py::arg("x"), py::arg("L"),
+             "Get load intensity at position x along element")
+        .def("__repr__", [](const grillex::DistributedLoad &dl) {
+            return "<DistributedLoad q_start=" + std::to_string(dl.q_start) +
+                   " q_end=" + std::to_string(dl.q_end) + ">";
+        });
+
     // LineLoad struct
     py::class_<grillex::LineLoad>(m, "LineLoad",
         "Distributed load along a beam element")
@@ -795,6 +826,11 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Remove a beam element from the model by ID.\n\n"
              "Used for beam subdivision when a beam needs to be split at internal nodes.\n"
              "Returns True if element was found and removed, False otherwise.")
+        .def("get_element", &grillex::Model::get_element,
+             py::arg("element_id"),
+             "Get a beam element by ID.\n\n"
+             "Returns the element, or None if not found.",
+             py::return_value_policy::reference_internal)
         // Load case management
         .def("create_load_case", &grillex::Model::create_load_case,
              py::arg("name"),
