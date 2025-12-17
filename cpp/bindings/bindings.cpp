@@ -15,6 +15,7 @@
 #include "grillex/solver.hpp"
 #include "grillex/load_case.hpp"
 #include "grillex/model.hpp"
+#include "grillex/constraints.hpp"
 
 namespace py = pybind11;
 
@@ -970,5 +971,138 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                 << " analyzed=" << (mdl.is_analyzed() ? "True" : "False")
                 << ">";
             return oss.str();
+        });
+
+    // ========================================================================
+    // Phase 6: Multi-Point Constraints (MPC)
+    // ========================================================================
+
+    // EqualityConstraint struct
+    py::class_<grillex::EqualityConstraint>(m, "EqualityConstraint",
+        "Equality constraint between two DOFs (slave = master)")
+        .def(py::init<int, int, int, int>(),
+             py::arg("slave_node"),
+             py::arg("slave_dof"),
+             py::arg("master_node"),
+             py::arg("master_dof"),
+             "Construct an equality constraint")
+        .def_readwrite("slave_node_id", &grillex::EqualityConstraint::slave_node_id,
+                       "Node ID of the slave DOF")
+        .def_readwrite("slave_local_dof", &grillex::EqualityConstraint::slave_local_dof,
+                       "Local DOF index at slave (0-6)")
+        .def_readwrite("master_node_id", &grillex::EqualityConstraint::master_node_id,
+                       "Node ID of the master DOF")
+        .def_readwrite("master_local_dof", &grillex::EqualityConstraint::master_local_dof,
+                       "Local DOF index at master (0-6)")
+        .def("__repr__", [](const grillex::EqualityConstraint &eq) {
+            return "<EqualityConstraint slave=(" + std::to_string(eq.slave_node_id) +
+                   "," + std::to_string(eq.slave_local_dof) + ") master=(" +
+                   std::to_string(eq.master_node_id) + "," +
+                   std::to_string(eq.master_local_dof) + ")>";
+        });
+
+    // RigidLink struct
+    py::class_<grillex::RigidLink>(m, "RigidLink",
+        "Rigid link constraint between master and slave nodes.\n\n"
+        "Kinematics:\n"
+        "  u_slave = u_master + θ_master × offset\n"
+        "  θ_slave = θ_master")
+        .def(py::init<int, int, const Eigen::Vector3d&>(),
+             py::arg("slave_node"),
+             py::arg("master_node"),
+             py::arg("offset"),
+             "Construct a rigid link")
+        .def_readwrite("slave_node_id", &grillex::RigidLink::slave_node_id,
+                       "Node ID of the slave (constrained) node")
+        .def_readwrite("master_node_id", &grillex::RigidLink::master_node_id,
+                       "Node ID of the master (independent) node")
+        .def_readwrite("offset", &grillex::RigidLink::offset,
+                       "Offset from master to slave in global coords [m]")
+        .def("skew_matrix", &grillex::RigidLink::skew_matrix,
+             "Get 3x3 skew-symmetric matrix for θ × r computation")
+        .def("__repr__", [](const grillex::RigidLink &rl) {
+            return "<RigidLink slave=" + std::to_string(rl.slave_node_id) +
+                   " master=" + std::to_string(rl.master_node_id) +
+                   " offset=(" + std::to_string(rl.offset.x()) + "," +
+                   std::to_string(rl.offset.y()) + "," +
+                   std::to_string(rl.offset.z()) + ")>";
+        });
+
+    // ConstraintHandler::ReducedSystem struct
+    py::class_<grillex::ConstraintHandler::ReducedSystem>(m, "ReducedSystem",
+        "Result of system reduction with MPC constraints")
+        .def_readonly("K_reduced", &grillex::ConstraintHandler::ReducedSystem::K_reduced,
+                     "Reduced stiffness matrix")
+        .def_readonly("F_reduced", &grillex::ConstraintHandler::ReducedSystem::F_reduced,
+                     "Reduced force vector")
+        .def_readonly("T", &grillex::ConstraintHandler::ReducedSystem::T,
+                     "Transformation matrix (u_full = T * u_reduced)")
+        .def_readonly("n_full", &grillex::ConstraintHandler::ReducedSystem::n_full,
+                     "Number of full DOFs")
+        .def_readonly("n_reduced", &grillex::ConstraintHandler::ReducedSystem::n_reduced,
+                     "Number of reduced (independent) DOFs")
+        .def("__repr__", [](const grillex::ConstraintHandler::ReducedSystem &rs) {
+            return "<ReducedSystem full=" + std::to_string(rs.n_full) +
+                   " reduced=" + std::to_string(rs.n_reduced) + ">";
+        });
+
+    // ConstraintHandler class
+    py::class_<grillex::ConstraintHandler>(m, "ConstraintHandler",
+        "Multi-point constraint (MPC) handler for structural analysis.\n\n"
+        "Manages kinematic constraints between DOFs:\n"
+        "- Equality constraints: u_slave = u_master\n"
+        "- Rigid links: slave motion determined by master via rigid body kinematics\n\n"
+        "Uses transformation matrix approach:\n"
+        "  u_full = T * u_reduced\n"
+        "  K_reduced = T^T * K * T\n"
+        "  F_reduced = T^T * F\n\n"
+        "Example:\n"
+        "    constraints = ConstraintHandler()\n"
+        "    constraints.add_rigid_link(slave_node, master_node, offset)\n"
+        "    reduced = constraints.reduce_system(K, F, dof_handler)\n"
+        "    u_red = solver.solve(reduced.K_reduced, reduced.F_reduced)\n"
+        "    u_full = constraints.expand_displacements(u_red, reduced.T)")
+        .def(py::init<>(), "Construct an empty constraint handler")
+        .def("add_equality_constraint", &grillex::ConstraintHandler::add_equality_constraint,
+             py::arg("slave_node"),
+             py::arg("slave_dof"),
+             py::arg("master_node"),
+             py::arg("master_dof"),
+             "Add a simple equality constraint: u_slave = u_master")
+        .def("add_rigid_link", &grillex::ConstraintHandler::add_rigid_link,
+             py::arg("slave_node"),
+             py::arg("master_node"),
+             py::arg("offset"),
+             "Add a rigid link constraint (constrains all 6 DOFs of slave node)")
+        .def("build_transformation_matrix", &grillex::ConstraintHandler::build_transformation_matrix,
+             py::arg("dof_handler"),
+             "Build the transformation matrix T (u_full = T * u_reduced)")
+        .def("reduce_system", &grillex::ConstraintHandler::reduce_system,
+             py::arg("K"),
+             py::arg("F"),
+             py::arg("dof_handler"),
+             "Reduce system using constraints: K_red = T^T * K * T, F_red = T^T * F")
+        .def("expand_displacements", &grillex::ConstraintHandler::expand_displacements,
+             py::arg("u_reduced"),
+             py::arg("T"),
+             "Expand reduced displacements to full: u_full = T * u_reduced")
+        .def("get_equality_constraints", &grillex::ConstraintHandler::get_equality_constraints,
+             py::return_value_policy::reference_internal,
+             "Get all equality constraints")
+        .def("get_rigid_links", &grillex::ConstraintHandler::get_rigid_links,
+             py::return_value_policy::reference_internal,
+             "Get all rigid link constraints")
+        .def("num_slave_dofs", &grillex::ConstraintHandler::num_slave_dofs,
+             py::arg("dof_handler"),
+             "Get number of slave (dependent) DOFs")
+        .def("has_constraints", &grillex::ConstraintHandler::has_constraints,
+             "Check if any constraints are defined")
+        .def("clear", &grillex::ConstraintHandler::clear,
+             "Clear all constraints")
+        .def("__repr__", [](const grillex::ConstraintHandler &ch) {
+            return "<ConstraintHandler equalities=" +
+                   std::to_string(ch.get_equality_constraints().size()) +
+                   " rigid_links=" +
+                   std::to_string(ch.get_rigid_links().size()) + ">";
         });
 }

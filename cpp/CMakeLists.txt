@@ -23,6 +23,7 @@ pybind11_add_module(_grillex_cpp
     src/solver.cpp
     src/load_case.cpp
     src/model.cpp
+    src/constraints.cpp
 )
 
 target_link_libraries(_grillex_cpp PRIVATE grillex_core)

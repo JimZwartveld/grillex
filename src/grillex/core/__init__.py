@@ -11,7 +11,9 @@ from .data_types import (
     SolverMethod, LinearSolver,
     LoadCaseType, NodalLoad, LineLoad, DistributedLoad,
     LoadCase, LoadCaseResult,
-    Model
+    LoadCombinationTerm, LoadCombination,
+    Model,
+    EqualityConstraint, RigidLink, ReducedSystem, ConstraintHandler
 )
 
 from .model_wrapper import (
@@ -30,6 +32,8 @@ __all__ = [
     'SolverMethod', 'LinearSolver',
     'LoadCaseType', 'NodalLoad', 'LineLoad', 'DistributedLoad',
     'LoadCase', 'LoadCaseResult',
+    'LoadCombinationTerm', 'LoadCombination',
     'Model',
+    'EqualityConstraint', 'RigidLink', 'ReducedSystem', 'ConstraintHandler',
     'Beam', 'StructuralModel'
 ]

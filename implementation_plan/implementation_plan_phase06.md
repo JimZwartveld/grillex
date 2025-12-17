@@ -51,9 +51,59 @@ Implement the constraint transformation matrix T.
    ```
 
 **Acceptance Criteria:**
-- [ ] Simple equality constraints work
-- [ ] Rigid links transfer forces correctly
-- [ ] T is correctly formed (correct dimensions and entries)
+- [x] Simple equality constraints work
+- [x] Rigid links transfer forces correctly
+- [x] T is correctly formed (correct dimensions and entries)
+
+**Execution Summary (2025-12-17):**
+
+**Implementation completed successfully.** All acceptance criteria verified through comprehensive tests.
+
+**Files Created:**
+1. `cpp/include/grillex/constraints.hpp` - Header with:
+   - `EqualityConstraint` struct for simple DOF equality (u_slave = u_master)
+   - `RigidLink` struct with skew-symmetric matrix computation for rigid body kinematics
+   - `ConstraintHandler` class with full MPC implementation
+   - `ReducedSystem` struct for returning reduced K, F, and transformation matrix T
+
+2. `cpp/src/constraints.cpp` - Implementation with:
+   - `add_equality_constraint()` - Adds slave=master DOF constraint with validation
+   - `add_rigid_link()` - Adds rigid link with offset and 6-DOF coupling
+   - `build_transformation_matrix()` - Builds sparse T matrix (n_full × n_reduced)
+   - `reduce_system()` - Computes K_reduced = T^T * K * T, F_reduced = T^T * F
+   - `expand_displacements()` - Recovers u_full = T * u_reduced
+   - `build_constraint_map()` - Internal helper for constraint coefficient mapping
+   - `get_slave_dofs()` - Identifies dependent DOFs
+
+3. `cpp/bindings/bindings.cpp` - Added Python bindings for all new types
+
+4. Updated Python exports in:
+   - `src/grillex/core/data_types.py`
+   - `src/grillex/core/__init__.py`
+
+5. `tests/python/test_phase6_constraints.py` - 23 comprehensive tests covering:
+   - Constraint creation and validation
+   - Skew-symmetric matrix correctness
+   - Transformation matrix dimensions and entries
+   - System reduction mechanics
+   - Displacement expansion
+   - Complete analysis with equality constraints (two cantilevers tied together)
+   - Complete analysis with rigid links (rotation-translation coupling verified)
+   - All acceptance criteria
+
+**Implementation Details:**
+- Transformation matrix T maps reduced (independent) DOFs to full DOFs: u_full = T * u_reduced
+- For equality constraints: T[slave_row, master_col] = 1.0
+- For rigid links with offset r = [rx, ry, rz]:
+  - Translation coupling: u_slave = u_master + θ_master × r
+  - Rotation coupling: θ_slave = θ_master
+- System reduction: K_reduced = T^T * K * T, F_reduced = T^T * F
+
+**Issues Encountered and Fixes:**
+1. **Test Pattern Issue:** Initial tests used `model.nodes` which isn't exposed in Python bindings. Fixed by using `NodeRegistry` directly, consistent with other test files.
+2. **Exception Type:** C++ `std::invalid_argument` maps to Python `ValueError` (not `RuntimeError`). Updated test expectations.
+
+**All 23 tests pass.**
 
 ---
 

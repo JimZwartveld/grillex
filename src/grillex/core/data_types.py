@@ -27,7 +27,13 @@ This module provides Python-friendly access to the C++ core data structures:
 - DistributedLoad: Distributed load in local coordinates (for Phase 7 internal actions)
 - LoadCase: Load case containing all loads for a specific scenario
 - LoadCaseResult: Results for a single load case analysis
+- LoadCombinationTerm: Term in a load combination (load case + factor)
+- LoadCombination: Load combination for code-based analysis
 - Model: Top-level orchestration class for complete structural analysis workflow
+- EqualityConstraint: Simple equality constraint between two DOFs
+- RigidLink: Rigid link constraint between master and slave nodes
+- ReducedSystem: Result of system reduction with MPC constraints
+- ConstraintHandler: Multi-point constraint (MPC) handler
 """
 
 from grillex._grillex_cpp import (
@@ -58,7 +64,13 @@ from grillex._grillex_cpp import (
     DistributedLoad,
     LoadCase,
     LoadCaseResult,
-    Model
+    LoadCombinationTerm,
+    LoadCombination,
+    Model,
+    EqualityConstraint,
+    RigidLink,
+    ReducedSystem,
+    ConstraintHandler
 )
 
 __all__ = [
@@ -72,5 +84,7 @@ __all__ = [
     'SolverMethod', 'LinearSolver',
     'LoadCaseType', 'NodalLoad', 'LineLoad', 'DistributedLoad',
     'LoadCase', 'LoadCaseResult',
-    'Model'
+    'LoadCombinationTerm', 'LoadCombination',
+    'Model',
+    'EqualityConstraint', 'RigidLink', 'ReducedSystem', 'ConstraintHandler'
 ]
