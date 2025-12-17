@@ -70,7 +70,11 @@ from grillex._grillex_cpp import (
     EqualityConstraint,
     RigidLink,
     ReducedSystem,
-    ConstraintHandler
+    ConstraintHandler,
+    # Phase 7: Internal Actions
+    EndForces,
+    InternalActions,
+    ActionExtreme
 )
 
 __all__ = [
@@ -86,5 +90,7 @@ __all__ = [
     'LoadCase', 'LoadCaseResult',
     'LoadCombinationTerm', 'LoadCombination',
     'Model',
-    'EqualityConstraint', 'RigidLink', 'ReducedSystem', 'ConstraintHandler'
+    'EqualityConstraint', 'RigidLink', 'ReducedSystem', 'ConstraintHandler',
+    # Phase 7: Internal Actions
+    'EndForces', 'InternalActions', 'ActionExtreme'
 ]

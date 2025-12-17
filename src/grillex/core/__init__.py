@@ -13,7 +13,9 @@ from .data_types import (
     LoadCase, LoadCaseResult,
     LoadCombinationTerm, LoadCombination,
     Model,
-    EqualityConstraint, RigidLink, ReducedSystem, ConstraintHandler
+    EqualityConstraint, RigidLink, ReducedSystem, ConstraintHandler,
+    # Phase 7: Internal Actions
+    EndForces, InternalActions, ActionExtreme
 )
 
 from .model_wrapper import (
@@ -35,5 +37,7 @@ __all__ = [
     'LoadCombinationTerm', 'LoadCombination',
     'Model',
     'EqualityConstraint', 'RigidLink', 'ReducedSystem', 'ConstraintHandler',
+    # Phase 7: Internal Actions
+    'EndForces', 'InternalActions', 'ActionExtreme',
     'Beam', 'StructuralModel'
 ]

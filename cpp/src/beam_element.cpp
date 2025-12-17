@@ -1,4 +1,5 @@
 #include "grillex/beam_element.hpp"
+#include "grillex/dof_handler.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -944,6 +945,123 @@ Eigen::Matrix<double, 12, 1> BeamElement::equivalent_nodal_forces(
     f_global = T.transpose() * f_local;
 
     return f_global;
+}
+
+// ============================================================================
+// Phase 7: Internal Actions (Element End Forces)
+// ============================================================================
+
+Eigen::VectorXd BeamElement::get_element_displacements_local(
+    const Eigen::VectorXd& global_displacements,
+    const DOFHandler& dof_handler) const
+{
+    // Get the location array for this element
+    std::vector<int> loc_array = dof_handler.get_location_array(*this);
+    int n_dofs = num_dofs();  // 12 or 14 depending on warping
+
+    // Extract global displacements for this element
+    Eigen::VectorXd u_global_elem(n_dofs);
+    for (int i = 0; i < n_dofs; ++i) {
+        int global_dof = loc_array[i];
+        if (global_dof >= 0 && global_dof < global_displacements.size()) {
+            u_global_elem(i) = global_displacements(global_dof);
+        } else {
+            u_global_elem(i) = 0.0;  // Fixed or invalid DOF
+        }
+    }
+
+    // Get transformation matrix
+    Eigen::MatrixXd T = compute_transformation();
+
+    // Transform to local coordinates: u_local = T * u_global
+    // Note: T transforms local to global, so T^T (= T^(-1) for orthogonal T) transforms global to local
+    Eigen::VectorXd u_local = T * u_global_elem;
+
+    return u_local;
+}
+
+std::pair<EndForces, EndForces> BeamElement::compute_end_forces(
+    const Eigen::VectorXd& global_displacements,
+    const DOFHandler& dof_handler) const
+{
+    // Get local displacements
+    Eigen::VectorXd u_local = get_element_displacements_local(global_displacements, dof_handler);
+
+    // Get local stiffness matrix
+    Eigen::MatrixXd K_local = compute_local_stiffness();
+
+    // Compute local forces: f_local = K_local * u_local
+    Eigen::VectorXd f_local = K_local * u_local;
+
+    // Extract forces at each end
+    EndForces forces_i, forces_j;
+
+    if (config.include_warping) {
+        // 14-DOF element
+        // DOF ordering: [u_i, v_i, w_i, θx_i, θy_i, θz_i, φ'_i, u_j, v_j, w_j, θx_j, θy_j, θz_j, φ'_j]
+
+        // End i forces (indices 0-6)
+        forces_i.N = f_local(0);    // Axial force
+        forces_i.Vy = f_local(1);   // Shear y
+        forces_i.Vz = f_local(2);   // Shear z
+        forces_i.Mx = f_local(3);   // Torsion
+        forces_i.My = f_local(4);   // Moment about y
+        forces_i.Mz = f_local(5);   // Moment about z
+        forces_i.B = f_local(6);    // Bimoment
+
+        // End j forces (indices 7-13)
+        // Negate for action on connected node (internal forces are in equilibrium)
+        forces_j.N = -f_local(7);
+        forces_j.Vy = -f_local(8);
+        forces_j.Vz = -f_local(9);
+        forces_j.Mx = -f_local(10);
+        forces_j.My = -f_local(11);
+        forces_j.Mz = -f_local(12);
+        forces_j.B = -f_local(13);
+    } else {
+        // 12-DOF element
+        // DOF ordering: [u_i, v_i, w_i, θx_i, θy_i, θz_i, u_j, v_j, w_j, θx_j, θy_j, θz_j]
+
+        // End i forces (indices 0-5)
+        forces_i.N = f_local(0);    // Axial force
+        forces_i.Vy = f_local(1);   // Shear y
+        forces_i.Vz = f_local(2);   // Shear z
+        forces_i.Mx = f_local(3);   // Torsion
+        forces_i.My = f_local(4);   // Moment about y
+        forces_i.Mz = f_local(5);   // Moment about z
+
+        // End j forces (indices 6-11)
+        // Negate for action on connected node (internal forces are in equilibrium)
+        forces_j.N = -f_local(6);
+        forces_j.Vy = -f_local(7);
+        forces_j.Vz = -f_local(8);
+        forces_j.Mx = -f_local(9);
+        forces_j.My = -f_local(10);
+        forces_j.Mz = -f_local(11);
+    }
+
+    // Check for end releases and zero out released forces
+    if (releases.has_any_release()) {
+        // End i releases
+        if (releases.release_ux_i) forces_i.N = 0.0;
+        if (releases.release_uy_i) forces_i.Vy = 0.0;
+        if (releases.release_uz_i) forces_i.Vz = 0.0;
+        if (releases.release_rx_i) forces_i.Mx = 0.0;
+        if (releases.release_ry_i) forces_i.My = 0.0;
+        if (releases.release_rz_i) forces_i.Mz = 0.0;
+        if (config.include_warping && releases.release_warp_i) forces_i.B = 0.0;
+
+        // End j releases
+        if (releases.release_ux_j) forces_j.N = 0.0;
+        if (releases.release_uy_j) forces_j.Vy = 0.0;
+        if (releases.release_uz_j) forces_j.Vz = 0.0;
+        if (releases.release_rx_j) forces_j.Mx = 0.0;
+        if (releases.release_ry_j) forces_j.My = 0.0;
+        if (releases.release_rz_j) forces_j.Mz = 0.0;
+        if (config.include_warping && releases.release_warp_j) forces_j.B = 0.0;
+    }
+
+    return {forces_i, forces_j};
 }
 
 } // namespace grillex

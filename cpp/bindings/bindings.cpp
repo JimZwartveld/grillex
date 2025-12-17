@@ -16,6 +16,7 @@
 #include "grillex/load_case.hpp"
 #include "grillex/model.hpp"
 #include "grillex/constraints.hpp"
+#include "grillex/internal_actions.hpp"
 
 namespace py = pybind11;
 
@@ -370,6 +371,24 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Returns:\n"
              "    12x1 vector of equivalent nodal forces in global coordinates\n"
              "    [Fx_i, Fy_i, Fz_i, Mx_i, My_i, Mz_i, Fx_j, Fy_j, Fz_j, Mx_j, My_j, Mz_j]")
+        .def("get_element_displacements_local", &grillex::BeamElement::get_element_displacements_local,
+             py::arg("global_displacements"), py::arg("dof_handler"),
+             "Get element displacements in local coordinates.\n\n"
+             "Extracts element DOFs from global displacement vector and transforms to local coords.\n\n"
+             "Args:\n"
+             "    global_displacements: Global displacement vector from analysis\n"
+             "    dof_handler: DOF handler for global-to-local mapping\n\n"
+             "Returns:\n"
+             "    Local displacement vector (12 or 14 components)")
+        .def("compute_end_forces", &grillex::BeamElement::compute_end_forces,
+             py::arg("global_displacements"), py::arg("dof_handler"),
+             "Compute end forces in local coordinates.\n\n"
+             "Computes internal forces at both element ends: f = K * u\n\n"
+             "Args:\n"
+             "    global_displacements: Global displacement vector from analysis\n"
+             "    dof_handler: DOF handler for global-to-local mapping\n\n"
+             "Returns:\n"
+             "    Tuple (EndForces_i, EndForces_j) with forces at each end")
         .def("__repr__", [](const grillex::BeamElement &e) {
             return "<BeamElement id=" + std::to_string(e.id) +
                    " nodes=[" + std::to_string(e.node_i->id) + "," +
@@ -1109,5 +1128,100 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                    std::to_string(ch.get_equality_constraints().size()) +
                    " rigid_links=" +
                    std::to_string(ch.get_rigid_links().size()) + ">";
+        });
+
+    // ========================================================================
+    // Phase 7: Internal Actions
+    // ========================================================================
+
+    // EndForces struct
+    py::class_<grillex::EndForces>(m, "EndForces",
+        "Element end forces in local coordinates.\n\n"
+        "Sign conventions:\n"
+        "- Axial N: positive = tension\n"
+        "- Shear V: positive in positive local y/z direction\n"
+        "- Moment M: positive per right-hand rule")
+        .def(py::init<>(), "Construct with zero forces")
+        .def(py::init<double, double, double, double, double, double, double>(),
+             py::arg("N"), py::arg("Vy"), py::arg("Vz"),
+             py::arg("Mx"), py::arg("My"), py::arg("Mz"),
+             py::arg("B") = 0.0,
+             "Construct from individual components")
+        .def_readwrite("N", &grillex::EndForces::N,
+                       "Axial force [kN] (positive = tension)")
+        .def_readwrite("Vy", &grillex::EndForces::Vy,
+                       "Shear force in local y [kN]")
+        .def_readwrite("Vz", &grillex::EndForces::Vz,
+                       "Shear force in local z [kN]")
+        .def_readwrite("Mx", &grillex::EndForces::Mx,
+                       "Torsion moment [kN·m]")
+        .def_readwrite("My", &grillex::EndForces::My,
+                       "Bending moment about local y [kN·m]")
+        .def_readwrite("Mz", &grillex::EndForces::Mz,
+                       "Bending moment about local z [kN·m]")
+        .def_readwrite("B", &grillex::EndForces::B,
+                       "Bimoment [kN·m²] (for 14-DOF warping elements)")
+        .def("to_vector6", &grillex::EndForces::to_vector6,
+             "Convert to 6-component vector [N, Vy, Vz, Mx, My, Mz]")
+        .def("to_vector7", &grillex::EndForces::to_vector7,
+             "Convert to 7-component vector [N, Vy, Vz, Mx, My, Mz, B]")
+        .def("__repr__", [](const grillex::EndForces &f) {
+            std::ostringstream oss;
+            oss << "<EndForces N=" << f.N << " Vy=" << f.Vy << " Vz=" << f.Vz
+                << " Mx=" << f.Mx << " My=" << f.My << " Mz=" << f.Mz;
+            if (std::abs(f.B) > 1e-10) {
+                oss << " B=" << f.B;
+            }
+            oss << ">";
+            return oss.str();
+        });
+
+    // InternalActions struct
+    py::class_<grillex::InternalActions>(m, "InternalActions",
+        "Internal actions at a position along the beam.\n\n"
+        "Represents internal forces and moments at any position x along the element.")
+        .def(py::init<>(), "Construct with zero actions")
+        .def(py::init<double>(), py::arg("x"),
+             "Construct at position x with zero actions")
+        .def(py::init<double, double, double, double, double, double, double>(),
+             py::arg("x"), py::arg("N"), py::arg("Vy"), py::arg("Vz"),
+             py::arg("Mx"), py::arg("My"), py::arg("Mz"),
+             "Construct with all values")
+        .def_readwrite("x", &grillex::InternalActions::x,
+                       "Position along beam [0, L] in meters")
+        .def_readwrite("N", &grillex::InternalActions::N,
+                       "Axial force [kN]")
+        .def_readwrite("Vy", &grillex::InternalActions::Vy,
+                       "Shear force in y [kN]")
+        .def_readwrite("Vz", &grillex::InternalActions::Vz,
+                       "Shear force in z [kN]")
+        .def_readwrite("Mx", &grillex::InternalActions::Mx,
+                       "Torsion moment [kN·m]")
+        .def_readwrite("My", &grillex::InternalActions::My,
+                       "Moment about y [kN·m]")
+        .def_readwrite("Mz", &grillex::InternalActions::Mz,
+                       "Moment about z [kN·m]")
+        .def("__repr__", [](const grillex::InternalActions &a) {
+            std::ostringstream oss;
+            oss << "<InternalActions x=" << a.x
+                << " N=" << a.N << " Vy=" << a.Vy << " Vz=" << a.Vz
+                << " Mx=" << a.Mx << " My=" << a.My << " Mz=" << a.Mz << ">";
+            return oss.str();
+        });
+
+    // ActionExtreme struct
+    py::class_<grillex::ActionExtreme>(m, "ActionExtreme",
+        "Extremum location and value for moment/shear along beam elements.")
+        .def(py::init<>(), "Construct with zero position and value")
+        .def(py::init<double, double>(),
+             py::arg("x"), py::arg("value"),
+             "Construct with position and value")
+        .def_readwrite("x", &grillex::ActionExtreme::x,
+                       "Position along beam [m]")
+        .def_readwrite("value", &grillex::ActionExtreme::value,
+                       "Value at extremum")
+        .def("__repr__", [](const grillex::ActionExtreme &e) {
+            return "<ActionExtreme x=" + std::to_string(e.x) +
+                   " value=" + std::to_string(e.value) + ">";
         });
 }

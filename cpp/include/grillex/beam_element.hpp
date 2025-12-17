@@ -4,11 +4,15 @@
 #include "grillex/material.hpp"
 #include "grillex/section.hpp"
 #include "grillex/local_axes.hpp"
+#include "grillex/internal_actions.hpp"
 #include <Eigen/Dense>
 #include <vector>
 #include <memory>
 
 namespace grillex {
+
+// Forward declarations
+class DOFHandler;
 
 /**
  * @brief Beam formulation type
@@ -474,6 +478,57 @@ public:
      * @return Eigen::Matrix<double, 14, 14> Offset transformation matrix
      */
     Eigen::Matrix<double, 14, 14> offset_transformation_matrix_warping() const;
+
+    // ========================================================================
+    // Phase 7: Internal Actions (Element End Forces)
+    // ========================================================================
+
+    /**
+     * @brief Get element displacements in local coordinates
+     *
+     * Extracts the element displacements from the global displacement vector,
+     * using the DOF handler to map global DOFs to element DOFs, then transforms
+     * to local coordinates.
+     *
+     * @param global_displacements Global displacement vector from analysis
+     * @param dof_handler DOF handler for global-to-local DOF mapping
+     * @return Eigen::VectorXd Local displacement vector (12 or 14 components)
+     *
+     * DOF ordering (12-DOF):
+     *   [u_i, v_i, w_i, θx_i, θy_i, θz_i, u_j, v_j, w_j, θx_j, θy_j, θz_j]
+     *
+     * DOF ordering (14-DOF with warping):
+     *   [u_i, v_i, w_i, θx_i, θy_i, θz_i, φ'_i, u_j, v_j, w_j, θx_j, θy_j, θz_j, φ'_j]
+     */
+    Eigen::VectorXd get_element_displacements_local(
+        const Eigen::VectorXd& global_displacements,
+        const DOFHandler& dof_handler) const;
+
+    /**
+     * @brief Compute end forces in local coordinates
+     *
+     * Computes internal forces at both element ends using:
+     *   f_local = K_local * u_local
+     *
+     * Then applies sign convention:
+     * - Forces at end i are as computed (equilibrium of internal forces)
+     * - Forces at end j are negated (action on connected node)
+     *
+     * For elements with end releases, the released DOFs will have zero force.
+     *
+     * @param global_displacements Global displacement vector from analysis
+     * @param dof_handler DOF handler for global-to-local DOF mapping
+     * @return std::pair<EndForces, EndForces> Forces at end i and end j
+     *
+     * Sign convention:
+     * - Axial N: positive = tension
+     * - Shear V: positive in positive local y/z direction
+     * - Moment M: positive per right-hand rule
+     * - Bimoment B: positive per warping convention (for 14-DOF)
+     */
+    std::pair<EndForces, EndForces> compute_end_forces(
+        const Eigen::VectorXd& global_displacements,
+        const DOFHandler& dof_handler) const;
 
 private:
     /**
