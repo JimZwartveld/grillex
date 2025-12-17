@@ -463,6 +463,248 @@ class TestRigidLinkAnalysis:
             f"n3_ux={n3_ux}, expected={expected_n3_ux}"
 
 
+class TestTask62RigidLinkKinematics:
+    """
+    Test suite for Task 6.2: Rigid Link Kinematics
+
+    Tests the 6x6 transformation block and detailed rigid link behavior:
+    - AC1: Slave node moves correctly with master
+    - AC2: Rotation at master produces translation at slave
+    - AC3: Forces transfer correctly through rigid link
+    """
+
+    def test_transformation_block_6x6_structure(self):
+        """
+        Test the 6x6 transformation block has correct structure:
+        T = [I  R]
+            [0  I]
+        """
+        offset = np.array([1.0, 2.0, 3.0])
+        rl = RigidLink(slave_node=2, master_node=1, offset=offset)
+
+        T = rl.transformation_block_6x6()
+
+        # Check dimensions
+        assert T.shape == (6, 6)
+
+        # Top-left: Identity
+        np.testing.assert_array_almost_equal(T[:3, :3], np.eye(3))
+
+        # Top-right: Skew matrix
+        R_expected = rl.skew_matrix()
+        np.testing.assert_array_almost_equal(T[:3, 3:], R_expected)
+
+        # Bottom-left: Zero
+        np.testing.assert_array_almost_equal(T[3:, :3], np.zeros((3, 3)))
+
+        # Bottom-right: Identity
+        np.testing.assert_array_almost_equal(T[3:, 3:], np.eye(3))
+
+    def test_transformation_block_zero_offset(self):
+        """
+        With zero offset, transformation is pure identity (slave = master)
+        """
+        offset = np.array([0.0, 0.0, 0.0])
+        rl = RigidLink(slave_node=2, master_node=1, offset=offset)
+
+        T = rl.transformation_block_6x6()
+
+        # Should be 6x6 identity
+        np.testing.assert_array_almost_equal(T, np.eye(6))
+
+    def test_ac1_slave_moves_with_master_translation(self):
+        """
+        AC1: Slave node moves correctly with master (translation)
+
+        When master translates, slave translates the same amount.
+        """
+        registry = NodeRegistry()
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(3, 0, 0)
+        # Slave node offset from n2
+        n3 = registry.get_or_create_node(3, 1, 0)
+
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85e-6)
+        sec = Section(1, "Test", 0.01, 1e-5, 2e-5, 1.5e-5)
+        beam = BeamElement(1, n1, n2, mat, sec)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam])
+
+        # Apply vertical force at n2 (master)
+        F = np.zeros(dof_handler.total_dofs())
+        F[dof_handler.get_global_dof(n2.id, DOFIndex.UZ)] = -10.0
+
+        # Rigid link: n3 tied to n2
+        ch = ConstraintHandler()
+        ch.add_rigid_link(n3.id, n2.id, np.array([0.0, 1.0, 0.0]))
+
+        bc = BCHandler()
+        bc.fix_node(n1.id)
+        K_bc, F_bc = bc.apply_to_system(K, F, dof_handler)
+
+        reduced = ch.reduce_system(K_bc, F_bc, dof_handler)
+        solver = LinearSolver()
+        u_reduced = solver.solve(reduced.K_reduced, reduced.F_reduced)
+        u_full = ch.expand_displacements(u_reduced, reduced.T)
+
+        # Master and slave should have same UZ displacement (same Z translation)
+        n2_uz = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.UZ)]
+        n3_uz = u_full[dof_handler.get_global_dof(n3.id, DOFIndex.UZ)]
+        assert abs(n2_uz - n3_uz) < 1e-10, \
+            f"Slave UZ ({n3_uz}) should equal master UZ ({n2_uz})"
+
+    def test_ac2_rotation_produces_translation(self):
+        """
+        AC2: Rotation at master produces translation at slave
+
+        With offset r = [0, L, 0], rotation θz at master produces:
+        u_sx = L * θz (translation in X due to rotation about Z)
+        """
+        registry = NodeRegistry()
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(6, 0, 0)
+        # Slave offset by L=2.0 in Y from master
+        L = 2.0
+        n3 = registry.get_or_create_node(6, L, 0)
+
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85e-6)
+        sec = Section(1, "Test", 0.01, 1e-5, 2e-5, 1.5e-5)
+        beam = BeamElement(1, n1, n2, mat, sec)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam])
+
+        # Apply moment about Z at master (n2)
+        F = np.zeros(dof_handler.total_dofs())
+        F[dof_handler.get_global_dof(n2.id, DOFIndex.RZ)] = 10.0
+
+        # Rigid link: offset in Y direction
+        ch = ConstraintHandler()
+        ch.add_rigid_link(n3.id, n2.id, np.array([0.0, L, 0.0]))
+
+        bc = BCHandler()
+        bc.fix_node(n1.id)
+        K_bc, F_bc = bc.apply_to_system(K, F, dof_handler)
+
+        reduced = ch.reduce_system(K_bc, F_bc, dof_handler)
+        solver = LinearSolver()
+        u_reduced = solver.solve(reduced.K_reduced, reduced.F_reduced)
+        u_full = ch.expand_displacements(u_reduced, reduced.T)
+
+        # Get displacements
+        n2_ux = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.UX)]
+        n2_rz = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.RZ)]
+        n3_ux = u_full[dof_handler.get_global_dof(n3.id, DOFIndex.UX)]
+
+        # From rigid link kinematics: u_sx = u_mx + ry * θmz
+        expected_n3_ux = n2_ux + L * n2_rz
+        assert abs(n3_ux - expected_n3_ux) < 1e-10, \
+            f"Slave UX ({n3_ux}) should equal master UX + L*θz ({expected_n3_ux})"
+
+        # Rotation should be non-zero (moment applied)
+        assert abs(n2_rz) > 1e-10, "Rotation should be non-zero"
+
+    def test_ac3_force_transfer_through_rigid_link(self):
+        """
+        AC3: Forces transfer correctly through rigid link
+
+        Apply force to slave node, verify master responds correctly.
+        The slave UZ follows rigid body kinematics: u_sz = u_mz - ry*θmx + rx*θmy
+        """
+        registry = NodeRegistry()
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(3, 0, 0)
+        # Slave node with Y offset
+        ry = 0.5
+        n3 = registry.get_or_create_node(3, ry, 0)
+
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85e-6)
+        sec = Section(1, "Test", 0.01, 1e-5, 2e-5, 1.5e-5)
+        beam = BeamElement(1, n1, n2, mat, sec)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam])
+
+        # Apply force to slave node (not connected to beam directly)
+        P = -10.0  # Applied force
+        F = np.zeros(dof_handler.total_dofs())
+        F[dof_handler.get_global_dof(n3.id, DOFIndex.UZ)] = P
+
+        # Rigid link transfers force from slave to master
+        ch = ConstraintHandler()
+        ch.add_rigid_link(n3.id, n2.id, np.array([0.0, ry, 0.0]))
+
+        bc = BCHandler()
+        bc.fix_node(n1.id)
+        K_bc, F_bc = bc.apply_to_system(K, F, dof_handler)
+
+        reduced = ch.reduce_system(K_bc, F_bc, dof_handler)
+        solver = LinearSolver()
+        u_reduced = solver.solve(reduced.K_reduced, reduced.F_reduced)
+        u_full = ch.expand_displacements(u_reduced, reduced.T)
+
+        # Force was transferred: master (n2) should have displacement
+        n2_uz = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.UZ)]
+        assert abs(n2_uz) > 1e-10, "Master should deflect due to force on slave"
+
+        # Check rigid body kinematics: u_sz = u_mz - ry*θmx + rx*θmy
+        # With rx=0 and ry=0.5: u_sz = u_mz - 0.5*θmx
+        n2_rx = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.RX)]
+        n2_ry = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.RY)]
+        n3_uz = u_full[dof_handler.get_global_dof(n3.id, DOFIndex.UZ)]
+
+        expected_n3_uz = n2_uz - ry * n2_rx  # rx=0, so no θmy term
+        assert abs(n3_uz - expected_n3_uz) < 1e-10, \
+            f"Slave UZ ({n3_uz}) should follow rigid body kinematics ({expected_n3_uz})"
+
+    def test_full_6dof_rigid_link_coupling(self):
+        """
+        Test that all 6 DOFs are coupled correctly with 3D offset.
+        """
+        # Create rigid link with offset in all directions
+        offset = np.array([1.0, 2.0, 3.0])
+        rl = RigidLink(slave_node=2, master_node=1, offset=offset)
+
+        T = rl.transformation_block_6x6()
+
+        # Test transformation with unit master DOFs
+        # Master: [ux, uy, uz, θx, θy, θz] = [1, 0, 0, 0, 0, 0]
+        u_master = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        u_slave = T @ u_master
+
+        # Pure X translation -> slave also translates X
+        np.testing.assert_array_almost_equal(
+            u_slave,
+            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        )
+
+        # Master: rotation about X (θx = 1)
+        u_master = np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+        u_slave = T @ u_master
+
+        # θx causes: u_sy = rz*θx = 3, u_sz = -ry*θx = -2
+        expected = [0.0, 3.0, -2.0, 1.0, 0.0, 0.0]
+        np.testing.assert_array_almost_equal(u_slave, expected)
+
+        # Master: rotation about Z (θz = 1)
+        u_master = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 1.0])
+        u_slave = T @ u_master
+
+        # θz causes: u_sx = ry*θz = 2, u_sy = -rx*θz = -1
+        expected = [2.0, -1.0, 0.0, 0.0, 0.0, 1.0]
+        np.testing.assert_array_almost_equal(u_slave, expected)
+
+
 class TestAcceptanceCriteria:
     """Test acceptance criteria for Task 6.1"""
 

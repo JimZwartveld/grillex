@@ -1020,6 +1020,11 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                        "Offset from master to slave in global coords [m]")
         .def("skew_matrix", &grillex::RigidLink::skew_matrix,
              "Get 3x3 skew-symmetric matrix for θ × r computation")
+        .def("transformation_block_6x6", &grillex::RigidLink::transformation_block_6x6,
+             "Get full 6x6 transformation block: [u_S; θ_S] = T * [u_M; θ_M]\n\n"
+             "Returns:\n"
+             "  T = [I  R]  where I is 3x3 identity\n"
+             "      [0  I]  and R is skew-symmetric matrix")
         .def("__repr__", [](const grillex::RigidLink &rl) {
             return "<RigidLink slave=" + std::to_string(rl.slave_node_id) +
                    " master=" + std::to_string(rl.master_node_id) +

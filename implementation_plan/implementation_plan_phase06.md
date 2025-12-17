@@ -131,9 +131,52 @@ Implement the rigid link transformation in detail.
 2. Build 6x6 transformation block per rigid link
 
 **Acceptance Criteria:**
-- [ ] Slave node moves correctly with master
-- [ ] Rotation at master produces translation at slave
-- [ ] Forces transfer correctly through rigid link
+- [x] Slave node moves correctly with master
+- [x] Rotation at master produces translation at slave
+- [x] Forces transfer correctly through rigid link
+
+**Execution Summary (2025-12-17):**
+
+**Implementation completed successfully.** All acceptance criteria verified through comprehensive tests.
+
+**Changes Made:**
+1. Added `transformation_block_6x6()` method to `RigidLink` struct in `constraints.hpp`:
+   - Returns the full 6x6 transformation matrix:
+     ```
+     T = [I  R]
+         [0  I]
+     ```
+   - Where I is 3x3 identity, R is skew-symmetric matrix, 0 is zero matrix
+
+2. Added Python binding for `transformation_block_6x6()` in `bindings.cpp`
+
+3. Added 6 new tests in `TestTask62RigidLinkKinematics` class:
+   - `test_transformation_block_6x6_structure`: Verifies [I R; 0 I] structure
+   - `test_transformation_block_zero_offset`: Zero offset gives identity matrix
+   - `test_ac1_slave_moves_with_master_translation`: Translation coupling verified
+   - `test_ac2_rotation_produces_translation`: Rotation-translation coupling (u_sx = u_mx + ry*θmz)
+   - `test_ac3_force_transfer_through_rigid_link`: Force applied to slave transfers to master
+   - `test_full_6dof_rigid_link_coupling`: All 6 DOF couplings verified with 3D offset
+
+**Implementation Details:**
+The 6x6 transformation block relates slave DOFs to master DOFs:
+```
+[u_S]   [I   R] [u_M]
+[θ_S] = [0   I] [θ_M]
+
+Where R is the skew-symmetric matrix of offset r:
+R = [ 0   -rz   ry]
+    [ rz   0   -rx]
+    [-ry  rx    0 ]
+```
+
+This yields the kinematic relations:
+- u_sx = u_mx + (-rz*θmy + ry*θmz)
+- u_sy = u_my + (rz*θmx - rx*θmz)
+- u_sz = u_mz + (-ry*θmx + rx*θmy)
+- θ_sx = θ_mx, θ_sy = θ_my, θ_sz = θ_mz
+
+**All 29 tests pass (23 from Task 6.1 + 6 from Task 6.2).**
 
 ---
 

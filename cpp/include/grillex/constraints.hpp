@@ -88,6 +88,46 @@ struct RigidLink {
              -offset.y(), offset.x(), 0.0;
         return R;
     }
+
+    /**
+     * @brief Compute the full 6x6 transformation block for rigid link kinematics
+     *
+     * Returns the transformation matrix T_RL that relates slave DOFs to master DOFs:
+     *
+     * [u_S]   [I   R] [u_M]
+     * [θ_S] = [0   I] [θ_M]
+     *
+     * Where:
+     * - I is the 3x3 identity matrix
+     * - R is the 3x3 skew-symmetric matrix from skew_matrix()
+     * - 0 is the 3x3 zero matrix
+     *
+     * The resulting 6x6 matrix has the structure:
+     * T_RL = [I_3  R  ]
+     *        [0_3  I_3]
+     *
+     * This transforms master DOFs [u_M; θ_M] to slave DOFs [u_S; θ_S].
+     *
+     * @return 6x6 transformation matrix
+     */
+    Eigen::Matrix<double, 6, 6> transformation_block_6x6() const {
+        Eigen::Matrix<double, 6, 6> T;
+        T.setZero();
+
+        // Top-left: Identity for translation-to-translation
+        T.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity();
+
+        // Top-right: Skew matrix for rotation-to-translation coupling
+        T.block<3, 3>(0, 3) = skew_matrix();
+
+        // Bottom-left: Zero (no translation-to-rotation coupling)
+        // Already zero from setZero()
+
+        // Bottom-right: Identity for rotation-to-rotation
+        T.block<3, 3>(3, 3) = Eigen::Matrix3d::Identity();
+
+        return T;
+    }
 };
 
 /**
