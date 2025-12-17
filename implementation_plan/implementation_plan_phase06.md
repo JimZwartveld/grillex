@@ -211,9 +211,42 @@ Apply the transformation to reduce the global system.
    ```
 
 **Acceptance Criteria:**
-- [ ] Reduced system is smaller than original
-- [ ] Full displacements are recovered correctly
-- [ ] Constrained DOFs satisfy constraint equations
+- [x] Reduced system is smaller than original
+- [x] Full displacements are recovered correctly
+- [x] Constrained DOFs satisfy constraint equations
+
+**Execution Summary (2025-12-17):**
+
+**Implementation was already completed in Task 6.1.** Task 6.3 focused on verifying the complete workflow with comprehensive tests.
+
+**Implementation (from Task 6.1):**
+The `reduce_system()` and `expand_displacements()` methods were already implemented:
+
+```cpp
+// In ConstraintHandler::reduce_system():
+K_reduced = T^T * K * T
+F_reduced = T^T * F
+
+// In ConstraintHandler::expand_displacements():
+u_full = T * u_reduced
+```
+
+**Tests Added (7 new tests in `TestTask63ApplyMPCToGlobalSystem`):**
+
+1. `test_ac1_reduced_system_smaller_equality` - Verifies dimension reduction with equality constraints
+2. `test_ac1_reduced_system_smaller_rigid_link` - Verifies dimension reduction with rigid links
+3. `test_ac2_full_displacements_recovered_equality` - Verifies u_full = T * u_reduced for equality
+4. `test_ac2_full_displacements_recovered_rigid_link` - Verifies all 6 slave DOFs follow kinematics
+5. `test_ac3_equality_constraints_satisfied` - Verifies u_slave = u_master for multiple constraints
+6. `test_ac3_rigid_link_constraints_satisfied` - Verifies slave = T_block @ master using 3D offset
+7. `test_complete_workflow_with_mpc` - Full analysis workflow: Assemble → MPC → Solve → Expand → Verify
+
+**Verification Details:**
+- **AC1:** Equality constraints reduce by 1 DOF each; rigid links reduce by 6 DOFs each
+- **AC2:** `expand_displacements()` correctly recovers full displacement vector from reduced solution
+- **AC3:** All constraint equations verified numerically to 1e-10 tolerance
+
+**All 36 tests pass (23 from Task 6.1 + 6 from Task 6.2 + 7 from Task 6.3).**
 
 ---
 

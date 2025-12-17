@@ -876,3 +876,388 @@ class TestNumSlaveDofs:
 
         # Rigid link constrains 6 DOFs (UX, UY, UZ, RX, RY, RZ)
         assert ch.num_slave_dofs(dof_handler) == 6
+
+
+class TestTask63ApplyMPCToGlobalSystem:
+    """
+    Test suite for Task 6.3: Apply MPC to Global System
+
+    Tests the system reduction and displacement recovery workflow:
+    - AC1: Reduced system is smaller than original
+    - AC2: Full displacements are recovered correctly
+    - AC3: Constrained DOFs satisfy constraint equations
+    """
+
+    def test_ac1_reduced_system_smaller_equality(self):
+        """
+        AC1: Reduced system is smaller than original (equality constraint)
+
+        Each equality constraint removes 1 DOF from the system.
+        """
+        registry = NodeRegistry()
+        n1, n2, beam, mat, sec = create_test_beam(registry, 0, 0, 0, 3, 0, 0)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+        n_full = dof_handler.total_dofs()  # 12 DOFs
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam])
+        F = np.zeros(n_full)
+
+        # Add 3 equality constraints
+        ch = ConstraintHandler()
+        ch.add_equality_constraint(n2.id, DOFIndex.UX, n1.id, DOFIndex.UX)
+        ch.add_equality_constraint(n2.id, DOFIndex.UY, n1.id, DOFIndex.UY)
+        ch.add_equality_constraint(n2.id, DOFIndex.UZ, n1.id, DOFIndex.UZ)
+
+        result = ch.reduce_system(K, F, dof_handler)
+
+        # Verify dimensions
+        assert result.n_full == 12
+        assert result.n_reduced == 12 - 3  # 3 constraints removed 3 DOFs
+        assert result.K_reduced.shape == (9, 9)
+        assert result.F_reduced.shape == (9,)
+        assert result.T.shape == (12, 9)
+
+    def test_ac1_reduced_system_smaller_rigid_link(self):
+        """
+        AC1: Reduced system is smaller than original (rigid link)
+
+        Each rigid link removes 6 DOFs from the system.
+        """
+        registry = NodeRegistry()
+
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(3, 0, 0)
+        n3 = registry.get_or_create_node(6, 0, 0)
+
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85e-6)
+        sec = Section(1, "Test", 0.01, 1e-5, 2e-5, 1.5e-5)
+
+        beam1 = BeamElement(1, n1, n2, mat, sec)
+        beam2 = BeamElement(2, n2, n3, mat, sec)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+        n_full = dof_handler.total_dofs()  # 18 DOFs (3 nodes * 6)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam1, beam2])
+        F = np.zeros(n_full)
+
+        # Add rigid link (removes 6 DOFs)
+        ch = ConstraintHandler()
+        ch.add_rigid_link(n3.id, n2.id, np.array([3.0, 0.0, 0.0]))
+
+        result = ch.reduce_system(K, F, dof_handler)
+
+        # Verify dimensions
+        assert result.n_full == 18
+        assert result.n_reduced == 18 - 6  # Rigid link removed 6 DOFs
+        assert result.K_reduced.shape == (12, 12)
+        assert result.F_reduced.shape == (12,)
+
+    def test_ac2_full_displacements_recovered_equality(self):
+        """
+        AC2: Full displacements are recovered correctly (equality)
+
+        u_full = T * u_reduced should give correct slave values.
+        """
+        registry = NodeRegistry()
+
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(6, 0, 0)
+
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85e-6)
+        sec = Section(1, "Test", 0.01, 1e-5, 2e-5, 1.5e-5)
+        beam = BeamElement(1, n1, n2, mat, sec)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam])
+        F = np.zeros(dof_handler.total_dofs())
+        F[dof_handler.get_global_dof(n2.id, DOFIndex.UZ)] = -10.0
+
+        # Tie UX together
+        ch = ConstraintHandler()
+        ch.add_equality_constraint(n2.id, DOFIndex.UX, n1.id, DOFIndex.UX)
+
+        bc = BCHandler()
+        bc.fix_node(n1.id)
+        K_bc, F_bc = bc.apply_to_system(K, F, dof_handler)
+
+        result = ch.reduce_system(K_bc, F_bc, dof_handler)
+
+        solver = LinearSolver()
+        u_reduced = solver.solve(result.K_reduced, result.F_reduced)
+        u_full = ch.expand_displacements(u_reduced, result.T)
+
+        # Verify u_full = T * u_reduced
+        u_full_check = result.T @ u_reduced
+        np.testing.assert_array_almost_equal(u_full, u_full_check)
+
+        # Verify dimensions
+        assert u_full.shape == (dof_handler.total_dofs(),)
+
+    def test_ac2_full_displacements_recovered_rigid_link(self):
+        """
+        AC2: Full displacements are recovered correctly (rigid link)
+
+        Slave DOFs should follow rigid body kinematics from master.
+        """
+        registry = NodeRegistry()
+
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(6, 0, 0)
+        n3 = registry.get_or_create_node(6, 2, 0)  # Offset in Y
+
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85e-6)
+        sec = Section(1, "Test", 0.01, 1e-5, 2e-5, 1.5e-5)
+        beam = BeamElement(1, n1, n2, mat, sec)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam])
+        F = np.zeros(dof_handler.total_dofs())
+        F[dof_handler.get_global_dof(n2.id, DOFIndex.UZ)] = -10.0
+
+        # Rigid link with Y offset
+        ry = 2.0
+        ch = ConstraintHandler()
+        ch.add_rigid_link(n3.id, n2.id, np.array([0.0, ry, 0.0]))
+
+        bc = BCHandler()
+        bc.fix_node(n1.id)
+        K_bc, F_bc = bc.apply_to_system(K, F, dof_handler)
+
+        result = ch.reduce_system(K_bc, F_bc, dof_handler)
+
+        solver = LinearSolver()
+        u_reduced = solver.solve(result.K_reduced, result.F_reduced)
+        u_full = ch.expand_displacements(u_reduced, result.T)
+
+        # Verify all 6 slave DOFs follow rigid body kinematics
+        # Get master DOFs
+        m_ux = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.UX)]
+        m_uy = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.UY)]
+        m_uz = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.UZ)]
+        m_rx = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.RX)]
+        m_ry = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.RY)]
+        m_rz = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.RZ)]
+
+        # Get slave DOFs
+        s_ux = u_full[dof_handler.get_global_dof(n3.id, DOFIndex.UX)]
+        s_uy = u_full[dof_handler.get_global_dof(n3.id, DOFIndex.UY)]
+        s_uz = u_full[dof_handler.get_global_dof(n3.id, DOFIndex.UZ)]
+        s_rx = u_full[dof_handler.get_global_dof(n3.id, DOFIndex.RX)]
+        s_ry = u_full[dof_handler.get_global_dof(n3.id, DOFIndex.RY)]
+        s_rz = u_full[dof_handler.get_global_dof(n3.id, DOFIndex.RZ)]
+
+        # Verify rigid body kinematics (offset r = [0, ry, 0])
+        # u_sx = u_mx + ry*θmz
+        assert abs(s_ux - (m_ux + ry * m_rz)) < 1e-10
+        # u_sy = u_my - rx*θmz = u_my (rx=0)
+        assert abs(s_uy - m_uy) < 1e-10
+        # u_sz = u_mz - ry*θmx
+        assert abs(s_uz - (m_uz - ry * m_rx)) < 1e-10
+        # Rotations equal
+        assert abs(s_rx - m_rx) < 1e-10
+        assert abs(s_ry - m_ry) < 1e-10
+        assert abs(s_rz - m_rz) < 1e-10
+
+    def test_ac3_equality_constraints_satisfied(self):
+        """
+        AC3: Constrained DOFs satisfy constraint equations (equality)
+
+        For equality constraint: u_slave = u_master
+        """
+        registry = NodeRegistry()
+
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(3, 0, 0)
+        n3 = registry.get_or_create_node(6, 0, 0)
+
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85e-6)
+        sec = Section(1, "Test", 0.01, 1e-5, 2e-5, 1.5e-5)
+
+        beam1 = BeamElement(1, n1, n2, mat, sec)
+        beam2 = BeamElement(2, n2, n3, mat, sec)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam1, beam2])
+        F = np.zeros(dof_handler.total_dofs())
+        F[dof_handler.get_global_dof(n3.id, DOFIndex.UZ)] = -20.0
+
+        # Multiple equality constraints
+        ch = ConstraintHandler()
+        ch.add_equality_constraint(n2.id, DOFIndex.RX, n1.id, DOFIndex.RX)
+        ch.add_equality_constraint(n3.id, DOFIndex.RY, n2.id, DOFIndex.RY)
+
+        bc = BCHandler()
+        bc.fix_node(n1.id)
+        K_bc, F_bc = bc.apply_to_system(K, F, dof_handler)
+
+        result = ch.reduce_system(K_bc, F_bc, dof_handler)
+
+        solver = LinearSolver()
+        u_reduced = solver.solve(result.K_reduced, result.F_reduced)
+        u_full = ch.expand_displacements(u_reduced, result.T)
+
+        # Verify constraint 1: n2.RX = n1.RX
+        n1_rx = u_full[dof_handler.get_global_dof(n1.id, DOFIndex.RX)]
+        n2_rx = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.RX)]
+        assert abs(n2_rx - n1_rx) < 1e-10, \
+            f"Constraint n2.RX={n2_rx} should equal n1.RX={n1_rx}"
+
+        # Verify constraint 2: n3.RY = n2.RY
+        n2_ry = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.RY)]
+        n3_ry = u_full[dof_handler.get_global_dof(n3.id, DOFIndex.RY)]
+        assert abs(n3_ry - n2_ry) < 1e-10, \
+            f"Constraint n3.RY={n3_ry} should equal n2.RY={n2_ry}"
+
+    def test_ac3_rigid_link_constraints_satisfied(self):
+        """
+        AC3: Constrained DOFs satisfy constraint equations (rigid link)
+
+        All 6 DOFs should follow rigid body kinematics.
+        """
+        registry = NodeRegistry()
+
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(4, 0, 0)
+        # Slave with 3D offset
+        offset = np.array([1.0, 2.0, 0.5])
+        n3 = registry.get_or_create_node(
+            4 + offset[0], offset[1], offset[2]
+        )
+
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85e-6)
+        sec = Section(1, "Test", 0.01, 1e-5, 2e-5, 1.5e-5)
+        beam = BeamElement(1, n1, n2, mat, sec)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam])
+        F = np.zeros(dof_handler.total_dofs())
+        # Apply force and moment to cause all DOF types to be non-zero
+        F[dof_handler.get_global_dof(n2.id, DOFIndex.UZ)] = -10.0
+        F[dof_handler.get_global_dof(n2.id, DOFIndex.RZ)] = 5.0
+
+        ch = ConstraintHandler()
+        ch.add_rigid_link(n3.id, n2.id, offset)
+
+        bc = BCHandler()
+        bc.fix_node(n1.id)
+        K_bc, F_bc = bc.apply_to_system(K, F, dof_handler)
+
+        result = ch.reduce_system(K_bc, F_bc, dof_handler)
+
+        solver = LinearSolver()
+        u_reduced = solver.solve(result.K_reduced, result.F_reduced)
+        u_full = ch.expand_displacements(u_reduced, result.T)
+
+        # Get master and slave displacements
+        master = np.array([
+            u_full[dof_handler.get_global_dof(n2.id, i)] for i in range(6)
+        ])
+        slave = np.array([
+            u_full[dof_handler.get_global_dof(n3.id, i)] for i in range(6)
+        ])
+
+        # Compute expected slave using transformation block
+        rl = RigidLink(n3.id, n2.id, offset)
+        T_block = rl.transformation_block_6x6()
+        expected_slave = T_block @ master
+
+        np.testing.assert_array_almost_equal(slave, expected_slave, decimal=10)
+
+    def test_complete_workflow_with_mpc(self):
+        """
+        Test complete workflow: Model → Assemble → MPC → Solve → Results
+
+        This test demonstrates the full analysis workflow with MPC constraints.
+        """
+        registry = NodeRegistry()
+
+        # Create a simple frame with 3 nodes
+        n1 = registry.get_or_create_node(0, 0, 0)  # Fixed support
+        n2 = registry.get_or_create_node(4, 0, 0)  # Joint
+        n3 = registry.get_or_create_node(4, 3, 0)  # Free end (will be loaded)
+        n4 = registry.get_or_create_node(4, 0, 2)  # Slave node (rigid link to n2)
+
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85e-6)
+        sec = Section(1, "IPE200", 0.00285, 1.94e-5, 1.42e-6, 6.98e-8)
+
+        beam1 = BeamElement(1, n1, n2, mat, sec)  # Horizontal beam
+        beam2 = BeamElement(2, n2, n3, mat, sec)  # Vertical beam
+
+        # Step 1: DOF numbering
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+        n_full = dof_handler.total_dofs()
+
+        # Step 2: Assemble global system
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam1, beam2])
+
+        # Step 3: Apply loads
+        F = np.zeros(n_full)
+        F[dof_handler.get_global_dof(n3.id, DOFIndex.UX)] = 5.0  # Horizontal force
+
+        # Step 4: Define MPC constraints
+        ch = ConstraintHandler()
+        # Rigid link from n4 to n2 (offset in Z)
+        ch.add_rigid_link(n4.id, n2.id, np.array([0.0, 0.0, 2.0]))
+        # Equality constraint: tie n3.RZ to n2.RZ
+        ch.add_equality_constraint(n3.id, DOFIndex.RZ, n2.id, DOFIndex.RZ)
+
+        # Step 5: Apply boundary conditions
+        bc = BCHandler()
+        bc.fix_node(n1.id)
+        K_bc, F_bc = bc.apply_to_system(K, F, dof_handler)
+
+        # Step 6: Reduce system with MPC
+        result = ch.reduce_system(K_bc, F_bc, dof_handler)
+
+        # Verify reduction
+        n_constraints = 6 + 1  # 6 from rigid link + 1 from equality
+        assert result.n_reduced == n_full - n_constraints
+
+        # Step 7: Solve reduced system
+        solver = LinearSolver()
+        u_reduced = solver.solve(result.K_reduced, result.F_reduced)
+
+        # Step 8: Expand to full displacements
+        u_full = ch.expand_displacements(u_reduced, result.T)
+
+        # Verify results
+        # 1. Fixed node should have zero displacements
+        for dof in range(6):
+            n1_dof = u_full[dof_handler.get_global_dof(n1.id, dof)]
+            assert abs(n1_dof) < 1e-10
+
+        # 2. Equality constraint satisfied
+        n2_rz = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.RZ)]
+        n3_rz = u_full[dof_handler.get_global_dof(n3.id, DOFIndex.RZ)]
+        assert abs(n3_rz - n2_rz) < 1e-10
+
+        # 3. Rigid link constraints satisfied (check one example)
+        n2_uz = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.UZ)]
+        n2_rx = u_full[dof_handler.get_global_dof(n2.id, DOFIndex.RX)]
+        n4_uz = u_full[dof_handler.get_global_dof(n4.id, DOFIndex.UZ)]
+        # u_sz = u_mz - ry*θmx (ry=0 for this offset)
+        assert abs(n4_uz - n2_uz) < 1e-10
+
+        # 4. Free end should have displacement (load applied)
+        n3_ux = u_full[dof_handler.get_global_dof(n3.id, DOFIndex.UX)]
+        assert abs(n3_ux) > 1e-10, "Free end should deflect under load"
