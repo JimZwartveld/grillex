@@ -63,12 +63,67 @@ public:
 - Global analysis (displacements, reactions) works correctly without these methods
 
 **Acceptance Criteria:**
-- [ ] `get_distributed_load_y()` returns correct local y-component
-- [ ] `get_distributed_load_z()` returns correct local z-component
-- [ ] `get_distributed_load_axial()` returns correct local x-component
-- [ ] Multiple line loads on same element are summed correctly
-- [ ] Global-to-local transformation is handled properly
-- [ ] Returns zero `DistributedLoad` if no line loads on element
+- [x] `get_distributed_load_y()` returns correct local y-component
+- [x] `get_distributed_load_z()` returns correct local z-component
+- [x] `get_distributed_load_axial()` returns correct local x-component
+- [x] Multiple line loads on same element are summed correctly
+- [x] Global-to-local transformation is handled properly
+- [x] Returns zero `DistributedLoad` if no line loads on element
+
+---
+
+### Execution Summary (Task 7.0)
+
+**Implementation Date:** 2025-12-18
+
+**Status:** ✅ COMPLETED
+
+**Files Created/Modified:**
+
+1. **Modified:** `cpp/include/grillex/beam_element.hpp`
+   - Added forward declarations for `LoadCase` and `DistributedLoad`
+   - Added method declarations for `get_distributed_load_y()`, `get_distributed_load_z()`, and `get_distributed_load_axial()`
+   - Documented each method with parameter descriptions and usage notes
+
+2. **Modified:** `cpp/src/beam_element.cpp`
+   - Added include for `load_case.hpp`
+   - Implemented `get_distributed_load_y()`: queries LoadCase for line loads on element, transforms from global to local coordinates using `local_axes.to_local()`, extracts y-component, sums multiple loads
+   - Implemented `get_distributed_load_z()`: same approach for z-component
+   - Implemented `get_distributed_load_axial()`: same approach for x-component (axial direction)
+
+3. **Modified:** `cpp/bindings/bindings.cpp`
+   - Added Python bindings for all three new methods on `BeamElement` class
+   - Added docstrings describing parameters and return types
+
+4. **New File:** `tests/python/test_phase7_distributed_load_query.py`
+   - 24 comprehensive tests covering all acceptance criteria
+   - Test classes:
+     - `TestDistributedLoadQueryBasics`: empty load case, loads on different elements
+     - `TestHorizontalBeamAlongX`: global-to-local transformation for X-aligned beam
+     - `TestHorizontalBeamAlongY`: global-to-local transformation for Y-aligned beam
+     - `TestVerticalBeam`: global-to-local transformation for Z-aligned beam
+     - `TestTrapezoidalLoads`: linearly varying (trapezoidal) loads
+     - `TestMultipleLoads`: multiple line loads accumulation
+     - `TestDiagonalBeam`: diagonal beam coordinate transformation
+     - `TestAcceptanceCriteria`: explicit tests for each acceptance criterion
+
+**Test Results:** 24/24 tests passing
+
+**Implementation Notes:**
+
+1. The methods iterate through all line loads in the LoadCase and filter by element ID
+2. Coordinate transformation uses the existing `LocalAxes::to_local()` method which applies the transformation matrix T^T to convert global vectors to local
+3. Multiple line loads on the same element are summed (accumulated) correctly
+4. For elements with no line loads, returns `DistributedLoad{0.0, 0.0}` (zero load)
+5. Trapezoidal loads are fully supported via `q_start` and `q_end` values
+
+**Local Axis Conventions Verified:**
+- Beam along global X: local y → global Y, local z → global Z
+- Beam along global Y: local x → global Y, local z → global Z, local y → global -X
+- Beam along global Z: local x → global Z, local y → global -Y, local z → global X
+
+**Why This Task is Important:**
+This task enables Phase 7's differential equation approach (Task 7.2) to compute accurate internal actions. Without these methods, internal actions would need to use simple linear interpolation between end forces, which is inaccurate for beams with distributed loads.
 
 ---
 

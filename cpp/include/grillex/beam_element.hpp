@@ -13,6 +13,8 @@ namespace grillex {
 
 // Forward declarations
 class DOFHandler;
+class LoadCase;
+struct DistributedLoad;
 
 /**
  * @brief Beam formulation type
@@ -480,8 +482,69 @@ public:
     Eigen::Matrix<double, 14, 14> offset_transformation_matrix_warping() const;
 
     // ========================================================================
-    // Phase 7: Internal Actions (Element End Forces)
+    // Phase 7: Internal Actions
     // ========================================================================
+
+    // Task 7.0: Distributed Load Query Methods
+    // -----------------------------------------
+
+    /**
+     * @brief Get distributed load in local y direction from a load case
+     *
+     * Queries the load case for line loads on this element, transforms them
+     * from global to local coordinates, and returns the local y-component
+     * as a DistributedLoad.
+     *
+     * Used by Phase 7 internal action calculations with differential equations.
+     *
+     * @param load_case LoadCase containing line loads
+     * @return DistributedLoad Load in local y direction [kN/m]
+     *         (q_start at node_i end, q_end at node_j end)
+     *
+     * @note Multiple line loads on this element are summed.
+     * @note Returns zero load if no line loads on this element.
+     */
+    DistributedLoad get_distributed_load_y(const LoadCase& load_case) const;
+
+    /**
+     * @brief Get distributed load in local z direction from a load case
+     *
+     * Queries the load case for line loads on this element, transforms them
+     * from global to local coordinates, and returns the local z-component
+     * as a DistributedLoad.
+     *
+     * Used by Phase 7 internal action calculations with differential equations.
+     *
+     * @param load_case LoadCase containing line loads
+     * @return DistributedLoad Load in local z direction [kN/m]
+     *         (q_start at node_i end, q_end at node_j end)
+     *
+     * @note Multiple line loads on this element are summed.
+     * @note Returns zero load if no line loads on this element.
+     */
+    DistributedLoad get_distributed_load_z(const LoadCase& load_case) const;
+
+    /**
+     * @brief Get distributed axial load in local x direction from a load case
+     *
+     * Queries the load case for line loads on this element, transforms them
+     * from global to local coordinates, and returns the local x-component
+     * (axial direction) as a DistributedLoad.
+     *
+     * Used by Phase 7 internal action calculations for axial force variation.
+     *
+     * @param load_case LoadCase containing line loads
+     * @return DistributedLoad Load in local x (axial) direction [kN/m]
+     *         (q_start at node_i end, q_end at node_j end)
+     *
+     * @note Positive axial load is in positive x direction (towards node_j).
+     * @note Multiple line loads on this element are summed.
+     * @note Returns zero load if no line loads on this element.
+     */
+    DistributedLoad get_distributed_load_axial(const LoadCase& load_case) const;
+
+    // Task 7.1: Element End Forces
+    // -----------------------------
 
     /**
      * @brief Get element displacements in local coordinates

@@ -1,5 +1,6 @@
 #include "grillex/beam_element.hpp"
 #include "grillex/dof_handler.hpp"
+#include "grillex/load_case.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -1062,6 +1063,89 @@ std::pair<EndForces, EndForces> BeamElement::compute_end_forces(
     }
 
     return {forces_i, forces_j};
+}
+
+// ============================================================================
+// Task 7.0: Distributed Load Query Methods
+// ============================================================================
+
+DistributedLoad BeamElement::get_distributed_load_y(const LoadCase& load_case) const {
+    DistributedLoad result;
+    result.q_start = 0.0;
+    result.q_end = 0.0;
+
+    // Iterate through all line loads in the load case
+    for (const auto& line_load : load_case.get_line_loads()) {
+        // Check if this line load applies to this element
+        if (line_load.element_id != id) {
+            continue;
+        }
+
+        // Transform load from global to local coordinates
+        // line_load.w_start and w_end are in global coordinates [kN/m]
+        Eigen::Vector3d w_start_local = local_axes.to_local(line_load.w_start);
+        Eigen::Vector3d w_end_local = local_axes.to_local(line_load.w_end);
+
+        // Extract the y-component (index 1)
+        // Accumulate in case there are multiple line loads on this element
+        result.q_start += w_start_local(1);
+        result.q_end += w_end_local(1);
+    }
+
+    return result;
+}
+
+DistributedLoad BeamElement::get_distributed_load_z(const LoadCase& load_case) const {
+    DistributedLoad result;
+    result.q_start = 0.0;
+    result.q_end = 0.0;
+
+    // Iterate through all line loads in the load case
+    for (const auto& line_load : load_case.get_line_loads()) {
+        // Check if this line load applies to this element
+        if (line_load.element_id != id) {
+            continue;
+        }
+
+        // Transform load from global to local coordinates
+        // line_load.w_start and w_end are in global coordinates [kN/m]
+        Eigen::Vector3d w_start_local = local_axes.to_local(line_load.w_start);
+        Eigen::Vector3d w_end_local = local_axes.to_local(line_load.w_end);
+
+        // Extract the z-component (index 2)
+        // Accumulate in case there are multiple line loads on this element
+        result.q_start += w_start_local(2);
+        result.q_end += w_end_local(2);
+    }
+
+    return result;
+}
+
+DistributedLoad BeamElement::get_distributed_load_axial(const LoadCase& load_case) const {
+    DistributedLoad result;
+    result.q_start = 0.0;
+    result.q_end = 0.0;
+
+    // Iterate through all line loads in the load case
+    for (const auto& line_load : load_case.get_line_loads()) {
+        // Check if this line load applies to this element
+        if (line_load.element_id != id) {
+            continue;
+        }
+
+        // Transform load from global to local coordinates
+        // line_load.w_start and w_end are in global coordinates [kN/m]
+        Eigen::Vector3d w_start_local = local_axes.to_local(line_load.w_start);
+        Eigen::Vector3d w_end_local = local_axes.to_local(line_load.w_end);
+
+        // Extract the x-component (index 0) - axial direction
+        // Positive x is towards node_j
+        // Accumulate in case there are multiple line loads on this element
+        result.q_start += w_start_local(0);
+        result.q_end += w_end_local(0);
+    }
+
+    return result;
 }
 
 } // namespace grillex

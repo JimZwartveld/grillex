@@ -389,6 +389,34 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "    dof_handler: DOF handler for global-to-local mapping\n\n"
              "Returns:\n"
              "    Tuple (EndForces_i, EndForces_j) with forces at each end")
+        // Task 7.0: Distributed Load Query Methods
+        .def("get_distributed_load_y", &grillex::BeamElement::get_distributed_load_y,
+             py::arg("load_case"),
+             "Get distributed load in local y direction from a load case.\n\n"
+             "Queries the load case for line loads on this element, transforms them\n"
+             "from global to local coordinates, and returns the local y-component.\n\n"
+             "Args:\n"
+             "    load_case: LoadCase containing line loads\n\n"
+             "Returns:\n"
+             "    DistributedLoad with q_start and q_end in local y [kN/m]")
+        .def("get_distributed_load_z", &grillex::BeamElement::get_distributed_load_z,
+             py::arg("load_case"),
+             "Get distributed load in local z direction from a load case.\n\n"
+             "Queries the load case for line loads on this element, transforms them\n"
+             "from global to local coordinates, and returns the local z-component.\n\n"
+             "Args:\n"
+             "    load_case: LoadCase containing line loads\n\n"
+             "Returns:\n"
+             "    DistributedLoad with q_start and q_end in local z [kN/m]")
+        .def("get_distributed_load_axial", &grillex::BeamElement::get_distributed_load_axial,
+             py::arg("load_case"),
+             "Get distributed axial load in local x direction from a load case.\n\n"
+             "Queries the load case for line loads on this element, transforms them\n"
+             "from global to local coordinates, and returns the local x-component.\n\n"
+             "Args:\n"
+             "    load_case: LoadCase containing line loads\n\n"
+             "Returns:\n"
+             "    DistributedLoad with q_start and q_end in local x (axial) [kN/m]")
         .def("__repr__", [](const grillex::BeamElement &e) {
             return "<BeamElement id=" + std::to_string(e.id) +
                    " nodes=[" + std::to_string(e.node_i->id) + "," +
