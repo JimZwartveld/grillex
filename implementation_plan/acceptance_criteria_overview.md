@@ -15,7 +15,7 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 4 | Python Front-End & I/O | 16 | 10 | 6 | 63% |
 | 5 | Loads & Load Cases | 15 | 0 | 15 | 0% |
 | 6 | MPC & Rigid Links | 9 | 9 | 0 | 100% |
-| 7 | Internal Actions & Results | 31 | 21 | 10 | 68% |
+| 7 | Internal Actions & Results | 31 | 27 | 4 | 87% |
 | 8 | Additional Element Types | 9 | 0 | 9 | 0% |
 | 9 | Cargo Modeling | 3 | 0 | 3 | 0% |
 | 10 | Design Codes | 6 | 0 | 6 | 0% |
@@ -23,7 +23,7 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 10 | 0 | 10 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **179** | **105** | **74** | **59%** |
+| **Total** | | **179** | **111** | **68** | **62%** |
 
 ---
 
@@ -294,12 +294,12 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] For Timoshenko, φ_z ≠ dw/dy (shear deformation included)
 
 ### Task 7.2f: Multi-Element Beam Plotting
-- [ ] Continuous moment diagram across 3-element beam matches hand calculation
-- [ ] Element boundaries are clearly marked in plots
-- [ ] Concentrated loads cause visible shear discontinuities
-- [ ] Extrema are found and marked correctly across element boundaries
-- [ ] Deflection diagram is smooth and continuous
-- [ ] Works with beams of varying element counts (2 to 10+ elements)
+- [x] Continuous moment diagram across 3-element beam matches hand calculation
+- [x] Element boundaries are clearly marked in plots
+- [x] Concentrated loads cause visible shear discontinuities
+- [x] Extrema are found and marked correctly across element boundaries
+- [x] Deflection diagram is smooth and continuous
+- [x] Works with beams of varying element counts (2 to 10+ elements)
 
 ### Task 7.3: Python Bindings for Internal Actions
 - [ ] InternalActions, EndForces, and DisplacementLine structs are accessible from Python

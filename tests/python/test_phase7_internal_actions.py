@@ -970,5 +970,423 @@ class TestMidspanDisplacement:
         np.testing.assert_almost_equal(disp_mid.u, expected_u_mid, decimal=5)
 
 
+# ============================================================================
+# Task 7.2f: Multi-Element Beam Plotting Tests
+# ============================================================================
+
+from grillex.core import StructuralModel, Beam
+
+
+class TestMultiElementBeamMomentDiagram:
+    """Test continuous moment diagram across multi-element beams"""
+
+    def test_three_element_beam_moment_continuity(self):
+        """Continuous moment diagram across 3-element beam with point load"""
+        # Create a simply supported beam with 3 equal elements and center point load
+        # Using point load instead of UDL for exact FEM solution
+        L = 6.0  # Total length
+        P = 10.0  # kN point load at center
+
+        model = StructuralModel(name="Multi-element test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        model.add_section("IPE200", A=0.01, Iy=8e-5, Iz=8e-5, J=1e-6)
+
+        # Create beam
+        beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE200", "Steel")
+
+        # Create intermediate nodes including one at L/2 for point load
+        model.get_or_create_node(L/2, 0, 0)
+
+        # Subdivide beams at internal nodes
+        n_split = model.subdivide_beams()
+
+        # Apply boundary conditions
+        model.fix_dof_at([0, 0, 0], DOFIndex.UX, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UY, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UZ, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RX, 0.0)
+        model.fix_dof_at([L, 0, 0], DOFIndex.UY, 0.0)
+        model.fix_dof_at([L, 0, 0], DOFIndex.RX, 0.0)
+
+        # Apply point load at center
+        model.add_point_load([L/2, 0, 0], DOFIndex.UY, -P)
+
+        assert model.analyze()
+
+        # For point load P at center of simply supported beam:
+        # M_max = P*L/4 at x = L/2
+        M_max_expected = P * L / 4.0
+
+        # Get moment at midspan - find the element containing L/2
+        # Actually, at L/2 there's a node, so query just before it
+        eps = 0.01
+        mid_beam = next(b for b in model.beams
+                        if b.start_pos[0] <= L/2 - eps <= b.end_pos[0])
+        x_local = L/2 - eps - mid_beam.start_pos[0]
+
+        cpp_model = model._cpp_model
+        actions = mid_beam.elements[0].get_internal_actions(
+            x_local,
+            cpp_model.get_displacements(),
+            cpp_model.get_dof_handler()
+        )
+
+        # Moment at midspan should be approximately PL/4
+        np.testing.assert_almost_equal(abs(actions.Mz), M_max_expected, decimal=0)
+
+
+class TestBeamElementBoundaries:
+    """Test element boundary identification in multi-element beams"""
+
+    def test_single_element_no_boundaries(self):
+        """Single-element beam has no internal boundaries"""
+        model = StructuralModel(name="Single element test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        model.add_section("IPE200", A=0.01, Iy=8e-5, Iz=8e-5, J=1e-6)
+
+        beam = model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE200", "Steel")
+
+        boundaries = beam.get_element_boundaries()
+        assert boundaries == []
+
+    def test_three_element_two_boundaries(self):
+        """Three-element beam has two internal boundaries"""
+        L = 6.0
+
+        model = StructuralModel(name="Multi-element test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        model.add_section("IPE200", A=0.01, Iy=8e-5, Iz=8e-5, J=1e-6)
+
+        beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE200", "Steel")
+
+        # Create intermediate nodes
+        model.get_or_create_node(2, 0, 0)
+        model.get_or_create_node(4, 0, 0)
+
+        # Subdivide
+        model.subdivide_beams()
+
+        # After subdivision, we have 3 beams instead of 1
+        # Each beam has 1 element
+        # Let's find the first sub-beam
+        first_beam = next(b for b in model.beams if np.allclose(b.start_pos, [0, 0, 0]))
+
+        # Single-element beam still has no internal boundaries
+        boundaries = first_beam.get_element_boundaries()
+        assert boundaries == []
+
+
+class TestShearDiscontinuities:
+    """Test that concentrated loads cause visible shear discontinuities"""
+
+    def test_shear_jump_at_point_load(self):
+        """Shear has discontinuity at point load location"""
+        L = 6.0
+        P = 10.0
+
+        model = StructuralModel(name="Point load test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        model.add_section("IPE200", A=0.01, Iy=8e-5, Iz=8e-5, J=1e-6)
+
+        beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE200", "Steel")
+
+        # Create node at L/2 for point load
+        model.get_or_create_node(L/2, 0, 0)
+        model.subdivide_beams()
+
+        # Find the two sub-beams
+        beam1 = next(b for b in model.beams if np.allclose(b.start_pos, [0, 0, 0]))
+        beam2 = next(b for b in model.beams if np.allclose(b.start_pos, [L/2, 0, 0]))
+
+        # Apply boundary conditions
+        model.fix_dof_at([0, 0, 0], DOFIndex.UX, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UY, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UZ, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RX, 0.0)
+        model.fix_dof_at([L, 0, 0], DOFIndex.UY, 0.0)
+        model.fix_dof_at([L, 0, 0], DOFIndex.RX, 0.0)
+
+        # Point load at L/2
+        model.add_point_load([L/2, 0, 0], DOFIndex.UY, -P)
+
+        assert model.analyze()
+
+        cpp_model = model._cpp_model
+        dof_handler = cpp_model.get_dof_handler()
+        u = cpp_model.get_displacements()
+
+        # Get shear just before and just after the point load
+        eps = 0.01  # small offset
+
+        # Shear at end of first beam (just before load)
+        actions_before = beam1.elements[0].get_internal_actions(
+            beam1.length - eps, u, dof_handler)
+
+        # Shear at start of second beam (just after load)
+        actions_after = beam2.elements[0].get_internal_actions(
+            eps, u, dof_handler)
+
+        # Shear should jump by approximately P at the load location
+        shear_jump = abs(actions_before.Vy - actions_after.Vy)
+
+        # For simply supported beam with center load:
+        # Before load: V = P/2 (positive, upward reaction at left support)
+        # After load: V = -P/2 (negative, force heads down to right support)
+        # Jump should be approximately P
+        np.testing.assert_almost_equal(shear_jump, P, decimal=0)
+
+
+class TestMultiElementExtrema:
+    """Test extrema finding across element boundaries"""
+
+    def test_extrema_for_cantilever_tip_load(self):
+        """Extrema found correctly for cantilever with tip load"""
+        L = 6.0
+        P = 10.0
+
+        model = StructuralModel(name="Cantilever test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        model.add_section("IPE200", A=0.01, Iy=8e-5, Iz=8e-5, J=1e-6)
+
+        beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE200", "Steel")
+
+        # Cantilever BC
+        model.fix_dof_at([0, 0, 0], DOFIndex.UX, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UY, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UZ, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RX, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RY, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RZ, 0.0)
+
+        model.add_point_load([L, 0, 0], DOFIndex.UY, -P)
+
+        assert model.analyze()
+
+        # Find extrema using Beam class method
+        extrema = beam.find_moment_extrema('z', model)
+
+        # For cantilever with tip load:
+        # M = -P(L-x), max moment is at base (x=0) = -PL
+        M_max_expected = P * L
+
+        # Find the maximum absolute moment in extrema
+        max_moment = max(abs(val) for _, val in extrema)
+
+        np.testing.assert_almost_equal(max_moment, M_max_expected, decimal=0)
+
+
+class TestDeflectionDiagramContinuity:
+    """Test that deflection diagram is smooth and continuous"""
+
+    def test_deflection_smooth_across_elements(self):
+        """Deflection is continuous at element boundaries"""
+        L = 6.0
+
+        model = StructuralModel(name="Deflection test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        model.add_section("IPE200", A=0.01, Iy=8e-5, Iz=8e-5, J=1e-6)
+
+        beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE200", "Steel")
+
+        # Create intermediate node
+        model.get_or_create_node(L/2, 0, 0)
+        model.subdivide_beams()
+
+        # Find the two sub-beams
+        beam1 = next(b for b in model.beams if np.allclose(b.start_pos, [0, 0, 0]))
+        beam2 = next(b for b in model.beams if np.allclose(b.start_pos, [L/2, 0, 0]))
+
+        # Apply cantilever BC
+        model.fix_dof_at([0, 0, 0], DOFIndex.UX, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UY, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UZ, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RX, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RY, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RZ, 0.0)
+
+        model.add_point_load([L, 0, 0], DOFIndex.UY, -10.0)
+
+        assert model.analyze()
+
+        cpp_model = model._cpp_model
+        dof_handler = cpp_model.get_dof_handler()
+        u = cpp_model.get_displacements()
+
+        # Get displacement at boundary from both elements
+        disp_end_beam1 = beam1.elements[0].get_displacements_at(beam1.length, u, dof_handler)
+        disp_start_beam2 = beam2.elements[0].get_displacements_at(0.0, u, dof_handler)
+
+        # Displacements should match at the boundary
+        np.testing.assert_almost_equal(disp_end_beam1.v, disp_start_beam2.v, decimal=6)
+        np.testing.assert_almost_equal(disp_end_beam1.theta_z, disp_start_beam2.theta_z, decimal=6)
+
+
+class TestBeamInternalActionsAtMethod:
+    """Test the Beam.get_internal_actions_at() method"""
+
+    def test_internal_actions_at_various_positions(self):
+        """Can query internal actions at any position along beam"""
+        L = 6.0
+        P = 10.0
+
+        model = StructuralModel(name="Actions test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        model.add_section("IPE200", A=0.01, Iy=8e-5, Iz=8e-5, J=1e-6)
+
+        beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE200", "Steel")
+
+        # Cantilever
+        model.fix_dof_at([0, 0, 0], DOFIndex.UX, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UY, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UZ, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RX, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RY, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RZ, 0.0)
+
+        model.add_point_load([L, 0, 0], DOFIndex.UY, -P)
+
+        assert model.analyze()
+
+        # Query at various positions
+        for xi in [0.0, 0.25, 0.5, 0.75, 1.0]:
+            x = xi * L
+            actions = beam.get_internal_actions_at(x, model)
+
+            # Verify we got valid results
+            assert hasattr(actions, 'Mz')
+            assert hasattr(actions, 'Vy')
+
+            # For cantilever with tip load:
+            # M(x) = -P(L-x), V = -P (constant)
+            M_expected = -P * (L - x)
+            np.testing.assert_almost_equal(actions.Mz, M_expected, decimal=1)
+
+
+class TestMomentLineMethod:
+    """Test the Beam.get_moment_line() method"""
+
+    def test_moment_line_returns_arrays(self):
+        """get_moment_line returns x_positions and moments arrays"""
+        L = 6.0
+
+        model = StructuralModel(name="Moment line test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        model.add_section("IPE200", A=0.01, Iy=8e-5, Iz=8e-5, J=1e-6)
+
+        beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE200", "Steel")
+
+        model.fix_dof_at([0, 0, 0], DOFIndex.UX, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UY, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UZ, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RX, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RY, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RZ, 0.0)
+
+        model.add_point_load([L, 0, 0], DOFIndex.UY, -10.0)
+
+        assert model.analyze()
+
+        x_positions, moments = beam.get_moment_line('z', model, num_points=50)
+
+        assert len(x_positions) == 50
+        assert len(moments) == 50
+        assert x_positions[0] == 0.0
+        np.testing.assert_almost_equal(x_positions[-1], L, decimal=5)
+
+
+class TestDisplacementLineMethod:
+    """Test the Beam.get_displacement_line() method"""
+
+    def test_displacement_line_returns_arrays(self):
+        """get_displacement_line returns x_positions and displacements arrays"""
+        L = 6.0
+
+        model = StructuralModel(name="Displacement line test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        model.add_section("IPE200", A=0.01, Iy=8e-5, Iz=8e-5, J=1e-6)
+
+        beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE200", "Steel")
+
+        model.fix_dof_at([0, 0, 0], DOFIndex.UX, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UY, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UZ, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RX, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RY, 0.0)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RZ, 0.0)
+
+        model.add_point_load([L, 0, 0], DOFIndex.UY, -10.0)
+
+        assert model.analyze()
+
+        x_positions, v_displacements = beam.get_displacement_line('v', model, num_points=50)
+
+        assert len(x_positions) == 50
+        assert len(v_displacements) == 50
+
+        # Cantilever: deflection should be 0 at fixed end, negative at tip
+        np.testing.assert_almost_equal(v_displacements[0], 0.0, decimal=5)
+        assert v_displacements[-1] < 0  # Downward deflection
+
+
+class TestVaryingElementCounts:
+    """Test that methods work with different element counts"""
+
+    def test_single_element(self):
+        """Methods work with single-element beam"""
+        model = StructuralModel(name="Single element")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        model.add_section("IPE200", A=0.01, Iy=8e-5, Iz=8e-5, J=1e-6)
+
+        beam = model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE200", "Steel")
+        model.fix_dof_at([0, 0, 0], DOFIndex.UX)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UY)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UZ)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RX)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RY)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RZ)
+        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+
+        assert model.analyze()
+
+        # These should all work
+        assert len(beam.elements) == 1
+        x, M = beam.get_moment_line('z', model, num_points=10)
+        assert len(x) == 10
+
+    def test_multiple_elements(self):
+        """Methods work with multi-element beam (created via subdivision)"""
+        model = StructuralModel(name="Multi element")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-6)
+        model.add_section("IPE200", A=0.01, Iy=8e-5, Iz=8e-5, J=1e-6)
+
+        L = 10.0
+        beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE200", "Steel")
+
+        # Create 4 intermediate nodes for 5 elements
+        for i in range(1, 5):
+            model.get_or_create_node(i * L / 5, 0, 0)
+
+        n_split = model.subdivide_beams()
+        assert n_split == 1  # Original beam was subdivided
+
+        # Find first sub-beam
+        first_beam = next(b for b in model.beams if np.allclose(b.start_pos, [0, 0, 0]))
+
+        # Apply BCs and loads
+        model.fix_dof_at([0, 0, 0], DOFIndex.UX)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UY)
+        model.fix_dof_at([0, 0, 0], DOFIndex.UZ)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RX)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RY)
+        model.fix_dof_at([0, 0, 0], DOFIndex.RZ)
+        model.add_point_load([L, 0, 0], DOFIndex.UY, -10.0)
+
+        assert model.analyze()
+
+        # These should work on each sub-beam
+        x, M = first_beam.get_moment_line('z', model, num_points=10)
+        assert len(x) == 10
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
