@@ -2,15 +2,16 @@
 Tests for Task 7.2c (Displacement/Rotation Lines) and Task 7.2f (Multi-Element Beam Plotting)
 
 Task 7.2c Acceptance Criteria:
-- [ ] Displacements at element ends match nodal values exactly
-- [ ] Rotation φ_z = dw/dy for Euler-Bernoulli beams
-- [ ] For Timoshenko, φ_z ≠ dw/dy (shear deformation included)
+- [x] Displacements at element ends match nodal values exactly
+- [x] Deflection shape for cantilever with tip load matches analytical curve
+- [x] Rotation φ_z = dw/dy for Euler-Bernoulli beams
+- [x] For Timoshenko, φ_z ≠ dw/dy (shear deformation included)
 
 Task 7.2f Acceptance Criteria:
-- [ ] Continuous moment diagram across 3-element beam matches hand calculation
-- [ ] Extrema are found and marked correctly across element boundaries
-- [ ] Deflection diagram is smooth and continuous
-- [ ] Works with beams of varying element counts (2 to 10+ elements)
+- [x] Continuous moment diagram across 3-element beam matches hand calculation
+- [x] Extrema are found and marked correctly across element boundaries
+- [x] Deflection diagram is smooth and continuous
+- [x] Works with beams of varying element counts (2 to 10+ elements)
 """
 
 import numpy as np
@@ -218,6 +219,181 @@ class TestEulerBernoulliRotation:
             theta_analytical,
             decimal=5
         )
+
+
+class TestDeflectionCurveAnalytical:
+    """Test that deflection shape matches analytical curve for cantilever with tip load."""
+
+    def test_cantilever_deflection_curve_matches_analytical(self):
+        """Deflection shape for cantilever with tip load matches analytical curve.
+
+        Analytical formula for cantilever with tip load P at x=L:
+        v(x) = Px²(3L - x) / (6EI)
+
+        This verifies Task 7.2c criterion:
+        "Deflection shape for cantilever with tip load matches analytical curve"
+        """
+        L = 6.0
+        P = 10.0
+        E = 210e6
+        Iz = 6e-6
+
+        model = Model()
+        mat = model.create_material("Steel", E, 0.3, 7.85e-6)
+        sec = model.create_section("Test", 0.01, 8e-5, Iz, 1e-6)
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        config = BeamConfig()
+        config.formulation = BeamFormulation.EulerBernoulli
+        beam = model.create_beam(n1, n2, mat, sec, config)
+
+        model.boundary_conditions.fix_node(n1.id)
+
+        lc = model.get_default_load_case()
+        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        # Sample deflection at multiple points and compare to analytical
+        # Analytical: v(x) = -Px²(3L - x) / (6EI) (negative for downward load)
+        num_points = 11
+        x_positions = np.linspace(0, L, num_points)
+
+        for x in x_positions:
+            # Get computed displacement
+            disp = beam.get_displacements_at(x, u, dof_handler)
+            v_computed = disp.v
+
+            # Analytical displacement (negative for downward deflection)
+            v_analytical = -P * x**2 * (3*L - x) / (6 * E * Iz)
+
+            # Compare with tight tolerance
+            np.testing.assert_almost_equal(
+                v_computed, v_analytical, decimal=6,
+                err_msg=f"Deflection at x={x:.2f}m: computed={v_computed:.8e}, analytical={v_analytical:.8e}"
+            )
+
+    def test_cantilever_deflection_curve_shape(self):
+        """Verify the shape characteristics of the deflection curve.
+
+        For cantilever with tip load:
+        - v(0) = 0 (fixed end)
+        - v'(0) = 0 (fixed slope)
+        - v''(0) = M(0)/EI = P*L/EI (max curvature at base)
+        - v(L) = PL³/(3EI) (max deflection at tip)
+        """
+        L = 6.0
+        P = 10.0
+        E = 210e6
+        Iz = 6e-6
+
+        model = Model()
+        mat = model.create_material("Steel", E, 0.3, 7.85e-6)
+        sec = model.create_section("Test", 0.01, 8e-5, Iz, 1e-6)
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        config = BeamConfig()
+        config.formulation = BeamFormulation.EulerBernoulli
+        beam = model.create_beam(n1, n2, mat, sec, config)
+
+        model.boundary_conditions.fix_node(n1.id)
+
+        lc = model.get_default_load_case()
+        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        # Check v(0) = 0
+        disp_base = beam.get_displacements_at(0.0, u, dof_handler)
+        np.testing.assert_almost_equal(disp_base.v, 0.0, decimal=10)
+
+        # Check θ(0) = 0 (fixed rotation)
+        np.testing.assert_almost_equal(disp_base.theta_z, 0.0, decimal=10)
+
+        # Check v(L) = PL³/(3EI)
+        disp_tip = beam.get_displacements_at(L, u, dof_handler)
+        v_tip_analytical = -P * L**3 / (3 * E * Iz)
+        np.testing.assert_almost_equal(disp_tip.v, v_tip_analytical, decimal=6)
+
+        # Verify deflection is monotonically increasing (in magnitude) from base to tip
+        prev_v = 0.0
+        for x in np.linspace(0.1, L, 10):
+            disp = beam.get_displacements_at(x, u, dof_handler)
+            assert abs(disp.v) >= abs(prev_v), \
+                f"Deflection should increase monotonically: at x={x}, v={disp.v}, prev_v={prev_v}"
+            prev_v = disp.v
+
+    def test_multi_element_deflection_matches_single_element(self):
+        """Multi-element beam deflection matches single-element analytical solution.
+
+        Verifies that subdividing a beam doesn't affect deflection accuracy.
+        """
+        L = 6.0
+        P = 10.0
+        E = 210e6
+        Iz = 6e-6
+
+        # Analytical solution
+        def v_analytical(x):
+            return -P * x**2 * (3*L - x) / (6 * E * Iz)
+
+        # Create 4-element beam
+        model = Model()
+        mat = model.create_material("Steel", E, 0.3, 7.85e-6)
+        sec = model.create_section("Test", 0.01, 8e-5, Iz, 1e-6)
+
+        n_elements = 4
+        elem_length = L / n_elements
+        nodes = []
+        beams = []
+
+        for i in range(n_elements + 1):
+            x = i * elem_length
+            nodes.append(model.get_or_create_node(x, 0, 0))
+
+        for i in range(n_elements):
+            config = BeamConfig()
+            config.formulation = BeamFormulation.EulerBernoulli
+            beams.append(model.create_beam(nodes[i], nodes[i+1], mat, sec, config))
+
+        model.boundary_conditions.fix_node(nodes[0].id)
+
+        lc = model.get_default_load_case()
+        lc.add_nodal_load(nodes[-1].id, DOFIndex.UY, -P)
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        # Sample points across all elements
+        for global_x in np.linspace(0, L, 13):
+            # Find which element contains this point
+            elem_idx = min(int(global_x / elem_length), n_elements - 1)
+            local_x = global_x - elem_idx * elem_length
+
+            # Handle edge case at tip
+            if global_x >= L:
+                elem_idx = n_elements - 1
+                local_x = elem_length
+
+            disp = beams[elem_idx].get_displacements_at(local_x, u, dof_handler)
+            v_expected = v_analytical(global_x)
+
+            np.testing.assert_almost_equal(
+                disp.v, v_expected, decimal=5,
+                err_msg=f"Multi-element deflection at x={global_x:.2f}m"
+            )
 
 
 class TestTimoshenkoShearDeformation:

@@ -15,7 +15,7 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 4 | Python Front-End & I/O | 16 | 10 | 6 | 63% |
 | 5 | Loads & Load Cases | 15 | 0 | 15 | 0% |
 | 6 | MPC & Rigid Links | 9 | 9 | 0 | 100% |
-| 7 | Internal Actions & Results | 35 | 34 | 1 | 97% |
+| 7 | Internal Actions & Results | 35 | 35 | 0 | 100% |
 | 8 | Additional Element Types | 9 | 0 | 9 | 0% |
 | 9 | Cargo Modeling | 3 | 0 | 3 | 0% |
 | 10 | Design Codes | 6 | 0 | 6 | 0% |
@@ -23,7 +23,7 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 10 | 0 | 10 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **183** | **118** | **65** | **64%** |
+| **Total** | | **183** | **119** | **64** | **65%** |
 
 ---
 
@@ -289,7 +289,7 @@ This document provides a comprehensive overview of all acceptance criteria acros
 
 ### Task 7.2c: Displacement/Rotation Lines
 - [x] Displacements at element ends match nodal values exactly
-- [ ] Deflection shape for cantilever with tip load matches analytical curve
+- [x] Deflection shape for cantilever with tip load matches analytical curve
 - [x] Rotation φ_z = dw/dy for Euler-Bernoulli beams
 - [x] For Timoshenko, φ_z ≠ dw/dy (shear deformation included)
 
