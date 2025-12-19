@@ -43,9 +43,9 @@ Create the load case and load combination structures.
 2. Create `grillex/core/loads.py` with Python wrapper
 
 **Acceptance Criteria:**
-- [ ] Nodal loads can be applied
-- [ ] Line loads can be applied to beams
-- [ ] Load cases have type classification
+- [x] Nodal loads can be applied
+- [x] Line loads can be applied to beams
+- [x] Load cases have type classification
 
 ---
 
@@ -102,11 +102,11 @@ Compute equivalent nodal forces for distributed beam loads.
    ```
 
 **Acceptance Criteria:**
-- [ ] Uniform load produces correct reactions
-- [ ] Fixed-end moments match theory
-- [ ] Trapezoidal loads work correctly
-- [ ] BeamElement can query its distributed loads for Phase 7 internal actions computation
-- [ ] DistributedLoad structure is compatible with Phase 7 differential equation approach
+- [x] Uniform load produces correct reactions
+- [x] Fixed-end moments match theory
+- [x] Trapezoidal loads work correctly
+- [x] BeamElement can query its distributed loads for Phase 7 internal actions computation
+- [x] DistributedLoad structure is compatible with Phase 7 differential equation approach
 
 ---
 
@@ -151,9 +151,9 @@ Implement inertial loads from acceleration fields.
 3. Account for offsets when computing acceleration at beam ends
 
 **Acceptance Criteria:**
-- [ ] Gravity load (az = -9.81) produces correct weight forces
-- [ ] Rotational acceleration produces centrifugal effects
-- [ ] Results match: 1 mT/m beam with gravity → 9.81 kN/m load
+- [x] Gravity load (az = -9.81) produces correct weight forces
+- [x] Rotational acceleration produces centrifugal effects
+- [x] Results match: 1 mT/m beam with gravity → 9.81 kN/m load
 
 ---
 
@@ -186,9 +186,9 @@ Implement load combination definitions.
 2. Combined load = sum of (factor * individual load case loads)
 
 **Acceptance Criteria:**
-- [ ] Combinations sum loads correctly
-- [ ] Factors are applied correctly
-- [ ] Multiple load cases combine properly
+- [x] Combinations sum loads correctly
+- [x] Factors are applied correctly
+- [x] Multiple load cases combine properly
 
 ---
 

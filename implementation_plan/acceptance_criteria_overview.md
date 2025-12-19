@@ -13,7 +13,7 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 2 | Beam Element Foundation | 32 | 29 | 3 | 91% |
 | 3 | Assembly & Solver | 15 | 15 | 0 | 100% |
 | 4 | Python Front-End & I/O | 16 | 10 | 6 | 63% |
-| 5 | Loads & Load Cases | 15 | 0 | 15 | 0% |
+| 5 | Loads & Load Cases | 15 | 15 | 0 | 100% |
 | 6 | MPC & Rigid Links | 9 | 9 | 0 | 100% |
 | 7 | Internal Actions & Results | 35 | 35 | 0 | 100% |
 | 8 | Additional Element Types | 9 | 0 | 9 | 0% |
@@ -23,7 +23,7 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 10 | 0 | 10 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **183** | **119** | **64** | **65%** |
+| **Total** | | **183** | **134** | **49** | **73%** |
 
 ---
 
@@ -207,26 +207,26 @@ This document provides a comprehensive overview of all acceptance criteria acros
 ## Phase 5: Loads & Load Cases
 
 ### Task 5.1: Implement Load Types
-- [ ] Nodal loads can be applied
-- [ ] Line loads can be applied to beams
-- [ ] Load cases have type classification
+- [x] Nodal loads can be applied
+- [x] Line loads can be applied to beams
+- [x] Load cases have type classification
 
 ### Task 5.2: Implement Distributed Loads
-- [ ] Uniform load produces correct reactions
-- [ ] Fixed-end moments match theory
-- [ ] Trapezoidal loads work correctly
-- [ ] BeamElement can query its distributed loads for Phase 7 internal actions computation
-- [ ] DistributedLoad structure is compatible with Phase 7 differential equation approach
+- [x] Uniform load produces correct reactions
+- [x] Fixed-end moments match theory
+- [x] Trapezoidal loads work correctly
+- [x] BeamElement can query its distributed loads for Phase 7 internal actions computation
+- [x] DistributedLoad structure is compatible with Phase 7 differential equation approach
 
 ### Task 5.3: Implement Acceleration Loads
-- [ ] Gravity load (az = -9.81) produces correct weight forces
-- [ ] Rotational acceleration produces centrifugal effects
-- [ ] Results match: 1 mT/m beam with gravity → 9.81 kN/m load
+- [x] Gravity load (az = -9.81) produces correct weight forces
+- [x] Rotational acceleration produces centrifugal effects
+- [x] Results match: 1 mT/m beam with gravity → 9.81 kN/m load
 
 ### Task 5.4: Implement Load Combinations
-- [ ] Combinations sum loads correctly
-- [ ] Factors are applied correctly
-- [ ] Multiple load cases combine properly
+- [x] Combinations sum loads correctly
+- [x] Factors are applied correctly
+- [x] Multiple load cases combine properly
 
 ---
 
