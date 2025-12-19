@@ -10,12 +10,12 @@ This document provides a comprehensive overview of all acceptance criteria acros
 |-------|-------------|----------------|-----|-------|----------|
 | 0 | Project Setup & Infrastructure | 8 | 8 | 0 | 100% |
 | 1 | Core Data Structures | 13 | 13 | 0 | 100% |
-| 2 | Beam Element Foundation | 32 | 29 | 3 | 91% |
+| 2 | Beam Element Foundation | 32 | 32 | 0 | 100% |
 | 3 | Assembly & Solver | 15 | 15 | 0 | 100% |
-| 4 | Python Front-End & I/O | 16 | 10 | 6 | 63% |
-| 5 | Loads & Load Cases | 15 | 0 | 15 | 0% |
+| 4 | Python Front-End & I/O | 16 | 16 | 0 | 100% |
+| 5 | Loads & Load Cases | 15 | 15 | 0 | 100% |
 | 6 | MPC & Rigid Links | 9 | 9 | 0 | 100% |
-| 7 | Internal Actions & Results | 31 | 27 | 4 | 87% |
+| 7 | Internal Actions & Results | 35 | 35 | 0 | 100% |
 | 8 | Additional Element Types | 9 | 0 | 9 | 0% |
 | 9 | Cargo Modeling | 3 | 0 | 3 | 0% |
 | 10 | Design Codes | 6 | 0 | 6 | 0% |
@@ -23,7 +23,7 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 12 | 0 | 12 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **181** | **111** | **70** | **61%** |
+| **Total** | | **183** | **143** | **40** | **78%** |
 
 ---
 
@@ -99,9 +99,9 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Simple offset beam matches reference solution
 
 ### Task 2.5: Implement End Releases
-- [ ] Simply supported beam (moment releases at both ends) gives correct deflection
-- [ ] Pinned-fixed beam gives correct reactions
-- [ ] Released DOFs don't appear in global equations (conceptually)
+- [x] Simply supported beam (moment releases at both ends) gives correct deflection
+- [x] Pinned-fixed beam gives correct reactions
+- [x] Released DOFs don't appear in global equations (conceptually)
 - [x] Axial release creates sliding connection (no axial force transfer)
 - [x] Torsion release creates torsion hinge (no torque transfer)
 - [x] Warping release at beam end gives B=0 (bimoment-free connection)
@@ -195,38 +195,38 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Section/material properties propagate to sub-beams
 
 ### Task 4.5: Python Bindings for Internal Actions
-- [ ] InternalActions, EndForces, and DisplacementLine structs are accessible from Python
-- [ ] BeamElement methods (get_internal_actions, compute_end_forces, get_displacements_at, find_component_extrema) are callable from Python
-- [ ] Methods accept Eigen arrays and return appropriate types
-- [ ] Type hints are provided for IDE support
-- [ ] Example usage demonstrates multi-element beam plotting
-- [ ] Unit tests verify Python bindings work correctly
+- [x] InternalActions, EndForces, and DisplacementLine structs are accessible from Python
+- [x] BeamElement methods (get_internal_actions, compute_end_forces, get_displacements_at, find_component_extrema) are callable from Python
+- [x] Methods accept Eigen arrays and return appropriate types
+- [x] Type hints are provided for IDE support
+- [x] Example usage demonstrates multi-element beam plotting
+- [x] Unit tests verify Python bindings work correctly
 
 ---
 
 ## Phase 5: Loads & Load Cases
 
 ### Task 5.1: Implement Load Types
-- [ ] Nodal loads can be applied
-- [ ] Line loads can be applied to beams
-- [ ] Load cases have type classification
+- [x] Nodal loads can be applied
+- [x] Line loads can be applied to beams
+- [x] Load cases have type classification
 
 ### Task 5.2: Implement Distributed Loads
-- [ ] Uniform load produces correct reactions
-- [ ] Fixed-end moments match theory
-- [ ] Trapezoidal loads work correctly
-- [ ] BeamElement can query its distributed loads for Phase 7 internal actions computation
-- [ ] DistributedLoad structure is compatible with Phase 7 differential equation approach
+- [x] Uniform load produces correct reactions
+- [x] Fixed-end moments match theory
+- [x] Trapezoidal loads work correctly
+- [x] BeamElement can query its distributed loads for Phase 7 internal actions computation
+- [x] DistributedLoad structure is compatible with Phase 7 differential equation approach
 
 ### Task 5.3: Implement Acceleration Loads
-- [ ] Gravity load (az = -9.81) produces correct weight forces
-- [ ] Rotational acceleration produces centrifugal effects
-- [ ] Results match: 1 mT/m beam with gravity → 9.81 kN/m load
+- [x] Gravity load (az = -9.81) produces correct weight forces
+- [x] Rotational acceleration produces centrifugal effects
+- [x] Results match: 1 mT/m beam with gravity → 9.81 kN/m load
 
 ### Task 5.4: Implement Load Combinations
-- [ ] Combinations sum loads correctly
-- [ ] Factors are applied correctly
-- [ ] Multiple load cases combine properly
+- [x] Combinations sum loads correctly
+- [x] Factors are applied correctly
+- [x] Multiple load cases combine properly
 
 ---
 
@@ -302,12 +302,18 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Works with beams of varying element counts (2 to 10+ elements)
 
 ### Task 7.3: Python Bindings for Internal Actions
-- [ ] InternalActions, EndForces, and DisplacementLine structs are accessible from Python
-- [ ] BeamElement methods are callable from Python
-- [ ] Methods accept Eigen arrays and return appropriate types
-- [ ] Type hints are provided for IDE support
-- [ ] Example usage demonstrates multi-element beam plotting
-- [ ] Unit tests verify Python bindings work correctly
+- [x] InternalActions, EndForces, and DisplacementLine structs are accessible from Python
+- [x] BeamElement methods are callable from Python
+- [x] Methods accept Eigen arrays and return appropriate types
+- [x] Type hints are provided for IDE support
+- [x] Example usage demonstrates multi-element beam plotting
+- [x] Unit tests verify Python bindings work correctly
+
+### Task 7.4: Implement Check Locations
+- [x] Check locations can be added at arbitrary normalized positions
+- [x] Standard check locations (0, 0.25, 0.5, 0.75, 1) can be set automatically
+- [x] Internal actions are computed correctly at check locations
+- [x] Check locations persist across multiple analyses
 
 ---
 

@@ -69,6 +69,7 @@ class Beam:
         material: Material object
         elements: List of underlying C++ BeamElement objects
         length: Total length of the beam
+        check_locations: List of normalized positions [0, 1] for design checks
     """
 
     def __init__(
@@ -94,6 +95,7 @@ class Beam:
         self.section = section
         self.material = material
         self.elements: List[_CppBeamElement] = []
+        self.check_locations: List[float] = []  # Normalized positions [0, 1]
 
         # Compute length
         self.length = float(np.linalg.norm(self.end_pos - self.start_pos))
@@ -115,6 +117,134 @@ class Beam:
         return (f"Beam(id={self.beam_id}, start={self.start_pos.tolist()}, "
                 f"end={self.end_pos.tolist()}, length={self.length:.3f}m, "
                 f"n_elements={len(self.elements)})")
+
+    # ===== Check Locations (Task 7.3) =====
+
+    def add_check_location(self, x_normalized: float) -> None:
+        """
+        Add a check location at normalized position.
+
+        Check locations are used for design code verification, allowing
+        internal actions to be queried at specific positions along the beam.
+
+        Args:
+            x_normalized: Position (0=start, 1=end)
+
+        Raises:
+            ValueError: If x_normalized is not in range [0, 1]
+        """
+        if not 0.0 <= x_normalized <= 1.0:
+            raise ValueError("Check location must be in range [0, 1]")
+        if x_normalized not in self.check_locations:
+            self.check_locations.append(x_normalized)
+            self.check_locations.sort()
+
+    def set_standard_check_locations(self) -> None:
+        """
+        Set standard check locations: ends, quarter points, and midspan.
+
+        Sets check locations at 0, 0.25, 0.5, 0.75, and 1.0 (normalized).
+        These are common locations for design code verification.
+        """
+        self.check_locations = [0.0, 0.25, 0.5, 0.75, 1.0]
+
+    def clear_check_locations(self) -> None:
+        """Clear all check locations."""
+        self.check_locations = []
+
+    def _find_element_at_position(self, x: float) -> Tuple[_CppBeamElement, float]:
+        """
+        Find the element containing position x and compute local position.
+
+        Args:
+            x: Position along beam in meters (0 = start of beam)
+
+        Returns:
+            Tuple of (element, local_x) where local_x is position within element
+
+        Raises:
+            ValueError: If no elements or position out of range
+        """
+        if not self.elements:
+            raise ValueError("Beam has no elements")
+
+        if x < 0 or x > self.length + 1e-9:
+            raise ValueError(f"Position {x} out of range [0, {self.length}]")
+
+        # Clamp to valid range
+        x = max(0.0, min(x, self.length))
+
+        cumulative_length = 0.0
+        for element in self.elements:
+            elem_length = element.length
+            if x <= cumulative_length + elem_length + 1e-9:
+                local_x = x - cumulative_length
+                # Clamp to element range
+                local_x = max(0.0, min(local_x, elem_length))
+                return element, local_x
+            cumulative_length += elem_length
+
+        # Should not reach here, but return last element at end
+        return self.elements[-1], self.elements[-1].length
+
+    def get_internal_actions_at(
+        self,
+        x: float,
+        model: 'StructuralModel',
+        load_case: Optional[_CppLoadCase] = None
+    ) -> InternalActions:
+        """
+        Get internal actions at position x along beam.
+
+        Finds the element containing position x and queries internal actions
+        from the underlying C++ BeamElement.
+
+        Args:
+            x: Position along beam in meters (0 = start of beam)
+            model: StructuralModel (must be analyzed)
+            load_case: Optional load case for distributed load effects
+
+        Returns:
+            InternalActions with N, Vy, Vz, Mx, My, Mz at position x
+
+        Raises:
+            ValueError: If model not analyzed or position out of range
+        """
+        if not model.is_analyzed():
+            raise ValueError("Model must be analyzed before querying internal actions")
+
+        element, local_x = self._find_element_at_position(x)
+
+        dof_handler = model._cpp_model.get_dof_handler()
+        displacements = model._cpp_model.get_displacements()
+
+        if load_case is None:
+            load_case = model._cpp_model.get_default_load_case()
+
+        return element.get_internal_actions(local_x, displacements, dof_handler, load_case)
+
+    def get_internal_actions_at_check_locations(
+        self,
+        model: 'StructuralModel',
+        load_case: Optional[_CppLoadCase] = None
+    ) -> List[Tuple[float, InternalActions]]:
+        """
+        Get internal actions at all check locations.
+
+        Args:
+            model: StructuralModel (must be analyzed)
+            load_case: Optional load case for distributed load effects
+
+        Returns:
+            List of (x_position, internal_actions) tuples sorted by position
+        """
+        results = []
+        for x_norm in self.check_locations:
+            x_global = x_norm * self.length
+            actions = self.get_internal_actions_at(x_global, model, load_case)
+            results.append((x_global, actions))
+        return results
+
 
     # ===== Phase 7: Internal Actions - Multi-Element Beam Plotting =====
 
