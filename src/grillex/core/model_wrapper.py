@@ -46,7 +46,9 @@ from grillex._grillex_cpp import (
     LoadCase as _CppLoadCase,
     LoadCaseType,
     DOFIndex,
-    Node
+    Node,
+    InternalActions,
+    ActionExtreme
 )
 
 
@@ -114,18 +116,372 @@ class Beam:
                 f"end={self.end_pos.tolist()}, length={self.length:.3f}m, "
                 f"n_elements={len(self.elements)})")
 
-    # TODO: Phase 7 - Internal Actions
-    # def get_internal_actions_at(self, x: float, model: 'StructuralModel'):
-    #     """Query internal actions at position x along beam (Phase 7)"""
-    #     pass
-    #
-    # def get_moment_diagram(self, axis: str, model: 'StructuralModel', num_points: int = 100):
-    #     """Get moment diagram data for plotting (Phase 7)"""
-    #     pass
-    #
-    # def plot_results(self, model: 'StructuralModel', components: List[str] = ['Mz', 'Vy', 'N']):
-    #     """Plot internal action diagrams (Phase 7)"""
-    #     pass
+    # ===== Phase 7: Internal Actions - Multi-Element Beam Plotting =====
+
+    def _validate_connectivity(self) -> None:
+        """Check that elements are connected end-to-end."""
+        if len(self.elements) <= 1:
+            return
+        for i in range(len(self.elements) - 1):
+            if self.elements[i].node_j.id != self.elements[i + 1].node_i.id:
+                raise ValueError(f"Elements {i} and {i+1} are not connected")
+
+    def _find_element_at_position(self, x_global: float) -> Tuple[_CppBeamElement, float]:
+        """Find which element contains x_global.
+
+        Args:
+            x_global: Position along beam [0, L_total]
+
+        Returns:
+            (element, x_local): Element and local position within that element
+
+        Raises:
+            ValueError: If position is outside beam length
+        """
+        if x_global < -1e-10 or x_global > self.length + 1e-10:
+            raise ValueError(f"Position {x_global} outside beam length {self.length}")
+
+        # Clamp to valid range
+        x_global = max(0.0, min(x_global, self.length))
+
+        cumulative_length = 0.0
+
+        for element in self.elements:
+            elem_length = element.length
+            if x_global <= cumulative_length + elem_length + 1e-10:
+                x_local = x_global - cumulative_length
+                return element, x_local
+            cumulative_length += elem_length
+
+        # Edge case: x_global == total length
+        return self.elements[-1], self.elements[-1].length
+
+    def get_internal_actions_at(
+        self,
+        x_global: float,
+        model: 'StructuralModel'
+    ) -> InternalActions:
+        """Query internal actions at any position along the entire beam.
+
+        Args:
+            x_global: Position along beam [0, L_total] in meters
+            model: StructuralModel object (must be analyzed)
+
+        Returns:
+            InternalActions (N, Vy, Vz, Mx, My, Mz) at x_global
+
+        Raises:
+            ValueError: If position is outside beam or model not analyzed
+        """
+        if not model.is_analyzed():
+            raise ValueError("Model must be analyzed before querying internal actions")
+
+        element, x_local = self._find_element_at_position(x_global)
+
+        return element.get_internal_actions(
+            x_local,
+            model.get_all_displacements(),
+            model._cpp_model.get_dof_handler()
+        )
+
+    def get_moment_line(
+        self,
+        axis: str,
+        model: 'StructuralModel',
+        num_points: int = 100
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Get moment diagram for plotting.
+
+        Args:
+            axis: 'y' or 'z' for bending plane
+            model: StructuralModel object (must be analyzed)
+            num_points: Number of points to sample along beam
+
+        Returns:
+            (x_positions, moments): Arrays for plotting
+        """
+        x_positions = np.linspace(0, self.length, num_points)
+        moments = np.zeros(num_points)
+
+        for i, x in enumerate(x_positions):
+            actions = self.get_internal_actions_at(x, model)
+            if axis.lower() == 'y':
+                moments[i] = actions.My
+            else:
+                moments[i] = actions.Mz
+
+        return x_positions, moments
+
+    def get_shear_line(
+        self,
+        axis: str,
+        model: 'StructuralModel',
+        num_points: int = 100
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Get shear diagram for plotting.
+
+        Args:
+            axis: 'y' or 'z' for shear direction
+            model: StructuralModel object (must be analyzed)
+            num_points: Number of points to sample along beam
+
+        Returns:
+            (x_positions, shears): Arrays for plotting
+        """
+        x_positions = np.linspace(0, self.length, num_points)
+        shears = np.zeros(num_points)
+
+        for i, x in enumerate(x_positions):
+            actions = self.get_internal_actions_at(x, model)
+            if axis.lower() == 'y':
+                shears[i] = actions.Vy
+            else:
+                shears[i] = actions.Vz
+
+        return x_positions, shears
+
+    def get_axial_force_line(
+        self,
+        model: 'StructuralModel',
+        num_points: int = 100
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Get axial force diagram for plotting.
+
+        Args:
+            model: StructuralModel object (must be analyzed)
+            num_points: Number of points to sample along beam
+
+        Returns:
+            (x_positions, axial_forces): Arrays for plotting
+        """
+        x_positions = np.linspace(0, self.length, num_points)
+        axial_forces = np.zeros(num_points)
+
+        for i, x in enumerate(x_positions):
+            actions = self.get_internal_actions_at(x, model)
+            axial_forces[i] = actions.N
+
+        return x_positions, axial_forces
+
+    def get_torsion_line(
+        self,
+        model: 'StructuralModel',
+        num_points: int = 100
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Get torsion moment diagram for plotting.
+
+        Args:
+            model: StructuralModel object (must be analyzed)
+            num_points: Number of points to sample along beam
+
+        Returns:
+            (x_positions, torsions): Arrays for plotting
+        """
+        x_positions = np.linspace(0, self.length, num_points)
+        torsions = np.zeros(num_points)
+
+        for i, x in enumerate(x_positions):
+            actions = self.get_internal_actions_at(x, model)
+            torsions[i] = actions.Mx
+
+        return x_positions, torsions
+
+    def get_displacement_line(
+        self,
+        component: str,
+        model: 'StructuralModel',
+        num_points: int = 100
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Get displacement diagram for plotting.
+
+        Args:
+            component: 'u', 'v', 'w', 'theta_x', 'theta_y', or 'theta_z'
+            model: StructuralModel object (must be analyzed)
+            num_points: Number of points to sample along beam
+
+        Returns:
+            (x_positions, displacements): Arrays for plotting
+        """
+        if not model.is_analyzed():
+            raise ValueError("Model must be analyzed before querying displacements")
+
+        x_positions = np.linspace(0, self.length, num_points)
+        displacements = np.zeros(num_points)
+
+        for i, x in enumerate(x_positions):
+            element, x_local = self._find_element_at_position(x)
+            disp = element.get_displacements_at(
+                x_local,
+                model.get_all_displacements(),
+                model._cpp_model.get_dof_handler()
+            )
+
+            if component == 'u':
+                displacements[i] = disp.u
+            elif component == 'v':
+                displacements[i] = disp.v
+            elif component == 'w':
+                displacements[i] = disp.w
+            elif component == 'theta_x':
+                displacements[i] = disp.theta_x
+            elif component == 'theta_y':
+                displacements[i] = disp.theta_y
+            elif component == 'theta_z':
+                displacements[i] = disp.theta_z
+            else:
+                raise ValueError(f"Unknown displacement component: {component}")
+
+        return x_positions, displacements
+
+    def find_moment_extrema(
+        self,
+        axis: str,
+        model: 'StructuralModel'
+    ) -> List[Tuple[float, float]]:
+        """Find all moment extrema across entire beam.
+
+        Args:
+            axis: 'y' or 'z' for bending plane
+            model: StructuralModel object (must be analyzed)
+
+        Returns:
+            List of (x_global, moment_value) for all local max/min
+        """
+        if not model.is_analyzed():
+            raise ValueError("Model must be analyzed before finding extrema")
+
+        extrema = []
+        cumulative_length = 0.0
+
+        for element in self.elements:
+            # Find extrema within this element
+            elem_extrema = element.find_moment_extremes(
+                axis,
+                model.get_all_displacements(),
+                model._cpp_model.get_dof_handler()
+            )
+
+            # elem_extrema is a pair of (min, max) ActionExtreme objects
+            min_extreme, max_extreme = elem_extrema
+
+            # Convert to global coordinates and add to list
+            extrema.append((cumulative_length + min_extreme.x, min_extreme.value))
+            extrema.append((cumulative_length + max_extreme.x, max_extreme.value))
+
+            cumulative_length += element.length
+
+        # Remove duplicates at element boundaries (within tolerance)
+        unique_extrema = []
+        for x, val in extrema:
+            is_duplicate = False
+            for x_existing, val_existing in unique_extrema:
+                if abs(x - x_existing) < 1e-10 and abs(val - val_existing) < 1e-10:
+                    is_duplicate = True
+                    break
+            if not is_duplicate:
+                unique_extrema.append((x, val))
+
+        return unique_extrema
+
+    def get_element_boundaries(self) -> List[float]:
+        """Get x-positions of element boundaries (joints).
+
+        Returns:
+            List of x-positions where elements meet (excludes beam endpoints)
+        """
+        if len(self.elements) <= 1:
+            return []
+
+        boundaries = []
+        cumulative_length = 0.0
+
+        for element in self.elements[:-1]:
+            cumulative_length += element.length
+            boundaries.append(cumulative_length)
+
+        return boundaries
+
+    def plot_internal_actions(
+        self,
+        model: 'StructuralModel',
+        components: List[str] = None,
+        figsize: Tuple[float, float] = (12, 8),
+        num_points: int = 100
+    ):
+        """Create matplotlib plots of internal actions.
+
+        Args:
+            model: StructuralModel object (must be analyzed)
+            components: List of components to plot ('Mz', 'My', 'Vy', 'Vz', 'N', 'Mx')
+                        Default: ['Mz', 'Vy', 'N']
+            figsize: Figure size (width, height)
+            num_points: Number of points to sample along beam
+
+        Returns:
+            Figure object
+        """
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            raise ImportError("matplotlib is required for plotting. Install with: pip install matplotlib")
+
+        if components is None:
+            components = ['Mz', 'Vy', 'N']
+
+        num_plots = len(components)
+        fig, axes = plt.subplots(num_plots, 1, figsize=figsize, squeeze=False)
+        axes = axes.flatten()
+
+        for ax, component in zip(axes, components):
+            # Get line data
+            if component == 'Mz':
+                x, values = self.get_moment_line('z', model, num_points)
+                units = 'kN·m'
+            elif component == 'My':
+                x, values = self.get_moment_line('y', model, num_points)
+                units = 'kN·m'
+            elif component == 'Vy':
+                x, values = self.get_shear_line('y', model, num_points)
+                units = 'kN'
+            elif component == 'Vz':
+                x, values = self.get_shear_line('z', model, num_points)
+                units = 'kN'
+            elif component == 'N':
+                x, values = self.get_axial_force_line(model, num_points)
+                units = 'kN'
+            elif component == 'Mx':
+                x, values = self.get_torsion_line(model, num_points)
+                units = 'kN·m'
+            else:
+                raise ValueError(f"Unknown component: {component}")
+
+            # Plot
+            ax.plot(x, values, 'b-', linewidth=2)
+            ax.axhline(0, color='k', linestyle='--', linewidth=0.5)
+            ax.grid(True, alpha=0.3)
+            ax.set_ylabel(f'{component} [{units}]')
+            ax.set_title(f'{component} diagram')
+
+            # Mark element boundaries
+            boundaries = self.get_element_boundaries()
+            for i, x_bound in enumerate(boundaries):
+                ax.axvline(x_bound, color='gray', linestyle=':', alpha=0.5,
+                           label='Element boundary' if i == 0 else '')
+
+            # Mark extrema for moment diagrams
+            if component in ['Mz', 'My']:
+                axis_char = component[1].lower()
+                extrema = self.find_moment_extrema(axis_char, model)
+                for x_ext, val_ext in extrema:
+                    ax.plot(x_ext, val_ext, 'ro', markersize=6)
+                    ax.annotate(f'{val_ext:.2f}', xy=(x_ext, val_ext),
+                                xytext=(5, 5), textcoords='offset points',
+                                fontsize=8)
+
+        axes[-1].set_xlabel('Position along beam [m]')
+        plt.tight_layout()
+
+        return fig
 
 
 class StructuralModel:

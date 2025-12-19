@@ -96,6 +96,40 @@ After completing a task and verifying its acceptance criteria, update the accept
 
 **Important:** The acceptance criteria overview provides a quick way to see project progress at a glance. Keep it accurate and up-to-date.
 
+### 5. Handle Deferred Tasks
+
+When acceptance criteria cannot be completed due to missing dependencies or being out of scope for the current task, they must be **deferred to the appropriate phase**:
+
+**Steps:**
+1. Add a note in the execution summary explaining why the criterion was deferred
+2. Find the appropriate phase file (`implementation_plan/implementation_plan_phase*.md`)
+3. Create a new task or add to an existing task in that phase
+4. Add the deferred criteria to `acceptance_criteria_overview.md` under the new task
+5. Update the phase totals in the summary statistics table
+
+**Example - Deferring a validation test:**
+```markdown
+# In the current task's execution notes:
+**Deferred:**
+- "Comparison with analytical solution" deferred to Phase 13 (Validation Benchmarks)
+  - Reason: Requires full 14-DOF integration testing
+
+# In implementation_plan/implementation_plan_phase13.md:
+### Task 13.6: Create 14-DOF Warping Element Validation
+**Dependencies:** Task 2.7, Task 7.2b complete
+**Acceptance Criteria:**
+- [ ] Comparison with analytical solution for cantilever I-beam under torsion
+
+# In acceptance_criteria_overview.md:
+- Update Phase 13 totals (add new criteria count)
+- Add the new task with its criteria checkboxes
+```
+
+**Common deferral destinations:**
+- **Phase 13 (Validation Benchmarks)**: Integration tests, analytical comparisons
+- **Phase 11 (Error Handling)**: Error detection, diagnostics
+- **Phase 12 (LLM Tooling)**: Documentation, type hints, tool schemas
+
 ---
 
 ## Project Overview

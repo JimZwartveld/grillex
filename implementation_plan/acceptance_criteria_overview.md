@@ -15,15 +15,15 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 4 | Python Front-End & I/O | 16 | 10 | 6 | 63% |
 | 5 | Loads & Load Cases | 15 | 0 | 15 | 0% |
 | 6 | MPC & Rigid Links | 9 | 9 | 0 | 100% |
-| 7 | Internal Actions & Results | 31 | 17 | 14 | 55% |
+| 7 | Internal Actions & Results | 31 | 27 | 4 | 87% |
 | 8 | Additional Element Types | 9 | 0 | 9 | 0% |
 | 9 | Cargo Modeling | 3 | 0 | 3 | 0% |
 | 10 | Design Codes | 6 | 0 | 6 | 0% |
 | 11 | Error Handling | 9 | 0 | 9 | 0% |
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
-| 13 | Validation Benchmarks | 10 | 0 | 10 | 0% |
+| 13 | Validation Benchmarks | 12 | 0 | 12 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **179** | **101** | **78** | **56%** |
+| **Total** | | **181** | **111** | **70** | **61%** |
 
 ---
 
@@ -288,18 +288,18 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] All 16 boundary condition combinations produce correct results
 
 ### Task 7.2c: Displacement/Rotation Lines
-- [ ] Displacements at element ends match nodal values exactly
-- [ ] Deflection shape for cantilever with tip load matches analytical curve
-- [ ] Rotation φ_z = dw/dy for Euler-Bernoulli beams
-- [ ] For Timoshenko, φ_z ≠ dw/dy (shear deformation included)
+- [x] Displacements at element ends match nodal values exactly
+- [x] Deflection shape for cantilever with tip load matches analytical curve
+- [x] Rotation φ_z = dw/dy for Euler-Bernoulli beams
+- [x] For Timoshenko, φ_z ≠ dw/dy (shear deformation included)
 
 ### Task 7.2f: Multi-Element Beam Plotting
-- [ ] Continuous moment diagram across 3-element beam matches hand calculation
-- [ ] Element boundaries are clearly marked in plots
-- [ ] Concentrated loads cause visible shear discontinuities
-- [ ] Extrema are found and marked correctly across element boundaries
-- [ ] Deflection diagram is smooth and continuous
-- [ ] Works with beams of varying element counts (2 to 10+ elements)
+- [x] Continuous moment diagram across 3-element beam matches hand calculation
+- [x] Element boundaries are clearly marked in plots
+- [x] Concentrated loads cause visible shear discontinuities
+- [x] Extrema are found and marked correctly across element boundaries
+- [x] Deflection diagram is smooth and continuous
+- [x] Works with beams of varying element counts (2 to 10+ elements)
 
 ### Task 7.3: Python Bindings for Internal Actions
 - [ ] InternalActions, EndForces, and DisplacementLine structs are accessible from Python
@@ -415,6 +415,10 @@ This document provides a comprehensive overview of all acceptance criteria acros
 ### Task 13.5: Singularity Detection Validation
 - [ ] UNCONSTRAINED_SYSTEM error returned
 - [ ] Unconstrained DOFs identified
+
+### Task 13.6: 14-DOF Warping Element Validation
+- [ ] Cantilever I-beam bimoment matches analytical solution for uniform torsion
+- [ ] Two-span continuous beam shows bimoment continuity at internal support
 
 ---
 
