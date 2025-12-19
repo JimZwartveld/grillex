@@ -64,6 +64,38 @@ Every problem encountered must be documented, even if trivial. This builds insti
 
 This documentation helps future AI assistants (and humans) avoid the same pitfalls.
 
+### 4. Update Acceptance Criteria Overview
+
+After completing a task and verifying its acceptance criteria, update the acceptance criteria overview file:
+
+**File:** `implementation_plan/acceptance_criteria_overview.md`
+
+**Steps:**
+1. Change the checkbox from `[ ]` to `[x]` for each met criterion
+2. Update the summary statistics table at the top:
+   - Increment "Met" count
+   - Decrement "Unmet" count
+   - Recalculate "Progress" percentage
+3. Update the "Last Updated" date at the top of the file
+4. Commit the change with the task completion
+
+**Example Update:**
+```markdown
+# Before
+| 7 | Internal Actions & Results | 31 | 15 | 16 | 48% |
+
+### Task 7.2b: Warping Results (Bimoments)
+- [ ] Bimoment at warping-restrained end matches analytical solution
+
+# After
+| 7 | Internal Actions & Results | 31 | 17 | 14 | 55% |
+
+### Task 7.2b: Warping Results (Bimoments)
+- [x] Bimoment at warping-restrained end matches analytical solution
+```
+
+**Important:** The acceptance criteria overview provides a quick way to see project progress at a glance. Keep it accurate and up-to-date.
+
 ---
 
 ## Project Overview
