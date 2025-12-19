@@ -405,6 +405,289 @@ All features trace back to requirements in `grillex_requirements.md`:
 3. **Matrix singularity**: Check boundary conditions are sufficient
 4. **Wrong results**: Verify units (kN, m, mT) and sign conventions
 
+---
+
+## Known Recurring Issues and Solutions
+
+This section documents issues that have occurred multiple times during development. **Always check here first** when encountering problems.
+
+### 1. C++ Module Not Rebuilding After Edits
+
+**Symptoms:**
+- Python imports old version of C++ types
+- New methods/classes not available after adding them to C++
+- `AttributeError: module has no attribute 'NewClass'`
+
+**Root Cause:** CMake build system doesn't automatically detect source changes when using quick build.
+
+**Solution:** Always run full rebuild after C++ changes:
+```bash
+cd build && cmake .. && make -j4
+```
+
+**Frequency:** Occurred in Phase 2, 3, 4, 5, 7
+
+---
+
+### 2. Python Imports Failing After Adding C++ Types
+
+**Symptoms:**
+- `ImportError: cannot import name 'NewType' from 'grillex.core'`
+- New C++ class exists in bindings but not accessible from Python
+
+**Root Cause:** After adding pybind11 bindings, must also update Python export files.
+
+**Solution:** Always update BOTH files:
+1. `src/grillex/core/data_types.py` - Add to imports and `__all__`
+2. `src/grillex/core/__init__.py` - Add to imports and `__all__`
+
+**Checklist:**
+```python
+# In data_types.py:
+from grillex._grillex_cpp import (
+    ...,
+    NewType,  # Add here
+)
+__all__ = [..., "NewType"]  # And here
+
+# In __init__.py:
+from .data_types import (
+    ...,
+    NewType,  # Add here
+)
+__all__ = [..., "NewType"]  # And here
+```
+
+**Frequency:** Occurred in Phase 2, 3, 4, 5
+
+---
+
+### 3. pybind11 Cannot Bind unique_ptr or Non-Copyable Types
+
+**Symptoms:**
+- `binding reference of type 'unique_ptr<...>' drops 'const' qualifier`
+- `call to implicitly-deleted copy constructor`
+- `make_copy_constructor` errors
+
+**Root Cause:** pybind11 cannot directly bind `std::vector<std::unique_ptr<T>>` or types containing them.
+
+**Solutions:**
+
+**Option A: Lambda conversion to raw pointers**
+```cpp
+.def_property_readonly("elements", [](const Model &m) {
+    py::list result;
+    for (const auto& elem : m.elements) {
+        result.append(elem.get());  // Convert unique_ptr to raw pointer
+    }
+    return result;
+})
+```
+
+**Option B: Delegate through wrapper methods**
+```cpp
+// Instead of exposing NodeRegistry directly:
+.def("get_or_create_node", [](Model &m, double x, double y, double z) {
+    return m.nodes.get_or_create_node(x, y, z);
+})
+```
+
+**Frequency:** Occurred in Phase 1, 3
+
+---
+
+### 4. pybind11 std::array Modification from Python
+
+**Symptoms:**
+- Modifying `node.dof_active[i] = False` in Python has no effect
+- C++ array values remain unchanged after Python modification
+
+**Root Cause:** pybind11's binding of `std::array<bool, N>` returns a **copy** to Python, not a reference.
+
+**Wrong Approach:**
+```python
+node.dof_active[0] = False  # Modifies temporary copy, not C++ array!
+```
+
+**Correct Approach:**
+```python
+dof_active = node.dof_active  # Get copy
+dof_active[0] = False          # Modify copy
+node.dof_active = dof_active   # Assign back to C++
+```
+
+**Frequency:** Occurred in Phase 3 (multiple tasks)
+
+---
+
+### 5. pybind11 Sparse Matrix In-Place Modification
+
+**Symptoms:**
+- Eigen::SparseMatrix modifications from Python don't persist
+- Modified matrix reverts to original values
+
+**Root Cause:** pybind11 doesn't properly handle in-place modification of `Eigen::SparseMatrix` from Python.
+
+**Solution:** Return new matrices instead of modifying in-place:
+```cpp
+// Bad: void apply(SparseMatrix& K, VectorXd& F)
+// Good: std::pair<SparseMatrix, VectorXd> apply(const SparseMatrix& K, const VectorXd& F)
+```
+
+**Python usage:**
+```python
+K_mod, F_mod = bc.apply_to_system(K, F, dof_handler)
+```
+
+**Frequency:** Occurred in Phase 3
+
+---
+
+### 6. Numpy Matrix vs Array Type Issues
+
+**Symptoms:**
+- `IndexError` when indexing result of matrix multiplication
+- `matrix @ vector` returns `(1, n)` matrix instead of `(n,)` array
+
+**Root Cause:** Numpy matrix multiplication returns matrix type, not array.
+
+**Solution:** Convert to array and flatten:
+```python
+reactions = np.asarray(K.todense() @ u - F).flatten()
+```
+
+**Frequency:** Occurred in Phase 3
+
+---
+
+### 7. Missing Include Headers in C++
+
+**Symptoms:**
+- `unknown type name 'SomeClass'`
+- Build fails with undefined type errors
+
+**Root Cause:** Forward declarations are often not sufficient when types are used in method signatures or member variables.
+
+**Solution:** Use full `#include` statements instead of forward declarations:
+```cpp
+// Forward declaration NOT sufficient:
+class NodeRegistry;
+
+// Need full include:
+#include "grillex/node_registry.hpp"
+```
+
+**Frequency:** Occurred in Phase 3
+
+---
+
+### 8. Test Tolerance and Discretization Errors
+
+**Symptoms:**
+- FEM results differ significantly from analytical solutions
+- Coarse meshes give large errors (e.g., 75% for 2-element beam)
+
+**Root Cause:** Finite element methods have inherent discretization error, especially with coarse meshes.
+
+**Guidelines:**
+- **Cantilever beams**: Converge quickly, use strict tolerance (`decimal=3`)
+- **Simply supported beams**: Need finer meshes, use relaxed tolerance
+- **Timoshenko beams**: Expect ~0.5-2% difference from Euler-Bernoulli
+- **Coarse meshes**: Test qualitative behavior, not exact values
+
+**Solution:** Use appropriate tolerances based on mesh density:
+```python
+# Coarse mesh (2-4 elements): Focus on qualitative behavior
+assert deflection < 0  # Just verify direction
+
+# Fine mesh (10+ elements): Use strict tolerance
+np.testing.assert_almost_equal(deflection, analytical, decimal=3)
+```
+
+**Frequency:** Occurred in Phase 3, 7
+
+---
+
+### 9. Singular System False Positives
+
+**Symptoms:**
+- `check_singularity()` incorrectly flags valid systems as singular
+- Solver reports singularity after applying penalty BCs
+
+**Root Cause:** Penalty method creates extremely large diagonal values (1e15-1e21). Naive singularity checks using relative tolerance fail.
+
+**Wrong Approach:**
+```cpp
+double tolerance = 1e-12 * max_diag;  // max_diag is huge after penalty!
+if (abs(diag_value) < tolerance) return true;  // False positive
+```
+
+**Correct Approach:**
+```cpp
+// Use absolute threshold, not relative to max
+if (min_nonzero_diag < 1e-10) return true;
+```
+
+**Frequency:** Occurred in Phase 3
+
+---
+
+### 10. Sign Convention for Inertial Forces
+
+**Symptoms:**
+- Gravity produces upward deflection instead of downward
+- Reactions have wrong sign under acceleration loads
+
+**Root Cause:** D'Alembert forces (`-M*a`) vs body forces (`+M*a`) confusion.
+
+**Solution:** For quasi-static analysis with accelerations, use body force convention:
+```cpp
+F_inertia = +M * a;  // Body forces (correct for quasi-static)
+// NOT: F_inertia = -M * a;  // D'Alembert forces (for dynamic equilibrium)
+```
+
+**Frequency:** Occurred in Phase 5
+
+---
+
+### 11. Unstable Systems from Missing Torsional Restraints
+
+**Symptoms:**
+- Analysis fails with singular matrix
+- Simple beam models don't solve
+
+**Root Cause:** 3D beam models need torsional restraint (RX) even for in-plane loading.
+
+**Solution:** Add torsional restraints at supports:
+```python
+bc.add_fixed_dof(node_id, DOFIndex.RX, 0.0)  # Prevent twist
+bc.add_fixed_dof(node_id, DOFIndex.RZ, 0.0)  # Prevent rotation about beam axis
+```
+
+**Frequency:** Occurred in Phase 3, 5
+
+---
+
+### 12. Type Annotation Errors in Python
+
+**Symptoms:**
+- `NameError: name 'SomeType' is not defined`
+- Type hints reference non-existent types
+
+**Common Issues:**
+- Using `_CppLoadCaseType` instead of `LoadCaseType`
+- Missing imports for type hints (`Dict`, `List`, etc.)
+
+**Solution:** Always verify type annotations match actual imports:
+```python
+from typing import Dict, List, Optional  # Don't forget these
+from .data_types import LoadCaseType  # Use the actual exported name
+```
+
+**Frequency:** Occurred in Phase 5
+
+---
+
 ## Current Development Status
 
 The project is actively implementing **Phase 7: Internal Actions & Results**, which includes:
