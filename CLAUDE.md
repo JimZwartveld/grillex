@@ -2,6 +2,70 @@
 
 This document provides comprehensive guidance for AI assistants working with the Grillex codebase.
 
+## Task Execution Workflow
+
+When executing tasks from implementation plan markdown files (`implementation_plan/*.md`):
+
+### 1. Tick Off Completed Tasks
+
+After completing each task or sub-step, update the markdown file to mark items as done:
+
+```markdown
+# Before
+- [ ] Implement feature X
+- [ ] Write tests for feature X
+
+# After
+- [x] Implement feature X
+- [x] Write tests for feature X
+```
+
+### 2. Add Execution Summary
+
+After completing a task, append an **Execution Notes** section below the task:
+
+```markdown
+### Execution Notes (Completed YYYY-MM-DD)
+
+**Steps Taken:**
+1. First action taken
+2. Second action taken
+3. ...
+
+**Problems Encountered:**
+- **Issue**: Description of the problem
+  - **Error**: Exact error message (if applicable)
+  - **Root Cause**: Why this happened
+  - **Solution**: How it was resolved
+
+- **Issue**: Another problem
+  - **Solution**: How it was fixed
+
+**Verification:**
+- Test results: X tests passing ✓
+- Manual verification steps performed
+- Expected output confirmed
+
+**Key Learnings:**
+- Important insights for future reference
+- Gotchas to remember
+
+**Time Taken:** ~X minutes
+```
+
+### 3. Document All Problems and Solutions
+
+Every problem encountered must be documented, even if trivial. This builds institutional knowledge:
+
+- **Build failures**: Include exact error messages and fix
+- **Test failures**: Document what failed and why
+- **Configuration issues**: Platform-specific problems (especially macOS vs Linux)
+- **Dependency issues**: Version conflicts, missing packages
+
+This documentation helps future AI assistants (and humans) avoid the same pitfalls.
+
+---
+
 ## Project Overview
 
 **Grillex 2.0** is a structural analysis and design platform for offshore/heavy-lift structures (beams, plates, grillages, cargo on barges). It features:
@@ -104,18 +168,49 @@ With warping (14-DOF):
 
 ### Building the C++ Extension
 
+**Quick build (from project root):**
 ```bash
-# Create build directory
-mkdir build && cd build
+cmake -B build && cmake --build build
+```
 
-# Configure with CMake
+**Full rebuild (recommended after C++ changes):**
+```bash
+cd build && cmake .. && make -j4
+```
+
+**First-time setup:**
+```bash
+# Create build directory and configure
+mkdir build && cd build
 cmake ..
 
-# Build
-cmake --build .
+# Build (parallel compilation)
+make -j4
 
 # The _grillex_cpp.so module is placed in src/grillex/
 ```
+
+**macOS-specific notes:**
+- Requires CMake 3.20+ (`brew install cmake`)
+- Requires Eigen (`brew install eigen`)
+- The CMakeLists.txt includes macOS-specific SDK paths for libc++ headers
+- If you get `'cstddef' file not found`, the SDK path configuration may need updating
+
+**After modifying C++ code:**
+```bash
+# Always rebuild before running tests
+cd build && cmake .. && make -j4
+
+# Or from project root:
+cmake --build build
+```
+
+**Common build issues:**
+| Issue | Solution |
+|-------|----------|
+| `ModuleNotFoundError: No module named 'distutils'` | Uses FetchContent for pybind11 v2.13.6 (Python 3.12+ compatible) |
+| Eigen version mismatch | CMake accepts any Eigen3 version via `NO_MODULE` |
+| `'cstddef' file not found` (macOS) | SDK include paths configured in CMakeLists.txt |
 
 ### Running Tests
 
