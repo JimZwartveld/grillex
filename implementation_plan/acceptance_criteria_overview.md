@@ -15,7 +15,7 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 4 | Python Front-End & I/O | 16 | 10 | 6 | 63% |
 | 5 | Loads & Load Cases | 15 | 0 | 15 | 0% |
 | 6 | MPC & Rigid Links | 9 | 9 | 0 | 100% |
-| 7 | Internal Actions & Results | 31 | 23 | 8 | 74% |
+| 7 | Internal Actions & Results | 35 | 27 | 8 | 77% |
 | 8 | Additional Element Types | 9 | 0 | 9 | 0% |
 | 9 | Cargo Modeling | 3 | 0 | 3 | 0% |
 | 10 | Design Codes | 6 | 0 | 6 | 0% |
@@ -23,7 +23,7 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 10 | 0 | 10 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **179** | **107** | **72** | **60%** |
+| **Total** | | **183** | **111** | **72** | **61%** |
 
 ---
 
@@ -308,6 +308,12 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Type hints are provided for IDE support
 - [x] Example usage demonstrates multi-element beam plotting
 - [x] Unit tests verify Python bindings work correctly
+
+### Task 7.4: Implement Check Locations
+- [x] Check locations can be added at arbitrary normalized positions
+- [x] Standard check locations (0, 0.25, 0.5, 0.75, 1) can be set automatically
+- [x] Internal actions are computed correctly at check locations
+- [x] Check locations persist across multiple analyses
 
 ---
 

@@ -1958,10 +1958,38 @@ class Beam:
 ```
 
 ### Acceptance Criteria
-- [ ] Check locations can be added at arbitrary normalized positions
-- [ ] Standard check locations (0, 0.25, 0.5, 0.75, 1) can be set automatically
-- [ ] Internal actions are computed correctly at check locations
-- [ ] Check locations persist across multiple analyses
+- [x] Check locations can be added at arbitrary normalized positions
+- [x] Standard check locations (0, 0.25, 0.5, 0.75, 1) can be set automatically
+- [x] Internal actions are computed correctly at check locations
+- [x] Check locations persist across multiple analyses
+
+### Execution Notes (Completed 2025-12-19)
+
+**Steps Taken:**
+1. Added `check_locations` attribute to Beam class in `model_wrapper.py`
+2. Implemented `add_check_location()` method with validation and sorting
+3. Implemented `set_standard_check_locations()` method for common design locations
+4. Implemented `clear_check_locations()` helper method
+5. Implemented `_find_element_at_position()` to map beam position to element
+6. Implemented `get_internal_actions_at()` for multi-element beams
+7. Implemented `get_internal_actions_at_check_locations()` to query all check locations
+8. Created 15 unit tests in `test_phase7_check_locations.py`
+
+**Files Modified:**
+- `src/grillex/core/model_wrapper.py`: Added check location methods to Beam class
+- `tests/python/test_phase7_check_locations.py`: New test file (15 tests)
+
+**Verification:**
+- All 15 tests passing ✓
+- Check locations work on single and multi-element beams ✓
+- Internal actions match analytical solutions ✓
+- Check locations persist across re-analysis ✓
+
+**Key Implementation Details:**
+- Check locations are stored as normalized positions [0, 1]
+- Locations are automatically sorted and deduplicated
+- Uses existing BeamElement.get_internal_actions() for actual computation
+- Works seamlessly with subdivided beams via _find_element_at_position()
 
 ---
 
