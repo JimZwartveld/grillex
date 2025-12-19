@@ -24,6 +24,10 @@ pybind11_add_module(_grillex_cpp
     src/load_case.cpp
     src/model.cpp
     src/constraints.cpp
+    src/internal_actions_axial.cpp
+    src/internal_actions_bending_euler.cpp
+    src/internal_actions_bending_timoshenko.cpp
+    src/internal_actions_warping.cpp
 )
 
 target_link_libraries(_grillex_cpp PRIVATE grillex_core)

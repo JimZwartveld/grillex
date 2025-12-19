@@ -417,6 +417,60 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "    load_case: LoadCase containing line loads\n\n"
              "Returns:\n"
              "    DistributedLoad with q_start and q_end in local x (axial) [kN/m]")
+        // Task 7.2: Internal Action Functions Along Beam
+        .def("get_internal_actions", &grillex::BeamElement::get_internal_actions,
+             py::arg("x"),
+             py::arg("global_displacements"),
+             py::arg("dof_handler"),
+             py::arg("load_case") = nullptr,
+             "Get internal actions at position x along element.\n\n"
+             "Computes internal forces and moments at any position along the beam\n"
+             "using analytical closed-form solutions from differential equations.\n\n"
+             "Args:\n"
+             "    x: Position along beam [0, L] in meters\n"
+             "    global_displacements: Displacement vector from analysis\n"
+             "    dof_handler: DOF numbering manager\n"
+             "    load_case: Optional load case for distributed load effects\n\n"
+             "Returns:\n"
+             "    InternalActions with N, Vy, Vz, Mx, My, Mz at position x")
+        .def("find_moment_extremes", &grillex::BeamElement::find_moment_extremes,
+             py::arg("axis"),
+             py::arg("global_displacements"),
+             py::arg("dof_handler"),
+             py::arg("load_case") = nullptr,
+             "Find moment extrema along element.\n\n"
+             "Finds locations and values of maximum and minimum bending moment\n"
+             "along the element. For distributed loads, extrema occur where shear is zero.\n\n"
+             "Args:\n"
+             "    axis: 'y' or 'z' for bending plane (char)\n"
+             "    global_displacements: Displacement vector from analysis\n"
+             "    dof_handler: DOF numbering manager\n"
+             "    load_case: Optional load case for distributed load effects\n\n"
+             "Returns:\n"
+             "    Tuple (min_extreme, max_extreme) with ActionExtreme objects")
+        // Task 7.2b: Warping Internal Actions
+        .def("get_warping_internal_actions", &grillex::BeamElement::get_warping_internal_actions,
+             py::arg("x"),
+             py::arg("global_displacements"),
+             py::arg("dof_handler"),
+             "Get warping-specific internal actions at position x.\n\n"
+             "For 14-DOF elements with warping DOF, computes bimoment, St. Venant torsion,\n"
+             "warping torsion, and maximum warping stress. For 12-DOF elements, returns\n"
+             "standard internal actions with zero warping values.\n\n"
+             "Args:\n"
+             "    x: Position along beam [0, L] in meters\n"
+             "    global_displacements: Displacement vector from analysis\n"
+             "    dof_handler: DOF numbering manager\n\n"
+             "Returns:\n"
+             "    WarpingInternalActions with B, Mx_sv, Mx_w, sigma_w_max")
+        .def("compute_warping_stress", &grillex::BeamElement::compute_warping_stress,
+             py::arg("bimoment"),
+             "Compute maximum warping normal stress.\n\n"
+             "σ_w = -B × ω_max / Iw\n\n"
+             "Args:\n"
+             "    bimoment: Bimoment at position [kN·m²]\n\n"
+             "Returns:\n"
+             "    Maximum warping stress [kN/m²]")
         .def("__repr__", [](const grillex::BeamElement &e) {
             return "<BeamElement id=" + std::to_string(e.id) +
                    " nodes=[" + std::to_string(e.node_i->id) + "," +
@@ -1162,6 +1216,108 @@ PYBIND11_MODULE(_grillex_cpp, m) {
     // Phase 7: Internal Actions
     // ========================================================================
 
+    // ReleaseCombo4DOF enum
+    py::enum_<grillex::ReleaseCombo4DOF>(m, "ReleaseCombo4DOF",
+        "Release combinations for bending (4-DOF: w1, φ1, w2, φ2).\n\n"
+        "Each combination represents which DOFs are FIXED (active) vs FREE (released)\n"
+        "at the two ends of a beam for a single bending plane.")
+        .value("FIXED_FIXED_FIXED_FIXED", grillex::ReleaseCombo4DOF::FIXED_FIXED_FIXED_FIXED,
+               "All DOFs fixed (standard continuous beam)")
+        .value("FIXED_FIXED_FREE_FIXED", grillex::ReleaseCombo4DOF::FIXED_FIXED_FREE_FIXED)
+        .value("FIXED_FIXED_FIXED_FREE", grillex::ReleaseCombo4DOF::FIXED_FIXED_FIXED_FREE,
+               "Hinge at end j (propped cantilever)")
+        .value("FIXED_FIXED_FREE_FREE", grillex::ReleaseCombo4DOF::FIXED_FIXED_FREE_FREE,
+               "Cantilever from end i")
+        .value("FIXED_FREE_FIXED_FIXED", grillex::ReleaseCombo4DOF::FIXED_FREE_FIXED_FIXED,
+               "Hinge at end i")
+        .value("FIXED_FREE_FREE_FIXED", grillex::ReleaseCombo4DOF::FIXED_FREE_FREE_FIXED)
+        .value("FIXED_FREE_FIXED_FREE", grillex::ReleaseCombo4DOF::FIXED_FREE_FIXED_FREE,
+               "Simply supported (double hinge)")
+        .value("FIXED_FREE_FREE_FREE", grillex::ReleaseCombo4DOF::FIXED_FREE_FREE_FREE)
+        .value("FREE_FIXED_FIXED_FIXED", grillex::ReleaseCombo4DOF::FREE_FIXED_FIXED_FIXED)
+        .value("FREE_FIXED_FREE_FIXED", grillex::ReleaseCombo4DOF::FREE_FIXED_FREE_FIXED)
+        .value("FREE_FIXED_FIXED_FREE", grillex::ReleaseCombo4DOF::FREE_FIXED_FIXED_FREE)
+        .value("FREE_FIXED_FREE_FREE", grillex::ReleaseCombo4DOF::FREE_FIXED_FREE_FREE)
+        .value("FREE_FREE_FIXED_FIXED", grillex::ReleaseCombo4DOF::FREE_FREE_FIXED_FIXED,
+               "Cantilever from end j")
+        .value("FREE_FREE_FREE_FIXED", grillex::ReleaseCombo4DOF::FREE_FREE_FREE_FIXED)
+        .value("FREE_FREE_FIXED_FREE", grillex::ReleaseCombo4DOF::FREE_FREE_FIXED_FREE)
+        .value("FREE_FREE_FREE_FREE", grillex::ReleaseCombo4DOF::FREE_FREE_FREE_FREE,
+               "Unstable (rigid body motion)")
+        .export_values();
+
+    // ReleaseCombo2DOF enum
+    py::enum_<grillex::ReleaseCombo2DOF>(m, "ReleaseCombo2DOF",
+        "Release combinations for axial/torsion (2-DOF: u1/θ1, u2/θ2).")
+        .value("FIXED_FIXED", grillex::ReleaseCombo2DOF::FIXED_FIXED,
+               "Both ends fixed (standard)")
+        .value("FIXED_FREE", grillex::ReleaseCombo2DOF::FIXED_FREE,
+               "Start fixed, end free")
+        .value("FREE_FIXED", grillex::ReleaseCombo2DOF::FREE_FIXED,
+               "Start free, end fixed")
+        .value("FREE_FREE", grillex::ReleaseCombo2DOF::FREE_FREE,
+               "Unstable (rigid body motion)")
+        .export_values();
+
+    // ReleaseComboWarping enum
+    py::enum_<grillex::ReleaseComboWarping>(m, "ReleaseComboWarping",
+        "Release combinations for warping (4-DOF: θ₁, φ₁, θ₂, φ₂).\n\n"
+        "For thin-walled open sections with warping DOF:\n"
+        "- θ = twist angle (rotation DOF)\n"
+        "- φ = rate of twist / warping DOF (dθ/dx)")
+        .value("FIXED_FIXED_FIXED_FIXED", grillex::ReleaseComboWarping::FIXED_FIXED_FIXED_FIXED,
+               "All fixed (full warping restraint)")
+        .value("FIXED_FIXED_FIXED_FREE", grillex::ReleaseComboWarping::FIXED_FIXED_FIXED_FREE)
+        .value("FIXED_FIXED_FREE_FIXED", grillex::ReleaseComboWarping::FIXED_FIXED_FREE_FIXED)
+        .value("FIXED_FIXED_FREE_FREE", grillex::ReleaseComboWarping::FIXED_FIXED_FREE_FREE,
+               "Cantilever (warping free at tip)")
+        .value("FIXED_FREE_FIXED_FIXED", grillex::ReleaseComboWarping::FIXED_FREE_FIXED_FIXED)
+        .value("FIXED_FREE_FIXED_FREE", grillex::ReleaseComboWarping::FIXED_FREE_FIXED_FREE,
+               "Pure St. Venant (no warping restraint)")
+        .value("FIXED_FREE_FREE_FIXED", grillex::ReleaseComboWarping::FIXED_FREE_FREE_FIXED)
+        .value("FIXED_FREE_FREE_FREE", grillex::ReleaseComboWarping::FIXED_FREE_FREE_FREE)
+        .value("FREE_FIXED_FIXED_FIXED", grillex::ReleaseComboWarping::FREE_FIXED_FIXED_FIXED)
+        .value("FREE_FIXED_FIXED_FREE", grillex::ReleaseComboWarping::FREE_FIXED_FIXED_FREE)
+        .value("FREE_FIXED_FREE_FIXED", grillex::ReleaseComboWarping::FREE_FIXED_FREE_FIXED)
+        .value("FREE_FIXED_FREE_FREE", grillex::ReleaseComboWarping::FREE_FIXED_FREE_FREE)
+        .value("FREE_FREE_FIXED_FIXED", grillex::ReleaseComboWarping::FREE_FREE_FIXED_FIXED,
+               "Reverse cantilever")
+        .value("FREE_FREE_FIXED_FREE", grillex::ReleaseComboWarping::FREE_FREE_FIXED_FREE)
+        .value("FREE_FREE_FREE_FIXED", grillex::ReleaseComboWarping::FREE_FREE_FREE_FIXED)
+        .value("FREE_FREE_FREE_FREE", grillex::ReleaseComboWarping::FREE_FREE_FREE_FREE,
+               "All free (rigid body)")
+        .export_values();
+
+    // DisplacementLine struct
+    py::class_<grillex::DisplacementLine>(m, "DisplacementLine",
+        "Displacements and rotations at a position along the beam.\n\n"
+        "Used for deflection diagrams and displacement queries.")
+        .def(py::init<>(), "Construct with zero displacements")
+        .def(py::init<double>(), py::arg("x"),
+             "Construct at position x with zero displacements")
+        .def_readwrite("x", &grillex::DisplacementLine::x,
+                       "Position along beam [0, L] in meters")
+        .def_readwrite("u", &grillex::DisplacementLine::u,
+                       "Axial displacement [m]")
+        .def_readwrite("v", &grillex::DisplacementLine::v,
+                       "Lateral displacement in y [m]")
+        .def_readwrite("w", &grillex::DisplacementLine::w,
+                       "Lateral displacement in z [m]")
+        .def_readwrite("theta_x", &grillex::DisplacementLine::theta_x,
+                       "Twist rotation (torsion) [rad]")
+        .def_readwrite("theta_y", &grillex::DisplacementLine::theta_y,
+                       "Bending rotation about y [rad]")
+        .def_readwrite("theta_z", &grillex::DisplacementLine::theta_z,
+                       "Bending rotation about z [rad]")
+        .def_readwrite("phi_prime", &grillex::DisplacementLine::phi_prime,
+                       "Warping parameter (rate of twist) [rad]")
+        .def("__repr__", [](const grillex::DisplacementLine &d) {
+            std::ostringstream oss;
+            oss << "<DisplacementLine x=" << d.x
+                << " u=" << d.u << " v=" << d.v << " w=" << d.w << ">";
+            return oss.str();
+        });
+
     // EndForces struct
     py::class_<grillex::EndForces>(m, "EndForces",
         "Element end forces in local coordinates.\n\n"
@@ -1234,6 +1390,35 @@ PYBIND11_MODULE(_grillex_cpp, m) {
             oss << "<InternalActions x=" << a.x
                 << " N=" << a.N << " Vy=" << a.Vy << " Vz=" << a.Vz
                 << " Mx=" << a.Mx << " My=" << a.My << " Mz=" << a.Mz << ">";
+            return oss.str();
+        });
+
+    // WarpingInternalActions struct (inherits from InternalActions)
+    py::class_<grillex::WarpingInternalActions, grillex::InternalActions>(m, "WarpingInternalActions",
+        "Warping-specific internal actions (extends InternalActions).\n\n"
+        "For thin-walled open sections (I-beams, channels) under torsion:\n"
+        "- St. Venant torsion: Mx_sv = GJ × dθ/dx\n"
+        "- Warping torsion: Mx_w = -EIw × d³θ/dx³\n"
+        "- Total torsion: Mx = Mx_sv + Mx_w\n"
+        "- Bimoment: B = -EIw × d²θ/dx²\n"
+        "- Warping stress: σ_w = -B × ω / Iw")
+        .def(py::init<>(), "Construct with zero actions")
+        .def(py::init<double>(), py::arg("x"),
+             "Construct at position x with zero actions")
+        .def_readwrite("B", &grillex::WarpingInternalActions::B,
+                       "Bimoment [kN·m²]")
+        .def_readwrite("Mx_sv", &grillex::WarpingInternalActions::Mx_sv,
+                       "St. Venant torsion component [kN·m]")
+        .def_readwrite("Mx_w", &grillex::WarpingInternalActions::Mx_w,
+                       "Warping torsion component [kN·m]")
+        .def_readwrite("sigma_w_max", &grillex::WarpingInternalActions::sigma_w_max,
+                       "Maximum warping normal stress [kN/m²]")
+        .def("__repr__", [](const grillex::WarpingInternalActions &a) {
+            std::ostringstream oss;
+            oss << "<WarpingInternalActions x=" << a.x
+                << " Mx=" << a.Mx << " B=" << a.B
+                << " Mx_sv=" << a.Mx_sv << " Mx_w=" << a.Mx_w
+                << " σ_w=" << a.sigma_w_max << ">";
             return oss.str();
         });
 

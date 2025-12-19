@@ -107,4 +107,135 @@ struct ActionExtreme {
     ActionExtreme(double pos, double val) : x(pos), value(val) {}
 };
 
+// Note: DistributedLoad is defined in load_case.hpp
+
+/**
+ * @brief Release combinations for bending (4-DOF)
+ *
+ * Each bending plane (x-y or x-z) has 4 DOFs at beam ends:
+ * - w1: Transverse displacement at node i
+ * - φ1: Rotation (slope) at node i
+ * - w2: Transverse displacement at node j
+ * - φ2: Rotation (slope) at node j
+ *
+ * FIXED = DOF is active (connected to global DOF)
+ * FREE = DOF is released (internal hinge or roller)
+ */
+enum class ReleaseCombo4DOF {
+    FIXED_FIXED_FIXED_FIXED = 0,   ///< w1, φ1, w2, φ2 all fixed (standard beam)
+    FIXED_FIXED_FREE_FIXED = 1,    ///< w1, φ1, φ2 fixed; w2 free (roller at j)
+    FIXED_FIXED_FIXED_FREE = 2,    ///< w1, φ1, w2 fixed; φ2 free (hinge at j)
+    FIXED_FIXED_FREE_FREE = 3,     ///< w1, φ1 fixed; w2, φ2 free (cantilever-like at i)
+    FIXED_FREE_FIXED_FIXED = 4,    ///< w1, w2, φ2 fixed; φ1 free (hinge at i)
+    FIXED_FREE_FREE_FIXED = 5,     ///< w1, φ2 fixed; φ1, w2 free
+    FIXED_FREE_FIXED_FREE = 6,     ///< w1, w2 fixed; φ1, φ2 free (double hinge)
+    FIXED_FREE_FREE_FREE = 7,      ///< w1 fixed; φ1, w2, φ2 free
+    FREE_FIXED_FIXED_FIXED = 8,    ///< φ1, w2, φ2 fixed; w1 free (roller at i)
+    FREE_FIXED_FREE_FIXED = 9,     ///< φ1, φ2 fixed; w1, w2 free
+    FREE_FIXED_FIXED_FREE = 10,    ///< φ1, w2 fixed; w1, φ2 free
+    FREE_FIXED_FREE_FREE = 11,     ///< φ1 fixed; w1, w2, φ2 free
+    FREE_FREE_FIXED_FIXED = 12,    ///< w2, φ2 fixed; w1, φ1 free (cantilever-like at j)
+    FREE_FREE_FREE_FIXED = 13,     ///< φ2 fixed; w1, φ1, w2 free
+    FREE_FREE_FIXED_FREE = 14,     ///< w2 fixed; w1, φ1, φ2 free
+    FREE_FREE_FREE_FREE = 15       ///< All free (rigid body motion, unstable)
+};
+
+/**
+ * @brief Release combinations for axial/torsion (2-DOF)
+ *
+ * Axial and torsion each have 2 DOFs:
+ * - u1/θ1: Displacement/rotation at node i
+ * - u2/θ2: Displacement/rotation at node j
+ */
+enum class ReleaseCombo2DOF {
+    FIXED_FIXED = 0,  ///< Both ends fixed (standard)
+    FIXED_FREE = 1,   ///< Start fixed, end free (cantilever-like)
+    FREE_FIXED = 2,   ///< Start free, end fixed
+    FREE_FREE = 3     ///< Both ends free (rigid body motion, unstable)
+};
+
+/**
+ * @brief Release combinations for warping (4-DOF: θ₁, φ₁, θ₂, φ₂)
+ *
+ * For thin-walled open sections with warping DOF:
+ * - θ = twist angle (rotation DOF)
+ * - φ = rate of twist / warping DOF (dθ/dx at restrained end)
+ */
+enum class ReleaseComboWarping {
+    // All 16 combinations of fixed/free for (θ₁, φ₁, θ₂, φ₂)
+    FIXED_FIXED_FIXED_FIXED = 0,   ///< θ₁, φ₁, θ₂, φ₂ all fixed
+    FIXED_FIXED_FIXED_FREE = 1,    ///< θ₁, φ₁, θ₂ fixed; φ₂ free
+    FIXED_FIXED_FREE_FIXED = 2,    ///< θ₁, φ₁, φ₂ fixed; θ₂ free
+    FIXED_FIXED_FREE_FREE = 3,     ///< θ₁, φ₁ fixed; θ₂, φ₂ free (cantilever)
+    FIXED_FREE_FIXED_FIXED = 4,    ///< θ₁, θ₂, φ₂ fixed; φ₁ free
+    FIXED_FREE_FIXED_FREE = 5,     ///< θ₁, θ₂ fixed; φ₁, φ₂ free (pure St. Venant)
+    FIXED_FREE_FREE_FIXED = 6,     ///< θ₁, φ₂ fixed; φ₁, θ₂ free
+    FIXED_FREE_FREE_FREE = 7,      ///< θ₁ fixed; φ₁, θ₂, φ₂ free
+    FREE_FIXED_FIXED_FIXED = 8,    ///< φ₁, θ₂, φ₂ fixed; θ₁ free
+    FREE_FIXED_FIXED_FREE = 9,     ///< φ₁, θ₂ fixed; θ₁, φ₂ free
+    FREE_FIXED_FREE_FIXED = 10,    ///< φ₁, φ₂ fixed; θ₁, θ₂ free
+    FREE_FIXED_FREE_FREE = 11,     ///< φ₁ fixed; θ₁, θ₂, φ₂ free
+    FREE_FREE_FIXED_FIXED = 12,    ///< θ₂, φ₂ fixed; θ₁, φ₁ free
+    FREE_FREE_FIXED_FREE = 13,     ///< θ₂ fixed; θ₁, φ₁, φ₂ free
+    FREE_FREE_FREE_FIXED = 14,     ///< φ₂ fixed; θ₁, φ₁, θ₂ free
+    FREE_FREE_FREE_FREE = 15       ///< All free (rigid body motion)
+};
+
+/**
+ * @brief Warping-specific internal actions (extends InternalActions)
+ *
+ * For thin-walled open sections (I-beams, channels) under torsion:
+ * - St. Venant torsion: Mx_sv = GJ × dθ/dx (uniform shear stress)
+ * - Warping torsion: Mx_w = -EIw × d³θ/dx³ (non-uniform normal stress)
+ * - Total torsion: Mx = Mx_sv + Mx_w
+ * - Bimoment: B = -EIw × d²θ/dx² (generalized force conjugate to warping)
+ * - Warping normal stress: σ_w = -B × ω / Iw (ω = sectorial coordinate)
+ */
+struct WarpingInternalActions : InternalActions {
+    double B = 0.0;           ///< Bimoment [kN·m²]
+    double Mx_sv = 0.0;       ///< St. Venant torsion component [kN·m]
+    double Mx_w = 0.0;        ///< Warping torsion component [kN·m]
+    double sigma_w_max = 0.0; ///< Maximum warping normal stress [kN/m²]
+
+    /**
+     * @brief Default constructor
+     */
+    WarpingInternalActions() = default;
+
+    /**
+     * @brief Construct at position x with zero actions
+     */
+    explicit WarpingInternalActions(double position) : InternalActions(position) {}
+
+    /**
+     * @brief Construct with all values including warping
+     */
+    WarpingInternalActions(double position, double n, double vy, double vz,
+                          double mx, double my, double mz,
+                          double b, double mx_sv, double mx_w, double sigma_w)
+        : InternalActions(position, n, vy, vz, mx, my, mz),
+          B(b), Mx_sv(mx_sv), Mx_w(mx_w), sigma_w_max(sigma_w) {}
+};
+
+/**
+ * @brief Displacements and rotations at a position along the beam
+ *
+ * Used for deflection diagrams and displacement queries.
+ */
+struct DisplacementLine {
+    double x = 0.0;   ///< Position along beam [0, L] in meters
+    double u = 0.0;   ///< Axial displacement [m]
+    double v = 0.0;   ///< Lateral displacement in y [m]
+    double w = 0.0;   ///< Lateral displacement in z [m]
+    double theta_x = 0.0;  ///< Twist rotation (torsion) [rad]
+    double theta_y = 0.0;  ///< Bending rotation about y [rad]
+    double theta_z = 0.0;  ///< Bending rotation about z [rad]
+
+    // For 14-DOF elements:
+    double phi_prime = 0.0;  ///< Warping parameter (rate of twist) [rad]
+
+    DisplacementLine() = default;
+    DisplacementLine(double pos) : x(pos) {}
+};
+
 } // namespace grillex

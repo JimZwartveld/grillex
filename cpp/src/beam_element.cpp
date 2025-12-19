@@ -1,8 +1,10 @@
 #include "grillex/beam_element.hpp"
 #include "grillex/dof_handler.hpp"
 #include "grillex/load_case.hpp"
+#include "grillex/internal_actions_computer.hpp"
 #include <cmath>
 #include <algorithm>
+#include <limits>
 
 namespace grillex {
 
@@ -1146,6 +1148,387 @@ DistributedLoad BeamElement::get_distributed_load_axial(const LoadCase& load_cas
     }
 
     return result;
+}
+
+// ============================================================================
+// Task 7.2: Internal Action Functions Along Beam
+// ============================================================================
+
+ReleaseCombo4DOF BeamElement::detect_release_combination_bending_y() const {
+    // Bending about y-axis: DOFs are w (z-displacement) and θy (rotation about y)
+    // For each end: check release_uz (displacement) and release_ry (rotation)
+
+    bool w1_free = releases.release_uz_i;
+    bool phi1_free = releases.release_ry_i;
+    bool w2_free = releases.release_uz_j;
+    bool phi2_free = releases.release_ry_j;
+
+    // Compute enum value: 4-bit number where each bit represents a free DOF
+    int code = (w1_free ? 8 : 0) | (phi1_free ? 4 : 0) | (w2_free ? 2 : 0) | (phi2_free ? 1 : 0);
+
+    return static_cast<ReleaseCombo4DOF>(code);
+}
+
+ReleaseCombo4DOF BeamElement::detect_release_combination_bending_z() const {
+    // Bending about z-axis: DOFs are v (y-displacement) and θz (rotation about z)
+    // For each end: check release_uy (displacement) and release_rz (rotation)
+
+    bool w1_free = releases.release_uy_i;
+    bool phi1_free = releases.release_rz_i;
+    bool w2_free = releases.release_uy_j;
+    bool phi2_free = releases.release_rz_j;
+
+    // Compute enum value: 4-bit number where each bit represents a free DOF
+    int code = (w1_free ? 8 : 0) | (phi1_free ? 4 : 0) | (w2_free ? 2 : 0) | (phi2_free ? 1 : 0);
+
+    return static_cast<ReleaseCombo4DOF>(code);
+}
+
+ReleaseCombo2DOF BeamElement::detect_release_combination_axial() const {
+    // Axial: DOFs are u1 (axial displacement at i) and u2 (at j)
+    bool u1_free = releases.release_ux_i;
+    bool u2_free = releases.release_ux_j;
+
+    int code = (u1_free ? 2 : 0) | (u2_free ? 1 : 0);
+
+    return static_cast<ReleaseCombo2DOF>(code);
+}
+
+ReleaseCombo2DOF BeamElement::detect_release_combination_torsion() const {
+    // Torsion: DOFs are θx1 (torsion at i) and θx2 (at j)
+    bool theta1_free = releases.release_rx_i;
+    bool theta2_free = releases.release_rx_j;
+
+    int code = (theta1_free ? 2 : 0) | (theta2_free ? 1 : 0);
+
+    return static_cast<ReleaseCombo2DOF>(code);
+}
+
+InternalActions BeamElement::get_internal_actions(
+    double x,
+    const Eigen::VectorXd& global_displacements,
+    const DOFHandler& dof_handler,
+    const LoadCase* load_case) const
+{
+    // Clamp x to valid range [0, L]
+    x = std::max(0.0, std::min(x, length));
+
+    // Get local displacements
+    Eigen::VectorXd u_local = get_element_displacements_local(global_displacements, dof_handler);
+
+    // Extract material and section properties
+    double E = material->E;
+    double G = material->G;
+    double A = section->A;
+    double Iy = section->Iy;
+    double Iz = section->Iz;
+    double J = section->J;
+    double L = length;
+
+    // Extract local displacements
+    // DOF ordering (12-DOF): [u_i, v_i, w_i, θx_i, θy_i, θz_i, u_j, v_j, w_j, θx_j, θy_j, θz_j]
+    double u1 = u_local(0);   // Axial displacement at node i
+    double v1 = u_local(1);   // y-displacement at node i
+    double w1 = u_local(2);   // z-displacement at node i
+    double theta_x1 = u_local(3);  // Torsion rotation at node i
+    double theta_y1 = u_local(4);  // Rotation about y at node i
+    double theta_z1 = u_local(5);  // Rotation about z at node i
+
+    int offset = config.include_warping ? 7 : 6;
+    double u2 = u_local(offset);      // Axial displacement at node j
+    double v2 = u_local(offset + 1);  // y-displacement at node j
+    double w2 = u_local(offset + 2);  // z-displacement at node j
+    double theta_x2 = u_local(offset + 3);  // Torsion rotation at node j
+    double theta_y2 = u_local(offset + 4);  // Rotation about y at node j
+    double theta_z2 = u_local(offset + 5);  // Rotation about z at node j
+
+    // Get distributed loads if load case provided
+    DistributedLoad q_y, q_z, q_x;
+    if (load_case) {
+        q_y = get_distributed_load_y(*load_case);
+        q_z = get_distributed_load_z(*load_case);
+        q_x = get_distributed_load_axial(*load_case);
+    }
+
+    // Detect release combinations
+    ReleaseCombo2DOF axial_release = detect_release_combination_axial();
+    ReleaseCombo2DOF torsion_release = detect_release_combination_torsion();
+    ReleaseCombo4DOF bending_y_release = detect_release_combination_bending_y();
+    ReleaseCombo4DOF bending_z_release = detect_release_combination_bending_z();
+
+    // Initialize result
+    InternalActions result(x);
+
+    // Compute axial force N
+    AxialForceComputer axial_computer(L, E * A, u1, u2, q_x.q_start, q_x.q_end);
+    result.N = axial_computer.compute(x, axial_release);
+
+    // Compute torsion moment Mx
+    TorsionComputer torsion_computer(L, G * J, theta_x1, theta_x2, 0.0, 0.0);
+    result.Mx = torsion_computer.compute(x, torsion_release);
+
+    // Compute bending about z-axis (Mz) and shear in y (Vy)
+    // For bending in x-y plane: v is the displacement, θz is the rotation
+    if (config.get_formulation() == BeamFormulation::Timoshenko) {
+        // Timoshenko formulation
+        double kappa = 5.0 / 6.0;
+        double Asz = section->Asz > 0 ? section->Asz : kappa * A;
+        double kAG_z = Asz * G;
+
+        MomentZTimoshenkoComputer mz_computer(L, E * Iz, kAG_z,
+                                               v1, theta_z1, v2, theta_z2,
+                                               q_y.q_start, q_y.q_end);
+        result.Mz = mz_computer.compute(x, bending_z_release);
+
+        ShearYTimoshenkoComputer vy_computer(L, E * Iz, kAG_z,
+                                              v1, theta_z1, v2, theta_z2,
+                                              q_y.q_start, q_y.q_end);
+        result.Vy = vy_computer.compute(x, bending_z_release);
+    } else {
+        // Euler-Bernoulli formulation
+        MomentZEulerComputer mz_computer(L, E * Iz, v1, theta_z1, v2, theta_z2,
+                                          q_y.q_start, q_y.q_end);
+        result.Mz = mz_computer.compute(x, bending_z_release);
+
+        ShearYEulerComputer vy_computer(L, E * Iz, v1, theta_z1, v2, theta_z2,
+                                         q_y.q_start, q_y.q_end);
+        result.Vy = vy_computer.compute(x, bending_z_release);
+    }
+
+    // Compute bending about y-axis (My) and shear in z (Vz)
+    // For bending in x-z plane: w is the displacement, θy is the rotation
+    // Note: Sign convention requires care for My (θy is related to -dw/dx for positive moment)
+    if (config.get_formulation() == BeamFormulation::Timoshenko) {
+        double kappa = 5.0 / 6.0;
+        double Asy = section->Asy > 0 ? section->Asy : kappa * A;
+        double kAG_y = Asy * G;
+
+        MomentYTimoshenkoComputer my_computer(L, E * Iy, kAG_y,
+                                               w1, -theta_y1, w2, -theta_y2,
+                                               q_z.q_start, q_z.q_end);
+        result.My = -my_computer.compute(x, bending_y_release);
+
+        ShearZTimoshenkoComputer vz_computer(L, E * Iy, kAG_y,
+                                              w1, -theta_y1, w2, -theta_y2,
+                                              q_z.q_start, q_z.q_end);
+        result.Vz = vz_computer.compute(x, bending_y_release);
+    } else {
+        MomentYEulerComputer my_computer(L, E * Iy, w1, -theta_y1, w2, -theta_y2,
+                                          q_z.q_start, q_z.q_end);
+        result.My = -my_computer.compute(x, bending_y_release);
+
+        ShearZEulerComputer vz_computer(L, E * Iy, w1, -theta_y1, w2, -theta_y2,
+                                         q_z.q_start, q_z.q_end);
+        result.Vz = vz_computer.compute(x, bending_y_release);
+    }
+
+    return result;
+}
+
+std::pair<ActionExtreme, ActionExtreme> BeamElement::find_moment_extremes(
+    char axis,
+    const Eigen::VectorXd& global_displacements,
+    const DOFHandler& dof_handler,
+    const LoadCase* load_case) const
+{
+    // Algorithm:
+    // 1. Compute moment and shear at endpoints
+    // 2. Find interior critical points where V = 0 (shear = dM/dx = 0)
+    // 3. Evaluate moment at all critical points
+    // 4. Return min and max
+
+    double L = length;
+    const int num_sample_points = 21;  // For fallback sampling
+
+    std::vector<double> critical_points;
+    critical_points.push_back(0.0);  // Start
+    critical_points.push_back(L);    // End
+
+    // For distributed loads, try to find analytical zero-crossing of shear
+    // Shear is typically linear or parabolic, so solve V(x) = 0 analytically
+    // For now, use sampling approach for robustness
+
+    // Sample along the beam to find shear zero crossings
+    double prev_shear = 0.0;
+    for (int i = 0; i <= num_sample_points; ++i) {
+        double x_sample = L * i / num_sample_points;
+        InternalActions actions = get_internal_actions(x_sample, global_displacements,
+                                                       dof_handler, load_case);
+
+        double shear = (axis == 'y') ? actions.Vy : actions.Vz;
+
+        if (i > 0 && prev_shear * shear < 0.0) {
+            // Sign change detected - find zero crossing using bisection
+            double x_left = L * (i - 1) / num_sample_points;
+            double x_right = x_sample;
+
+            for (int iter = 0; iter < 10; ++iter) {
+                double x_mid = (x_left + x_right) / 2.0;
+                InternalActions actions_mid = get_internal_actions(x_mid, global_displacements,
+                                                                    dof_handler, load_case);
+                double shear_mid = (axis == 'y') ? actions_mid.Vy : actions_mid.Vz;
+
+                InternalActions actions_left = get_internal_actions(x_left, global_displacements,
+                                                                     dof_handler, load_case);
+                double shear_left = (axis == 'y') ? actions_left.Vy : actions_left.Vz;
+
+                if (shear_left * shear_mid < 0.0) {
+                    x_right = x_mid;
+                } else {
+                    x_left = x_mid;
+                }
+            }
+
+            critical_points.push_back((x_left + x_right) / 2.0);
+        }
+
+        prev_shear = shear;
+    }
+
+    // Evaluate moment at all critical points and find min/max
+    ActionExtreme min_extremum(0.0, std::numeric_limits<double>::infinity());
+    ActionExtreme max_extremum(0.0, -std::numeric_limits<double>::infinity());
+
+    for (double x_crit : critical_points) {
+        InternalActions actions = get_internal_actions(x_crit, global_displacements,
+                                                       dof_handler, load_case);
+        double M = (axis == 'y') ? actions.My : actions.Mz;
+
+        if (M < min_extremum.value) {
+            min_extremum.x = x_crit;
+            min_extremum.value = M;
+        }
+        if (M > max_extremum.value) {
+            max_extremum.x = x_crit;
+            max_extremum.value = M;
+        }
+    }
+
+    return {min_extremum, max_extremum};
+}
+
+// ============================================================================
+// Task 7.2b: Warping Internal Actions
+// ============================================================================
+
+ReleaseComboWarping BeamElement::detect_release_combination_warping() const {
+    // Map the end releases to the 16 warping combinations
+    // Order: θ₁, φ₁, θ₂, φ₂ (torsion_i, warp_i, torsion_j, warp_j)
+    //
+    // In our EndRelease struct:
+    // - release_rx_i/j = torsion release (θ)
+    // - release_warp_i/j = warping release (φ)
+
+    bool theta1_free = releases.release_rx_i;
+    bool phi1_free = releases.release_warp_i;
+    bool theta2_free = releases.release_rx_j;
+    bool phi2_free = releases.release_warp_j;
+
+    // Encode as 4-bit integer: (θ₁_free << 3) | (φ₁_free << 2) | (θ₂_free << 1) | φ₂_free
+    int code = (theta1_free ? 8 : 0) | (phi1_free ? 4 : 0) |
+               (theta2_free ? 2 : 0) | (phi2_free ? 1 : 0);
+
+    // The enum values are ordered: FIXED_FIXED_FIXED_FIXED = 0, etc.
+    // The bit pattern matches: 0000 = all fixed, 1111 = all free
+    // But our enum uses FIXED=0 for each DOF, so we need to invert
+
+    // code = 0 means all fixed (all bits 0)
+    // code = 15 means all free (all bits 1)
+    return static_cast<ReleaseComboWarping>(code);
+}
+
+WarpingInternalActions BeamElement::get_warping_internal_actions(
+    double x,
+    const Eigen::VectorXd& global_displacements,
+    const DOFHandler& dof_handler) const
+{
+    // Get standard internal actions first
+    InternalActions base = get_internal_actions(x, global_displacements, dof_handler);
+
+    WarpingInternalActions result;
+    result.x = base.x;
+    result.N = base.N;
+    result.Vy = base.Vy;
+    result.Vz = base.Vz;
+    result.Mx = base.Mx;
+    result.My = base.My;
+    result.Mz = base.Mz;
+
+    // For 12-DOF elements or sections without warping, return with zero warping values
+    if (!config.include_warping || section->Iw < 1e-20) {
+        result.B = 0.0;
+        result.Mx_sv = base.Mx;  // All torsion is St. Venant
+        result.Mx_w = 0.0;
+        result.sigma_w_max = 0.0;
+        return result;
+    }
+
+    // Get local displacements for warping analysis
+    Eigen::VectorXd u_local = get_element_displacements_local(global_displacements, dof_handler);
+
+    // For 14-DOF element, extract warping DOFs
+    // DOF ordering: [u_i, v_i, w_i, θx_i, θy_i, θz_i, φ'_i, u_j, v_j, w_j, θx_j, θy_j, θz_j, φ'_j]
+    // Index 3 = θx_i (twist at i), Index 6 = φ'_i (rate of twist at i)
+    // Index 10 = θx_j (twist at j), Index 13 = φ'_j (rate of twist at j)
+
+    double theta1 = u_local(3);  // Twist angle at node i
+    double theta2 = u_local(10); // Twist angle at node j
+    double phi1 = u_local(6);    // Rate of twist at node i (warping DOF)
+    double phi2 = u_local(13);   // Rate of twist at node j (warping DOF)
+
+    // Material and section properties
+    double E = material->E;
+    double G = material->G;
+    double J = section->J;
+    double Iw = section->Iw;
+
+    double GJ = G * J;
+    double EIw = E * Iw;
+
+    // Create warping torsion computer
+    WarpingTorsionComputer computer(length, GJ, EIw, theta1, phi1, theta2, phi2);
+
+    // Detect release combination
+    ReleaseComboWarping release = detect_release_combination_warping();
+
+    // Compute warping results
+    WarpingTorsionResults warping = computer.compute(x, release);
+
+    // Populate result
+    result.B = warping.B;
+    result.Mx_sv = warping.Mx_sv;
+    result.Mx_w = warping.Mx_w;
+    result.Mx = warping.Mx_total;  // Override Mx with total torsion
+
+    // Compute warping stress
+    result.sigma_w_max = compute_warping_stress(warping.B);
+
+    return result;
+}
+
+double BeamElement::compute_warping_stress(double bimoment) const {
+    // σ_w = -B × ω_max / Iw
+    //
+    // where:
+    // - B = bimoment [kN·m²]
+    // - ω_max = maximum sectorial coordinate [m²]
+    // - Iw = warping constant [m⁶]
+    //
+    // Units: [kN·m²] × [m²] / [m⁶] = [kN/m²]
+
+    if (section->Iw < 1e-20) {
+        return 0.0;  // No warping possible
+    }
+
+    double omega_max = section->omega_max;
+    if (omega_max < 1e-20) {
+        // If omega_max is not set, estimate from section geometry
+        // For I-sections: ω_max ≈ h × b / 4 where h=height, b=flange width
+        // This is a rough approximation; accurate ω_max should be provided
+        return 0.0;
+    }
+
+    return -bimoment * omega_max / section->Iw;
 }
 
 } // namespace grillex

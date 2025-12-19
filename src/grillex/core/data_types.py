@@ -74,7 +74,12 @@ from grillex._grillex_cpp import (
     # Phase 7: Internal Actions
     EndForces,
     InternalActions,
-    ActionExtreme
+    WarpingInternalActions,
+    ActionExtreme,
+    ReleaseCombo4DOF,
+    ReleaseCombo2DOF,
+    ReleaseComboWarping,
+    DisplacementLine
 )
 
 __all__ = [
@@ -92,5 +97,6 @@ __all__ = [
     'Model',
     'EqualityConstraint', 'RigidLink', 'ReducedSystem', 'ConstraintHandler',
     # Phase 7: Internal Actions
-    'EndForces', 'InternalActions', 'ActionExtreme'
+    'EndForces', 'InternalActions', 'WarpingInternalActions', 'ActionExtreme',
+    'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine'
 ]

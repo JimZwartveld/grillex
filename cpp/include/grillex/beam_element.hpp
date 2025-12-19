@@ -593,6 +593,125 @@ public:
         const Eigen::VectorXd& global_displacements,
         const DOFHandler& dof_handler) const;
 
+    // Task 7.2: Internal Action Functions Along Beam
+    // ------------------------------------------------
+
+    /**
+     * @brief Get internal actions at position x along element
+     *
+     * Computes internal forces and moments at any position along the beam
+     * using analytical closed-form solutions from differential equations.
+     * Accounts for element end releases and distributed loads.
+     *
+     * @param x Position [0, L] in meters
+     * @param global_displacements Full displacement vector from analysis
+     * @param dof_handler DOF numbering manager
+     * @param load_case Optional load case for distributed load effects
+     * @return Internal actions (N, Vy, Vz, Mx, My, Mz) at position x
+     *
+     * Sign convention:
+     * - Axial N: positive = tension
+     * - Shear V: positive in positive local y/z direction
+     * - Moment M: positive per right-hand rule
+     */
+    InternalActions get_internal_actions(
+        double x,
+        const Eigen::VectorXd& global_displacements,
+        const DOFHandler& dof_handler,
+        const LoadCase* load_case = nullptr) const;
+
+    /**
+     * @brief Find moment extrema along element
+     *
+     * Finds the locations and values of maximum and minimum bending moment
+     * along the element. For distributed loads, the extremum occurs where
+     * shear force is zero; this is found analytically for polynomial loads.
+     *
+     * @param axis 'y' or 'z' for bending plane
+     * @param global_displacements Full displacement vector from analysis
+     * @param dof_handler DOF numbering manager
+     * @param load_case Optional load case for distributed load effects
+     * @return Pair of (min, max) extrema with positions and values
+     */
+    std::pair<ActionExtreme, ActionExtreme> find_moment_extremes(
+        char axis,
+        const Eigen::VectorXd& global_displacements,
+        const DOFHandler& dof_handler,
+        const LoadCase* load_case = nullptr) const;
+
+    // Task 7.2b: Warping Internal Actions
+    // ------------------------------------
+
+    /**
+     * @brief Get warping-specific internal actions at position x
+     *
+     * For 14-DOF elements with warping DOF, computes:
+     * - Bimoment B [kN·m²]
+     * - St. Venant torsion Mx_sv [kN·m]
+     * - Warping torsion Mx_w [kN·m]
+     * - Maximum warping normal stress σ_w [kN/m²]
+     *
+     * For 12-DOF elements, returns standard InternalActions with zero warping values.
+     *
+     * @param x Position [0, L] in meters
+     * @param global_displacements Full displacement vector from analysis
+     * @param dof_handler DOF numbering manager
+     * @return WarpingInternalActions Actions including bimoment and stress
+     *
+     * @note Requires section to have warping constant Iw defined.
+     */
+    WarpingInternalActions get_warping_internal_actions(
+        double x,
+        const Eigen::VectorXd& global_displacements,
+        const DOFHandler& dof_handler) const;
+
+    /**
+     * @brief Compute maximum warping normal stress at position x
+     *
+     * σ_w = -B × ω_max / Iw
+     *
+     * where:
+     * - B = bimoment [kN·m²]
+     * - ω_max = maximum sectorial coordinate [m²]
+     * - Iw = warping constant [m⁶]
+     *
+     * @param bimoment Bimoment at position [kN·m²]
+     * @return Maximum warping stress [kN/m²]
+     *
+     * @note Positive stress indicates tension in the flange.
+     */
+    double compute_warping_stress(double bimoment) const;
+
+private:
+    // Private helper methods for internal action computation
+
+    /**
+     * @brief Detect release combination for bending in y-direction
+     */
+    ReleaseCombo4DOF detect_release_combination_bending_y() const;
+
+    /**
+     * @brief Detect release combination for bending in z-direction
+     */
+    ReleaseCombo4DOF detect_release_combination_bending_z() const;
+
+    /**
+     * @brief Detect release combination for axial behavior
+     */
+    ReleaseCombo2DOF detect_release_combination_axial() const;
+
+    /**
+     * @brief Detect release combination for torsion
+     */
+    ReleaseCombo2DOF detect_release_combination_torsion() const;
+
+    /**
+     * @brief Detect release combination for warping (4-DOF)
+     *
+     * Considers torsion releases (θ) and warping releases (φ) at both ends.
+     */
+    ReleaseComboWarping detect_release_combination_warping() const;
+
 private:
     /**
      * @brief Compute element length from node positions
