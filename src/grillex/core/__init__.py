@@ -15,8 +15,8 @@ from .data_types import (
     Model,
     EqualityConstraint, RigidLink, ReducedSystem, ConstraintHandler,
     # Phase 7: Internal Actions
-    EndForces, InternalActions, ActionExtreme,
-    ReleaseCombo4DOF, ReleaseCombo2DOF, DisplacementLine
+    EndForces, InternalActions, WarpingInternalActions, ActionExtreme,
+    ReleaseCombo4DOF, ReleaseCombo2DOF, ReleaseComboWarping, DisplacementLine
 )
 
 from .model_wrapper import (
@@ -39,7 +39,7 @@ __all__ = [
     'Model',
     'EqualityConstraint', 'RigidLink', 'ReducedSystem', 'ConstraintHandler',
     # Phase 7: Internal Actions
-    'EndForces', 'InternalActions', 'ActionExtreme',
-    'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'DisplacementLine',
+    'EndForces', 'InternalActions', 'WarpingInternalActions', 'ActionExtreme',
+    'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine',
     'Beam', 'StructuralModel'
 ]

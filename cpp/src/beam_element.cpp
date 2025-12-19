@@ -1407,4 +1407,128 @@ std::pair<ActionExtreme, ActionExtreme> BeamElement::find_moment_extremes(
     return {min_extremum, max_extremum};
 }
 
+// ============================================================================
+// Task 7.2b: Warping Internal Actions
+// ============================================================================
+
+ReleaseComboWarping BeamElement::detect_release_combination_warping() const {
+    // Map the end releases to the 16 warping combinations
+    // Order: θ₁, φ₁, θ₂, φ₂ (torsion_i, warp_i, torsion_j, warp_j)
+    //
+    // In our EndRelease struct:
+    // - release_rx_i/j = torsion release (θ)
+    // - release_warp_i/j = warping release (φ)
+
+    bool theta1_free = releases.release_rx_i;
+    bool phi1_free = releases.release_warp_i;
+    bool theta2_free = releases.release_rx_j;
+    bool phi2_free = releases.release_warp_j;
+
+    // Encode as 4-bit integer: (θ₁_free << 3) | (φ₁_free << 2) | (θ₂_free << 1) | φ₂_free
+    int code = (theta1_free ? 8 : 0) | (phi1_free ? 4 : 0) |
+               (theta2_free ? 2 : 0) | (phi2_free ? 1 : 0);
+
+    // The enum values are ordered: FIXED_FIXED_FIXED_FIXED = 0, etc.
+    // The bit pattern matches: 0000 = all fixed, 1111 = all free
+    // But our enum uses FIXED=0 for each DOF, so we need to invert
+
+    // code = 0 means all fixed (all bits 0)
+    // code = 15 means all free (all bits 1)
+    return static_cast<ReleaseComboWarping>(code);
+}
+
+WarpingInternalActions BeamElement::get_warping_internal_actions(
+    double x,
+    const Eigen::VectorXd& global_displacements,
+    const DOFHandler& dof_handler) const
+{
+    // Get standard internal actions first
+    InternalActions base = get_internal_actions(x, global_displacements, dof_handler);
+
+    WarpingInternalActions result;
+    result.x = base.x;
+    result.N = base.N;
+    result.Vy = base.Vy;
+    result.Vz = base.Vz;
+    result.Mx = base.Mx;
+    result.My = base.My;
+    result.Mz = base.Mz;
+
+    // For 12-DOF elements or sections without warping, return with zero warping values
+    if (!config.include_warping || section->Iw < 1e-20) {
+        result.B = 0.0;
+        result.Mx_sv = base.Mx;  // All torsion is St. Venant
+        result.Mx_w = 0.0;
+        result.sigma_w_max = 0.0;
+        return result;
+    }
+
+    // Get local displacements for warping analysis
+    Eigen::VectorXd u_local = get_element_displacements_local(global_displacements, dof_handler);
+
+    // For 14-DOF element, extract warping DOFs
+    // DOF ordering: [u_i, v_i, w_i, θx_i, θy_i, θz_i, φ'_i, u_j, v_j, w_j, θx_j, θy_j, θz_j, φ'_j]
+    // Index 3 = θx_i (twist at i), Index 6 = φ'_i (rate of twist at i)
+    // Index 10 = θx_j (twist at j), Index 13 = φ'_j (rate of twist at j)
+
+    double theta1 = u_local(3);  // Twist angle at node i
+    double theta2 = u_local(10); // Twist angle at node j
+    double phi1 = u_local(6);    // Rate of twist at node i (warping DOF)
+    double phi2 = u_local(13);   // Rate of twist at node j (warping DOF)
+
+    // Material and section properties
+    double E = material->E;
+    double G = material->G;
+    double J = section->J;
+    double Iw = section->Iw;
+
+    double GJ = G * J;
+    double EIw = E * Iw;
+
+    // Create warping torsion computer
+    WarpingTorsionComputer computer(length, GJ, EIw, theta1, phi1, theta2, phi2);
+
+    // Detect release combination
+    ReleaseComboWarping release = detect_release_combination_warping();
+
+    // Compute warping results
+    WarpingTorsionResults warping = computer.compute(x, release);
+
+    // Populate result
+    result.B = warping.B;
+    result.Mx_sv = warping.Mx_sv;
+    result.Mx_w = warping.Mx_w;
+    result.Mx = warping.Mx_total;  // Override Mx with total torsion
+
+    // Compute warping stress
+    result.sigma_w_max = compute_warping_stress(warping.B);
+
+    return result;
+}
+
+double BeamElement::compute_warping_stress(double bimoment) const {
+    // σ_w = -B × ω_max / Iw
+    //
+    // where:
+    // - B = bimoment [kN·m²]
+    // - ω_max = maximum sectorial coordinate [m²]
+    // - Iw = warping constant [m⁶]
+    //
+    // Units: [kN·m²] × [m²] / [m⁶] = [kN/m²]
+
+    if (section->Iw < 1e-20) {
+        return 0.0;  // No warping possible
+    }
+
+    double omega_max = section->omega_max;
+    if (omega_max < 1e-20) {
+        // If omega_max is not set, estimate from section geometry
+        // For I-sections: ω_max ≈ h × b / 4 where h=height, b=flange width
+        // This is a rough approximation; accurate ω_max should be provided
+        return 0.0;
+    }
+
+    return -bimoment * omega_max / section->Iw;
+}
+
 } // namespace grillex

@@ -17,9 +17,11 @@ from grillex.core import (
     Model,
     DOFIndex,
     InternalActions,
+    WarpingInternalActions,
     ActionExtreme,
     ReleaseCombo4DOF,
     ReleaseCombo2DOF,
+    ReleaseComboWarping,
     BeamFormulation,
     BeamConfig,
 )
@@ -564,6 +566,150 @@ class TestCantileverZDirection:
         # Moment about Y should be P*L
         expected_My = P * L
         np.testing.assert_almost_equal(abs(actions_base.My), expected_My, decimal=2)
+
+
+# ============================================================================
+# Task 7.2b: Warping Internal Actions Tests
+# ============================================================================
+
+
+class TestWarpingInternalActionsStruct:
+    """Test WarpingInternalActions struct fields"""
+
+    def test_warping_struct_accessible(self):
+        """WarpingInternalActions struct should be accessible"""
+        # Create a 12-DOF beam (no warping) and verify struct exists
+        L = 6.0
+        T = 10.0  # kN·m torque
+
+        model = Model()
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+        sec = model.create_section("Test", 0.01, 8e-5, 8e-5, 1e-6)
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+        model.boundary_conditions.fix_node(n1.id)
+
+        lc = model.get_default_load_case()
+        lc.add_nodal_load(n2.id, DOFIndex.RX, T)
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        # Get warping internal actions (should have zero warping values for 12-DOF)
+        warping_actions = beam.get_warping_internal_actions(L/2, u, dof_handler)
+
+        # Check all fields exist
+        assert hasattr(warping_actions, 'x')
+        assert hasattr(warping_actions, 'N')
+        assert hasattr(warping_actions, 'Vy')
+        assert hasattr(warping_actions, 'Vz')
+        assert hasattr(warping_actions, 'Mx')
+        assert hasattr(warping_actions, 'My')
+        assert hasattr(warping_actions, 'Mz')
+        assert hasattr(warping_actions, 'B')
+        assert hasattr(warping_actions, 'Mx_sv')
+        assert hasattr(warping_actions, 'Mx_w')
+        assert hasattr(warping_actions, 'sigma_w_max')
+
+        # For 12-DOF beam, warping values should be zero
+        np.testing.assert_almost_equal(warping_actions.B, 0.0, decimal=5)
+        np.testing.assert_almost_equal(warping_actions.Mx_w, 0.0, decimal=5)
+
+    def test_12dof_st_venant_torsion(self):
+        """12-DOF beam: all torsion is St. Venant"""
+        L = 6.0
+        T = 10.0  # kN·m torque
+
+        model = Model()
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+        sec = model.create_section("Test", 0.01, 8e-5, 8e-5, 1e-6)
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+        model.boundary_conditions.fix_node(n1.id)
+
+        lc = model.get_default_load_case()
+        lc.add_nodal_load(n2.id, DOFIndex.RX, T)
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        warping_actions = beam.get_warping_internal_actions(L/2, u, dof_handler)
+
+        # For 12-DOF, Mx = Mx_sv (all St. Venant)
+        np.testing.assert_almost_equal(warping_actions.Mx, warping_actions.Mx_sv, decimal=3)
+
+
+class TestReleaseComboWarpingEnum:
+    """Test ReleaseComboWarping enum accessibility"""
+
+    def test_release_combo_warping_values(self):
+        """ReleaseComboWarping enum values accessible"""
+        assert ReleaseComboWarping.FIXED_FIXED_FIXED_FIXED.value == 0
+        assert ReleaseComboWarping.FIXED_FIXED_FREE_FREE.value == 3  # Cantilever
+        assert ReleaseComboWarping.FIXED_FREE_FIXED_FREE.value == 5  # Pure St. Venant
+        assert ReleaseComboWarping.FREE_FREE_FIXED_FIXED.value == 12  # Reverse cantilever
+        assert ReleaseComboWarping.FREE_FREE_FREE_FREE.value == 15  # All free
+
+
+class TestWarpingComputeStress:
+    """Test compute_warping_stress method"""
+
+    def test_compute_warping_stress_zero_iw(self):
+        """Warping stress is zero when Iw is zero"""
+        L = 6.0
+
+        model = Model()
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+        sec = model.create_section("Test", 0.01, 8e-5, 8e-5, 1e-6)
+        # Iw = 0 by default
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+
+        # Compute warping stress with arbitrary bimoment
+        stress = beam.compute_warping_stress(100.0)  # 100 kN·m²
+
+        # Should be zero because Iw = 0
+        np.testing.assert_almost_equal(stress, 0.0, decimal=5)
+
+
+class TestWarpingInternalActionsInheritance:
+    """Test WarpingInternalActions inherits from InternalActions"""
+
+    def test_base_fields_accessible(self):
+        """Base InternalActions fields should be accessible"""
+        # Create default WarpingInternalActions
+        wa = WarpingInternalActions()
+
+        # Base class fields
+        assert hasattr(wa, 'x')
+        assert hasattr(wa, 'N')
+        assert hasattr(wa, 'Vy')
+        assert hasattr(wa, 'Vz')
+        assert hasattr(wa, 'Mx')
+        assert hasattr(wa, 'My')
+        assert hasattr(wa, 'Mz')
+
+        # Default values should be zero
+        np.testing.assert_almost_equal(wa.x, 0.0, decimal=5)
+        np.testing.assert_almost_equal(wa.B, 0.0, decimal=5)
+
+    def test_position_constructor(self):
+        """Can construct WarpingInternalActions at position"""
+        wa = WarpingInternalActions(3.5)
+        np.testing.assert_almost_equal(wa.x, 3.5, decimal=5)
 
 
 if __name__ == "__main__":

@@ -364,4 +364,108 @@ private:
     double free_free_fixed_fixed(double x) const;
 };
 
+/**
+ * @brief Warping torsion results at a position x
+ *
+ * Contains bimoment, St. Venant torsion, and warping torsion components.
+ */
+struct WarpingTorsionResults {
+    double theta;     ///< Twist angle [rad]
+    double phi;       ///< Rate of twist dθ/dx [rad/m]
+    double B;         ///< Bimoment [kN·m²]
+    double Mx_sv;     ///< St. Venant torsion [kN·m]
+    double Mx_w;      ///< Warping torsion [kN·m]
+    double Mx_total;  ///< Total torsion Mx_sv + Mx_w [kN·m]
+
+    WarpingTorsionResults()
+        : theta(0), phi(0), B(0), Mx_sv(0), Mx_w(0), Mx_total(0) {}
+};
+
+/**
+ * @brief Compute warping torsion results for thin-walled open sections
+ *
+ * Governing differential equation:
+ *   EIω d⁴θ/dx⁴ - GJ d²θ/dx² = mₓ(x)
+ *
+ * For homogeneous case (end loads/rotations only):
+ *   d⁴θ/dx⁴ - k² d²θ/dx² = 0
+ *   where k = √(GJ / EIω) is the warping parameter
+ *
+ * General solution:
+ *   θ(x) = C₁ + C₂x + C₃cosh(kx) + C₄sinh(kx)
+ *
+ * Derived quantities:
+ *   φ = dθ/dx = C₂ + k·C₃·sinh(kx) + k·C₄·cosh(kx)
+ *   B = -EIω·d²θ/dx² = -EIω·k²·(C₃·cosh(kx) + C₄·sinh(kx))
+ *   Mx_sv = GJ·φ
+ *   Mx_w = -EIω·d³θ/dx³ = -EIω·k³·(C₃·sinh(kx) + C₄·cosh(kx))
+ */
+class WarpingTorsionComputer {
+public:
+    /**
+     * @brief Construct warping torsion computer
+     * @param L Element length [m]
+     * @param GJ St. Venant torsional stiffness [kN·m²]
+     * @param EIw Warping stiffness E·Iω [kN·m⁴]
+     * @param theta1 Twist angle at node i [rad]
+     * @param phi1 Rate of twist at node i [rad/m]
+     * @param theta2 Twist angle at node j [rad]
+     * @param phi2 Rate of twist at node j [rad/m]
+     */
+    WarpingTorsionComputer(double L, double GJ, double EIw,
+                           double theta1, double phi1,
+                           double theta2, double phi2);
+
+    /**
+     * @brief Compute all warping torsion results at position x
+     * @param x Position along beam [0, L]
+     * @param release Release combination (16 combinations for 4 DOFs)
+     * @return WarpingTorsionResults Bimoment, torsion components
+     */
+    WarpingTorsionResults compute(double x, ReleaseComboWarping release) const;
+
+    /**
+     * @brief Compute bimoment at position x
+     * @param x Position along beam [0, L]
+     * @param release Release combination
+     * @return Bimoment B [kN·m²]
+     */
+    double compute_bimoment(double x, ReleaseComboWarping release) const;
+
+    /**
+     * @brief Get warping parameter k = √(GJ/EIω)
+     * @return Warping parameter [1/m]
+     */
+    double get_k() const { return k_; }
+
+private:
+    double L_, GJ_, EIw_;
+    double theta1_, phi1_, theta2_, phi2_;
+    double k_;  // Warping parameter √(GJ/EIω)
+
+    // Integration constants for each case
+    struct Constants {
+        double C1, C2, C3, C4;
+    };
+
+    // Solve for integration constants based on boundary conditions
+    Constants solve_constants(ReleaseComboWarping release) const;
+
+    // Evaluate solution at position x given constants
+    WarpingTorsionResults evaluate(double x, const Constants& c) const;
+
+    // Individual case implementations for key boundary conditions
+    // Case 0: θ₁, φ₁, θ₂, φ₂ all fixed
+    Constants fixed_fixed_fixed_fixed() const;
+
+    // Case 3: θ₁, φ₁ fixed; θ₂, φ₂ free (cantilever, warping free at tip)
+    Constants fixed_fixed_free_free() const;
+
+    // Case 5: θ₁, θ₂ fixed; φ₁, φ₂ free (pure St. Venant, no warping restraint)
+    Constants fixed_free_fixed_free() const;
+
+    // Case 12: θ₂, φ₂ fixed; θ₁, φ₁ free (reverse cantilever)
+    Constants free_free_fixed_fixed() const;
+};
+
 } // namespace grillex

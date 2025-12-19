@@ -639,6 +639,49 @@ public:
         const DOFHandler& dof_handler,
         const LoadCase* load_case = nullptr) const;
 
+    // Task 7.2b: Warping Internal Actions
+    // ------------------------------------
+
+    /**
+     * @brief Get warping-specific internal actions at position x
+     *
+     * For 14-DOF elements with warping DOF, computes:
+     * - Bimoment B [kN·m²]
+     * - St. Venant torsion Mx_sv [kN·m]
+     * - Warping torsion Mx_w [kN·m]
+     * - Maximum warping normal stress σ_w [kN/m²]
+     *
+     * For 12-DOF elements, returns standard InternalActions with zero warping values.
+     *
+     * @param x Position [0, L] in meters
+     * @param global_displacements Full displacement vector from analysis
+     * @param dof_handler DOF numbering manager
+     * @return WarpingInternalActions Actions including bimoment and stress
+     *
+     * @note Requires section to have warping constant Iw defined.
+     */
+    WarpingInternalActions get_warping_internal_actions(
+        double x,
+        const Eigen::VectorXd& global_displacements,
+        const DOFHandler& dof_handler) const;
+
+    /**
+     * @brief Compute maximum warping normal stress at position x
+     *
+     * σ_w = -B × ω_max / Iw
+     *
+     * where:
+     * - B = bimoment [kN·m²]
+     * - ω_max = maximum sectorial coordinate [m²]
+     * - Iw = warping constant [m⁶]
+     *
+     * @param bimoment Bimoment at position [kN·m²]
+     * @return Maximum warping stress [kN/m²]
+     *
+     * @note Positive stress indicates tension in the flange.
+     */
+    double compute_warping_stress(double bimoment) const;
+
 private:
     // Private helper methods for internal action computation
 
@@ -661,6 +704,13 @@ private:
      * @brief Detect release combination for torsion
      */
     ReleaseCombo2DOF detect_release_combination_torsion() const;
+
+    /**
+     * @brief Detect release combination for warping (4-DOF)
+     *
+     * Considers torsion releases (θ) and warping releases (φ) at both ends.
+     */
+    ReleaseComboWarping detect_release_combination_warping() const;
 
 private:
     /**
