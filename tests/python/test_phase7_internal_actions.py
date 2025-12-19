@@ -122,6 +122,135 @@ class TestCantileverTipLoad:
             np.testing.assert_almost_equal(abs(v), P, decimal=1)
 
 
+class TestCantileverUDL:
+    """Test cantilever beam with UDL - M_max = wL²/2 at support"""
+
+    def test_moment_at_support(self):
+        """Cantilever with UDL: M_max = wL²/2 at fixed support"""
+        L = 6.0
+        w = 10.0  # kN/m uniform load
+
+        model = Model()
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+        sec = model.create_section("Test", 0.01, 8e-5, 8e-5, 1e-6)
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+        model.boundary_conditions.fix_node(n1.id)
+
+        lc = model.get_default_load_case()
+        # Uniform distributed load in -Y direction
+        lc.add_line_load(beam.id, np.array([0, -w, 0]), np.array([0, -w, 0]))
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        # Get internal actions at support (x=0)
+        actions_support = beam.get_internal_actions(0.0, u, dof_handler, lc)
+
+        # Expected maximum moment at support = wL²/2
+        expected_Mz = w * L**2 / 2  # = 10 * 36 / 2 = 180 kN·m
+
+        np.testing.assert_almost_equal(abs(actions_support.Mz), expected_Mz, decimal=1)
+
+    def test_moment_at_midspan(self):
+        """Cantilever with UDL: M(L/2) = wL²/8"""
+        L = 6.0
+        w = 10.0  # kN/m
+
+        model = Model()
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+        sec = model.create_section("Test", 0.01, 8e-5, 8e-5, 1e-6)
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+        model.boundary_conditions.fix_node(n1.id)
+
+        lc = model.get_default_load_case()
+        lc.add_line_load(beam.id, np.array([0, -w, 0]), np.array([0, -w, 0]))
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        # Get internal actions at midspan (x=L/2)
+        actions_mid = beam.get_internal_actions(L/2, u, dof_handler, lc)
+
+        # For cantilever with UDL, moment at x from free end:
+        # M(x) = w(L-x)²/2
+        # At midspan (x=L/2): M = w(L/2)²/2 = wL²/8
+        expected_Mz = w * L**2 / 8  # = 10 * 36 / 8 = 45 kN·m
+
+        np.testing.assert_almost_equal(abs(actions_mid.Mz), expected_Mz, decimal=1)
+
+    def test_moment_at_tip(self):
+        """Cantilever with UDL: M(L) = 0 at free end"""
+        L = 6.0
+        w = 10.0
+
+        model = Model()
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+        sec = model.create_section("Test", 0.01, 8e-5, 8e-5, 1e-6)
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+        model.boundary_conditions.fix_node(n1.id)
+
+        lc = model.get_default_load_case()
+        lc.add_line_load(beam.id, np.array([0, -w, 0]), np.array([0, -w, 0]))
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        # Get internal actions at tip (x=L)
+        actions_tip = beam.get_internal_actions(L, u, dof_handler, lc)
+
+        # Moment at free end should be zero
+        np.testing.assert_almost_equal(actions_tip.Mz, 0.0, decimal=1)
+
+    def test_shear_at_support(self):
+        """Cantilever with UDL: V_max = wL at fixed support"""
+        L = 6.0
+        w = 10.0
+
+        model = Model()
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+        sec = model.create_section("Test", 0.01, 8e-5, 8e-5, 1e-6)
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+        model.boundary_conditions.fix_node(n1.id)
+
+        lc = model.get_default_load_case()
+        lc.add_line_load(beam.id, np.array([0, -w, 0]), np.array([0, -w, 0]))
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        # Get internal actions at support
+        actions_support = beam.get_internal_actions(0.0, u, dof_handler, lc)
+
+        # Expected shear at support = wL
+        expected_Vy = w * L  # = 10 * 6 = 60 kN
+
+        np.testing.assert_almost_equal(abs(actions_support.Vy), expected_Vy, decimal=1)
+
+
 class TestFixedFixedBeamUDL:
     """Test fixed-fixed beam with uniform distributed load - M_ends = qL²/12"""
 

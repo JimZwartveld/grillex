@@ -469,7 +469,7 @@ private:
 ### Acceptance Criteria
 - [x] Simply supported beam with UDL: M_max = wL²/8 at midspan (within 0.1%)
 - [x] Cantilever with tip load: M_max = PL at support (exact)
-- [ ] Cantilever with UDL: M_max = wL²/2 at support, M(L/2) = wL²/8 (within 0.1%)
+- [x] Cantilever with UDL: M_max = wL²/2 at support, M(L/2) = wL²/8 (within 0.1%)
 - [x] Fixed-fixed beam with UDL: M_ends = wL²/12, M_mid = wL²/24 (within 0.1%)
 - [x] All 16 release combinations produce physically correct results
 - [x] Shear and moment satisfy dM/dx = V at all points
