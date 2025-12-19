@@ -116,3 +116,44 @@ Test that unconstrained models are properly detected.
 
 ---
 
+### Task 13.6: Create 14-DOF Warping Element Validation
+**Requirements:** R-VAL-002, R-ELEM-007
+**Dependencies:** Task 2.7, Task 7.2b complete
+**Difficulty:** High
+
+**Description:**
+Validate the 14-DOF warping beam element against analytical solutions for warping torsion problems. These tests were deferred from Task 7.2b as they require full 14-DOF integration testing.
+
+**Steps:**
+1. Create cantilever I-beam under torsion benchmark:
+   ```python
+   def test_cantilever_i_beam_torsion():
+       """
+       Cantilever I-beam with torque at tip, warping restrained at fixed end.
+       Reference: Kollbrunner & Hajdin, analytical solution for bimoment distribution
+       B(x) = T/k * (cosh(k(L-x))/cosh(kL) - 1) where k = sqrt(GJ/EIw)
+       """
+       # Create 14-DOF I-beam with warping DOF
+       # Apply torque at free end
+       # Verify bimoment distribution matches analytical
+   ```
+
+2. Create two-span continuous beam under torsion benchmark:
+   ```python
+   def test_two_span_continuous_beam_torsion():
+       """
+       Two-span continuous beam with torque, verify bimoment continuity at support.
+       """
+       # Create two collinear 14-DOF beams sharing warping DOF at support
+       # Apply torque at one end
+       # Verify bimoment is continuous at internal support
+   ```
+
+3. Compare results with Kollbrunner & Hajdin reference solutions
+
+**Acceptance Criteria:**
+- [ ] Cantilever I-beam bimoment matches analytical solution for uniform torsion
+- [ ] Two-span continuous beam shows bimoment continuity at internal support
+
+---
+

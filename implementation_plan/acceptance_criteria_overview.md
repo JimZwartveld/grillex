@@ -21,9 +21,9 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 10 | Design Codes | 6 | 0 | 6 | 0% |
 | 11 | Error Handling | 9 | 0 | 9 | 0% |
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
-| 13 | Validation Benchmarks | 10 | 0 | 10 | 0% |
+| 13 | Validation Benchmarks | 12 | 0 | 12 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **179** | **111** | **68** | **62%** |
+| **Total** | | **181** | **111** | **70** | **61%** |
 
 ---
 
@@ -415,6 +415,10 @@ This document provides a comprehensive overview of all acceptance criteria acros
 ### Task 13.5: Singularity Detection Validation
 - [ ] UNCONSTRAINED_SYSTEM error returned
 - [ ] Unconstrained DOFs identified
+
+### Task 13.6: 14-DOF Warping Element Validation
+- [ ] Cantilever I-beam bimoment matches analytical solution for uniform torsion
+- [ ] Two-span continuous beam shows bimoment continuity at internal support
 
 ---
 
