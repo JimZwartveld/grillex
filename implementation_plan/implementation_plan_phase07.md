@@ -955,6 +955,100 @@ enum class ReleaseComboWarping {
 } // namespace grillex
 ```
 
+### Governing Differential Equation
+
+The warping torsion is governed by the 4th order differential equation:
+
+$$EI_\omega \frac{d^4\theta}{dx^4} - GJ \frac{d^2\theta}{dx^2} = m_x(x)$$
+
+For the homogeneous case (concentrated end moments/rotations only):
+
+$$\frac{d^4\theta}{dx^4} - k^2 \frac{d^2\theta}{dx^2} = 0$$
+
+where the **warping parameter** is:
+
+$$k = \sqrt{\frac{GJ}{EI_\omega}}$$
+
+The **general solution** is:
+
+$$\theta(x) = A + Bx + C\cosh(kx) + D\sinh(kx)$$
+
+### Boundary Conditions
+
+| Condition | Mathematical Form | Physical Meaning |
+|-----------|-------------------|------------------|
+| Fixed rotation | θ = θ_prescribed | Twist angle prescribed |
+| Fixed warping | dθ/dx = 0 | Cross-section cannot warp (flanges restrained) |
+| Free warping | B = -EIω d²θ/dx² = 0 | Cross-section free to warp |
+
+### Analytical Solutions by Release Combination
+
+**Notation:**
+- θ₁, θ₂ = prescribed twist angles at x=0 and x=L
+- Δ = kL·sinh(kL) - 2·cosh(kL) + 2 (Fixed-Fixed determinant)
+- Δ' = kL·cosh(kL) - sinh(kL) (Fixed-Free/Free-Fixed determinant)
+
+#### Fixed-Fixed (Both Ends Warping Restrained)
+
+**Twist Angle:**
+$$\theta(x) = \theta_1 + \frac{(\theta_2 - \theta_1)}{\Delta}\left[\sinh(kL) - kL + kx(\cosh(kL)-1) - (\cosh(kL)-1)\sinh(kx) + (\sinh(kL)-kL)\cosh(kx)\right]$$
+
+**Bimoment:**
+$$B(x) = -\frac{EI_\omega k^2 (\theta_1 - \theta_2)}{\Delta}\left[\cosh(kx) - \cosh(k(L-x))\right]$$
+
+**Rate of Twist:**
+$$\frac{d\theta}{dx} = \frac{(\theta_2 - \theta_1)}{\Delta}\left[k(\cosh(kL)-1) - k(\cosh(kL)-1)\cosh(kx) + k(\sinh(kL)-kL)\sinh(kx)\right]$$
+
+#### Fixed-Free (Start Restrained, End Free)
+
+**Twist Angle:**
+$$\theta(x) = \theta_1 + \frac{(\theta_2-\theta_1)}{\Delta'}\left[\cosh(kL)(kx - \sinh(kx)) + \cosh(kx) - 1\right]$$
+
+**Bimoment:**
+$$B(x) = \frac{EI_\omega k^2 (\theta_1 - \theta_2) \sinh(k(L-x))}{\Delta'}$$
+
+**Rate of Twist:**
+$$\frac{d\theta}{dx} = \frac{(\theta_2-\theta_1)}{\Delta'}\left[k\cosh(kL)(1 - \cosh(kx)) + k\sinh(kx)\right]$$
+
+#### Free-Fixed (Start Free, End Restrained)
+
+**Twist Angle:**
+$$\theta(x) = \theta_1 + \frac{(\theta_2-\theta_1)}{\Delta'}\left[kx\cosh(kL) - \sinh(kx) - kL + \sinh(kL)\right]$$
+
+**Bimoment:**
+$$B(x) = -\frac{EI_\omega k^2 (\theta_1 - \theta_2) \sinh(kx)}{\Delta'}$$
+
+**Rate of Twist:**
+$$\frac{d\theta}{dx} = \frac{(\theta_2-\theta_1)}{\Delta'}\left[k\cosh(kL) - k\cosh(kx)\right]$$
+
+#### Free-Free (Pure St. Venant Torsion)
+
+**Twist Angle (linear):**
+$$\theta(x) = \theta_1 + (\theta_2 - \theta_1)\frac{x}{L}$$
+
+**Bimoment:**
+$$B(x) = 0$$
+
+**Rate of Twist (constant):**
+$$\frac{d\theta}{dx} = \frac{\theta_2 - \theta_1}{L}$$
+
+### Torsion Components
+
+**St. Venant Torsion:**
+$$M_{x,sv} = GJ \frac{d\theta}{dx}$$
+
+**Warping Torsion:**
+$$M_{x,\omega} = -EI_\omega \frac{d^3\theta}{dx^3}$$
+
+**Total Torsion:**
+$$M_x = M_{x,sv} + M_{x,\omega}$$
+
+### Limiting Cases
+
+1. **kL → 0** (short beams, high warping stiffness): Pure warping behavior dominates
+2. **kL → ∞** (long beams, low warping stiffness): Pure St. Venant behavior
+3. **Typical range**: kL ∈ [1, 10] for structural I-sections
+
 ### Implementation
 
 ```cpp
@@ -1001,21 +1095,22 @@ File: `cpp/src/internal_actions_warping.cpp`
 namespace grillex {
 
 /**
- * @brief Compute bimoment distribution B(x)
+ * @brief Compute bimoment distribution B(x) using analytical warping solutions
  *
- * Differential equation: d²B/dx² = -Mx_w = EIw * d⁴φ'/dx⁴
+ * Governing differential equation: EIω d⁴θ/dx⁴ - GJ d²θ/dx² = 0
+ * General solution: θ(x) = A + Bx + C·cosh(kx) + D·sinh(kx)
+ * where k = sqrt(GJ/EIω) is the warping parameter
  *
- * For 14-DOF element with warping parameters φ'_i, φ'_j at ends:
- *   B(x) = analytical expression based on end conditions
+ * Bimoment is computed as: B = -EIω d²θ/dx²
  */
 class BimomentComputer {
 public:
     BimomentComputer(double L, double EIw, double GJ,
-                    double theta_i, double phi_prime_i,
-                    double theta_j, double phi_prime_j)
+                    double theta_i, double theta_j)
         : L_(L), EIw_(EIw), GJ_(GJ),
-          theta_i_(theta_i), phi_prime_i_(phi_prime_i),
-          theta_j_(theta_j), phi_prime_j_(phi_prime_j) {}
+          theta_i_(theta_i), theta_j_(theta_j),
+          k_(std::sqrt(GJ / EIw)),
+          kL_(k_ * L) {}
 
     double compute(double x, ReleaseComboWarping release) const {
         switch (release) {
@@ -1026,52 +1121,84 @@ public:
             case ReleaseComboWarping::FREE_FIXED:
                 return free_fixed(x);
             case ReleaseComboWarping::FREE_FREE:
-                return 0.0;  // Pure St. Venant, no warping restraint
+                return 0.0;  // Pure St. Venant, no bimoment
+        }
+    }
+
+    double compute_rate_of_twist(double x, ReleaseComboWarping release) const {
+        switch (release) {
+            case ReleaseComboWarping::FIXED_FIXED:
+                return rate_of_twist_fixed_fixed(x);
+            case ReleaseComboWarping::FIXED_FREE:
+                return rate_of_twist_fixed_free(x);
+            case ReleaseComboWarping::FREE_FIXED:
+                return rate_of_twist_free_fixed(x);
+            case ReleaseComboWarping::FREE_FREE:
+                return (theta_j_ - theta_i_) / L_;  // Linear twist
         }
     }
 
 private:
     double L_, EIw_, GJ_;
-    double theta_i_, phi_prime_i_, theta_j_, phi_prime_j_;
+    double theta_i_, theta_j_;
+    double k_, kL_;  // Warping parameter and kL product
 
+    // Determinants for boundary condition solutions
+    double Delta() const {
+        // Δ = kL·sinh(kL) - 2·cosh(kL) + 2
+        return kL_ * std::sinh(kL_) - 2.0 * std::cosh(kL_) + 2.0;
+    }
+
+    double DeltaPrime() const {
+        // Δ' = kL·cosh(kL) - sinh(kL)
+        return kL_ * std::cosh(kL_) - std::sinh(kL_);
+    }
+
+    // Fixed-Fixed: B(x) = -EIω k² (θ₁-θ₂) [cosh(kx) - cosh(k(L-x))] / Δ
     double fixed_fixed(double x) const {
-        // Both ends restrained against warping
-        // Bimoment varies cubically along length
-        // From element stiffness matrix: B = EIw * d²φ'/dx²
-
-        // Using shape functions for φ':
-        // φ'(x) = N1*φ'_i + N2*dφ'/dx|_i + N3*φ'_j + N4*dφ'/dx|_j
-        // where N1, N2, N3, N4 are cubic Hermite functions
-
-        double xi = x / L_;  // Normalized position [0, 1]
-
-        // Second derivatives of Hermite functions:
-        double N1_dd = (6.0 - 12.0 * xi) / (L_ * L_);
-        double N2_dd = (4.0 - 6.0 * xi) / L_;
-        double N3_dd = (-6.0 + 12.0 * xi) / (L_ * L_);
-        double N4_dd = (2.0 - 6.0 * xi) / L_;
-
-        // From element equations, dφ'/dx|_i and dφ'/dx|_j are related to θ and φ'
-        // (Need to extract from 14x14 stiffness matrix)
-
-        // Simplified (requires full derivation):
-        double phi_prime_dd = N1_dd * phi_prime_i_ + N3_dd * phi_prime_j_;
-
-        return EIw_ * phi_prime_dd;
+        double dtheta = theta_i_ - theta_j_;
+        double factor = -EIw_ * k_ * k_ * dtheta / Delta();
+        return factor * (std::cosh(k_ * x) - std::cosh(k_ * (L_ - x)));
     }
 
+    // Fixed-Free: B(x) = EIω k² (θ₁-θ₂) sinh(k(L-x)) / Δ'
     double fixed_free(double x) const {
-        // Start restrained, end free to warp
-        // Bimoment decreases from fixed end, zero at free end
-
-        double xi = x / L_;
-        return EIw_ * phi_prime_i_ * (1.0 - xi) * (1.0 - xi) / (L_ * L_);
+        double dtheta = theta_i_ - theta_j_;
+        double factor = EIw_ * k_ * k_ * dtheta / DeltaPrime();
+        return factor * std::sinh(k_ * (L_ - x));
     }
 
+    // Free-Fixed: B(x) = -EIω k² (θ₁-θ₂) sinh(kx) / Δ'
     double free_fixed(double x) const {
-        // Start free, end restrained
-        double xi = x / L_;
-        return EIw_ * phi_prime_j_ * xi * xi / (L_ * L_);
+        double dtheta = theta_i_ - theta_j_;
+        double factor = -EIw_ * k_ * k_ * dtheta / DeltaPrime();
+        return factor * std::sinh(k_ * x);
+    }
+
+    // Rate of twist formulas (dθ/dx)
+    double rate_of_twist_fixed_fixed(double x) const {
+        double dtheta = theta_j_ - theta_i_;
+        double coshkL = std::cosh(kL_);
+        double sinhkL = std::sinh(kL_);
+        double factor = dtheta / Delta();
+        return factor * (k_ * (coshkL - 1.0)
+                       - k_ * (coshkL - 1.0) * std::cosh(k_ * x)
+                       + k_ * (sinhkL - kL_) * std::sinh(k_ * x));
+    }
+
+    double rate_of_twist_fixed_free(double x) const {
+        double dtheta = theta_j_ - theta_i_;
+        double coshkL = std::cosh(kL_);
+        double factor = dtheta / DeltaPrime();
+        return factor * (k_ * coshkL * (1.0 - std::cosh(k_ * x))
+                       + k_ * std::sinh(k_ * x));
+    }
+
+    double rate_of_twist_free_fixed(double x) const {
+        double dtheta = theta_j_ - theta_i_;
+        double coshkL = std::cosh(kL_);
+        double factor = dtheta / DeltaPrime();
+        return factor * k_ * (coshkL - std::cosh(k_ * x));
     }
 };
 
@@ -1879,39 +2006,228 @@ class TestPerformance:
 
 ## Formula Reference Tables
 
+All formulas below are from pystructeng `lines.py`. Variables:
+- `L`: Element length
+- `x`: Position along element [0, L]
+- `w1, w2`: Deflection at ends (local coordinates)
+- `phi1, phi2` (φ1, φ2): Rotation at ends (local coordinates)
+- `q1, q2`: Distributed load at start/end (trapezoidal)
+- `EI`: Bending stiffness
+- `EA`: Axial stiffness
+- `GJ` (GI): Torsional stiffness
+- `kAG`: Shear stiffness (Timoshenko only)
+
 ### Axial Force Formulas (2-DOF)
 
-| Release Combo | Formula N(x) |
-|---------------|--------------|
-| Fixed-Fixed | `(6*EA*(-u1 + u2) + L*(2*L*q1 + L*q2 - 6*q1*x) + 3*x²*(q1 - q2)) / (6*L)` |
-| Fixed-Free | `(L*(L*(q1 + q2) - 2*q1*x) + x²*(q1 - q2)) / (2*L)` |
-| Free-Fixed | `x*(-2*L*q1 + x*(q1 - q2)) / (2*L)` |
-| Free-Free | `0` (rigid body) |
+**NormalForce class (lines.py:4052-4088)**
 
-### Bending Moment Formulas - Euler-Bernoulli (4-DOF)
+| Release | Formula N(x) |
+|---------|--------------|
+| fixed_fixed | `(6*EA*(-u1 + u2) + L*(2*L*q1 + L*q2 - 6*q1*x) + 3*x**2*(q1 - q2)) / (6*L)` |
+| fixed_free | `(L*(L*(q1 + q2) - 2*q1*x) + x**2*(q1 - q2)) / (2*L)` |
+| free_fixed | `x*(-2*L*q1 + x*(q1 - q2)) / (2*L)` |
+| free_free | `0` (rigid body motion) |
 
-*Complete formulas for all 16 combinations referenced from pystructeng `lines.py:5749-6400`*
+### Torsion Formulas (2-DOF)
 
-**Example: Fixed-Fixed-Fixed-Fixed**
+**Torsion class (lines.py:5172-5191)**
+
+| Release | Formula Mx(x) |
+|---------|---------------|
+| fixed_fixed | `-GI*(theta1 - theta2) / L` |
+| fixed_free | `0` |
+| free_fixed | `0` |
+
+---
+
+### Shear Force Vy - Euler-Bernoulli (8 of 16 combinations)
+
+**_ShearYEuler class (lines.py:4105-4358)**
+
+Boundary conditions format: `w1_phi1_w2_phi2` where each is `fixed` or `free`.
+
+```python
+# fixed_fixed_fixed_fixed
+(120*EI*L*(phi1 + phi2) + 240*EI*(w1 - w2) + L**3*(-7*L*q1 - 3*L*q2 + 20*q1*x)
+ - 10*L**2*x**2*(q1 - q2)) / (20*L**3)
+
+# fixed_fixed_free_fixed (cantilever-like, end 2 displacement free)
+-(L*(L*(q1 + q2) - 2*q1*x) + x**2*(q1 - q2)) / (2*L)
+
+# fixed_fixed_fixed_free (end 2 rotation free / hinge at end 2)
+(120*EI*L*phi1 + 120*EI*(w1 - w2) - L**3*(16*L*q1 + 9*L*q2 - 40*q1*x)
+ - 20*L**2*x**2*(q1 - q2)) / (40*L**3)
+
+# free_fixed_fixed_fixed (end 1 displacement free)
+x*(2*L*q1 - x*(q1 - q2)) / (2*L)
+
+# fixed_free_fixed_fixed (end 1 rotation free / hinge at end 1)
+(120*EI*L*phi2 + 120*EI*(w1 - w2) - L**3*(11*L*q1 + 4*L*q2 - 40*q1*x)
+ - 20*L**2*x**2*(q1 - q2)) / (40*L**3)
+
+# fixed_fixed_free_free (cantilever: fixed at 1, free at 2)
+-(L*(L*(q1 + q2) - 2*q1*x) + x**2*(q1 - q2)) / (2*L)
+
+# free_free_fixed_fixed (cantilever: free at 1, fixed at 2)
+x*(2*L*q1 - x*(q1 - q2)) / (2*L)
+
+# fixed_free_fixed_free (simply supported / pinned-pinned)
+(-L*(-L*(2*q1 + q2) + 6*q1*x) + 3*x**2*(q1 - q2)) / (6*L)
 ```
-Mz(x) = (-120*EI*L²*(2*φ1 + φ2) + 360*EI*L*(-w1 + w2)
-         + L³*(3*L²*q1 + 2*L²*q2 + 30*q1*x²)
-         + 10*L²*x³*(-q1 + q2)
-         + 3*x*(120*EI*L*(φ1 + φ2) + 240*EI*(w1 - w2) - L⁴*(7*q1 + 3*q2)))
-       / (60*L³)
+
+---
+
+### Moment Mz - Euler-Bernoulli (8 of 16 combinations)
+
+**_MomentZEuler class (lines.py:5763-6025)**
+
+```python
+# fixed_fixed_fixed_fixed
+(-120*EI*L**2*(2*phi1 + phi2) + 360*EI*L*(-w1 + w2)
+ + L**3*(3*L**2*q1 + 2*L**2*q2 + 30*q1*x**2) + 10*L**2*x**3*(-q1 + q2)
+ + 3*x*(120*EI*L*(phi1 + phi2) + 240*EI*(w1 - w2) - L**4*(7*q1 + 3*q2))) / (60*L**3)
+
+# fixed_fixed_free_fixed
+(-24*EI*phi1 + 24*EI*phi2 + 3*L**3*q1 + 5*L**3*q2
+ - 12*L*x*(L*(q1 + q2) - q1*x) - 4*x**3*(q1 - q2)) / (24*L)
+
+# fixed_fixed_fixed_free
+(60*L**3*q1*x**2 + 20*L**2*x**3*(-q1 + q2)
+ + L*(-360*EI*L*phi1 - 360*EI*w1 + 360*EI*w2 + 8*L**4*q1 + 7*L**4*q2)
+ - 3*x*(-120*EI*L*phi1 + 120*EI*(-w1 + w2) + L**4*(16*q1 + 9*q2))) / (120*L**3)
+
+# free_fixed_fixed_fixed
+(-24*EI*phi1 + 24*EI*phi2 - 3*L**3*q1 - L**3*q2 + 12*L*q1*x**2
+ - 4*x**3*(q1 - q2)) / (24*L)
+
+# fixed_free_fixed_fixed
+x*(360*EI*L*phi2 - 360*EI*(-w1 + w2) - 3*L**4*(11*q1 + 4*q2)
+ + 60*L**3*q1*x + 20*L**2*x**2*(-q1 + q2)) / (120*L**3)
+
+# fixed_fixed_free_free (cantilever: fixed at 1, free at 2)
+(L*(L**2*(q1 + 2*q2) - 3*L*x*(q1 + q2) + 3*q1*x**2) - x**3*(q1 - q2)) / (6*L)
+
+# free_free_fixed_fixed (cantilever: free at 1, fixed at 2)
+x**2*(3*L*q1 - x*(q1 - q2)) / (6*L)
+
+# fixed_free_fixed_free (simply supported / pinned-pinned)
+x*(-L*(L*(2*q1 + q2) - 3*q1*x) + x**2*(-q1 + q2)) / (6*L)
 ```
 
-*(Full table would include all 16 formulas - omitted for brevity)*
+---
 
-### Shear Force Formulas - Euler-Bernoulli
+### Shear Force Vy - Timoshenko (8 of 16 combinations)
 
-*Shear formulas are derivatives of moment formulas: V(x) = dM/dx*
+**_ShearYTimoshenko class (lines.py:4361-4613)**
 
-### Timoshenko Corrections
+```python
+# fixed_fixed_fixed_fixed
+(-80*EI*L**2*q1 - 40*EI*L**2*q2 + 120*EI*L*kAG*phi1 + 120*EI*L*kAG*phi2
+ + 240*EI*kAG*w1 - 240*EI*kAG*w2 - 7*L**4*kAG*q1 - 3*L**4*kAG*q2
+ + 20*L*q1*x*(12*EI + L**2*kAG) + 10*x**2*(12*EI + L**2*kAG)*(-q1 + q2)) / (20*L*(12*EI + L**2*kAG))
 
-For Timoshenko beams, denominators include shear term:
-- Replace `EI` with `EI / (1 + 12*EI/(kAG*L²))`
-- Or equivalently, use factor `(12*EI + L²*kAG)`
+# fixed_fixed_free_fixed
+(L*(-L*(q1 + q2) + 2*q1*x) + x**2*(-q1 + q2)) / (2*L)
+
+# fixed_fixed_fixed_free
+(-EI*L**2*q1 - EI*L**2*q2/2 + 3*EI*L*kAG*phi1 + 3*EI*kAG*w1 - 3*EI*kAG*w2
+ - 2*L**4*kAG*q1/5 - 9*L**4*kAG*q2/40 + L*q1*x*(3*EI + L**2*kAG)
+ + x**2*(3*EI + L**2*kAG)*(-q1 + q2)/2) / (L*(3*EI + L**2*kAG))
+
+# free_fixed_fixed_fixed
+x*(2*L*q1 + x*(-q1 + q2)) / (2*L)
+
+# fixed_free_fixed_fixed
+(-EI*L**2*q1 - EI*L**2*q2/2 + 3*EI*L*kAG*phi2 + 3*EI*kAG*w1 - 3*EI*kAG*w2
+ - 11*L**4*kAG*q1/40 - L**4*kAG*q2/10 + L*q1*x*(3*EI + L**2*kAG)
+ + x**2*(3*EI + L**2*kAG)*(-q1 + q2)/2) / (L*(3*EI + L**2*kAG))
+
+# fixed_fixed_free_free
+(L*(-L*(q1 + q2) + 2*q1*x) + x**2*(-q1 + q2)) / (2*L)
+
+# free_free_fixed_fixed
+x*(2*L*q1 + x*(-q1 + q2)) / (2*L)
+
+# fixed_free_fixed_free
+(L*(-L*(2*q1 + q2) + 6*q1*x) + 3*x**2*(-q1 + q2)) / (6*L)
+```
+
+---
+
+### Moment Mz - Timoshenko (8 of 16 combinations)
+
+**_MomentZTimoshenko class (lines.py:6028-6287)**
+
+```python
+# fixed_fixed_fixed_fixed
+(-12*EI**2*phi1 + 12*EI**2*phi2 + EI*L**3*q1/2 + EI*L**3*q2/2
+ - 4*EI*L**2*kAG*phi1 - 2*EI*L**2*kAG*phi2 - 6*EI*L*kAG*w1 + 6*EI*L*kAG*w2
+ + L**5*kAG*q1/20 + L**5*kAG*q2/30 + L*q1*x**2*(12*EI + L**2*kAG)/2
+ - x**3*(12*EI + L**2*kAG)*(q1 - q2)/6
+ - x*(80*EI*L**2*q1 + 40*EI*L**2*q2 - 120*EI*L*kAG*phi1 - 120*EI*L*kAG*phi2
+    - 240*EI*kAG*w1 + 240*EI*kAG*w2 + 7*L**4*kAG*q1 + 3*L**4*kAG*q2)/20) / (L*(12*EI + L**2*kAG))
+
+# fixed_fixed_free_fixed
+(-24*EI*phi1 + 24*EI*phi2 + 3*L**3*q1 + 5*L**3*q2
+ - 12*L*x*(L*(q1 + q2) - q1*x) - 4*x**3*(q1 - q2)) / (24*L)
+
+# fixed_fixed_fixed_free
+(L*kAG*(-360*EI*L*phi1 - 360*EI*w1 + 360*EI*w2 + 8*L**4*q1 + 7*L**4*q2)
+ + 60*L*q1*x**2*(3*EI + L**2*kAG) - 20*x**3*(3*EI + L**2*kAG)*(q1 - q2)
+ - 3*x*(40*EI*L**2*q1 + 20*EI*L**2*q2 - 120*EI*L*kAG*phi1 - 120*EI*kAG*w1
+    + 120*EI*kAG*w2 + 16*L**4*kAG*q1 + 9*L**4*kAG*q2)) / (120*L*(3*EI + L**2*kAG))
+
+# free_fixed_fixed_fixed
+(-24*EI*phi1 + 24*EI*phi2 - 3*L**3*q1 - L**3*q2 + 12*L*q1*x**2
+ - 4*x**3*(q1 - q2)) / (24*L)
+
+# fixed_free_fixed_fixed
+x*(-120*EI*L**2*q1 - 60*EI*L**2*q2 + 360*EI*L*kAG*phi2 + 360*EI*kAG*w1
+ - 360*EI*kAG*w2 - 33*L**4*kAG*q1 - 12*L**4*kAG*q2 + 60*L*q1*x*(3*EI + L**2*kAG)
+ - 20*x**2*(3*EI + L**2*kAG)*(q1 - q2)) / (120*L*(3*EI + L**2*kAG))
+
+# fixed_fixed_free_free (cantilever: fixed at 1, free at 2)
+(L*(L**2*(q1 + 2*q2) - 3*L*x*(q1 + q2) + 3*q1*x**2) - x**3*(q1 - q2)) / (6*L)
+
+# free_free_fixed_fixed (cantilever: free at 1, fixed at 2)
+x**2*(3*L*q1 - x*(q1 - q2)) / (6*L)
+
+# fixed_free_fixed_free (simply supported / pinned-pinned)
+x*(-L*(L*(2*q1 + q2) - 3*q1*x) + x**2*(-q1 + q2)) / (6*L)
+```
+
+---
+
+### Notes on Release Combinations
+
+The 4-DOF release naming convention is: `w1_phi1_w2_phi2` where:
+- `w1`: displacement at node 1
+- `phi1`: rotation at node 1
+- `w2`: displacement at node 2
+- `phi2`: rotation at node 2
+
+Common structural conditions:
+| Condition | Release Combination |
+|-----------|---------------------|
+| Fixed-Fixed | `fixed_fixed_fixed_fixed` |
+| Cantilever (fixed at 1) | `fixed_fixed_free_free` |
+| Cantilever (fixed at 2) | `free_free_fixed_fixed` |
+| Simply supported | `fixed_free_fixed_free` |
+| Propped cantilever | `fixed_fixed_fixed_free` or `fixed_free_fixed_fixed` |
+
+### Remaining 8 Release Combinations (not commonly used)
+
+The following combinations are less common but available in pystructeng:
+- `fixed_free_free_fixed`: w1, phi2 fixed; phi1, w2 free
+- `free_fixed_free_fixed`: phi1, phi2 fixed; w1, w2 free
+- `free_fixed_fixed_free`: phi1, w2 fixed; w1, phi2 free
+- `free_fixed_free_free`: phi1 fixed only
+- `fixed_free_free_free`: w1 fixed only
+- `free_free_free_fixed`: phi2 fixed only
+- `free_free_fixed_free`: w2 fixed only
+- `free_free_free_free`: all free (rigid body motion, returns 0)
+
+These can be implemented similarly by examining the pystructeng source code.
 
 ---
 
