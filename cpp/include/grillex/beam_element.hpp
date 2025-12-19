@@ -593,6 +593,75 @@ public:
         const Eigen::VectorXd& global_displacements,
         const DOFHandler& dof_handler) const;
 
+    // Task 7.2: Internal Action Functions Along Beam
+    // ------------------------------------------------
+
+    /**
+     * @brief Get internal actions at position x along element
+     *
+     * Computes internal forces and moments at any position along the beam
+     * using analytical closed-form solutions from differential equations.
+     * Accounts for element end releases and distributed loads.
+     *
+     * @param x Position [0, L] in meters
+     * @param global_displacements Full displacement vector from analysis
+     * @param dof_handler DOF numbering manager
+     * @param load_case Optional load case for distributed load effects
+     * @return Internal actions (N, Vy, Vz, Mx, My, Mz) at position x
+     *
+     * Sign convention:
+     * - Axial N: positive = tension
+     * - Shear V: positive in positive local y/z direction
+     * - Moment M: positive per right-hand rule
+     */
+    InternalActions get_internal_actions(
+        double x,
+        const Eigen::VectorXd& global_displacements,
+        const DOFHandler& dof_handler,
+        const LoadCase* load_case = nullptr) const;
+
+    /**
+     * @brief Find moment extrema along element
+     *
+     * Finds the locations and values of maximum and minimum bending moment
+     * along the element. For distributed loads, the extremum occurs where
+     * shear force is zero; this is found analytically for polynomial loads.
+     *
+     * @param axis 'y' or 'z' for bending plane
+     * @param global_displacements Full displacement vector from analysis
+     * @param dof_handler DOF numbering manager
+     * @param load_case Optional load case for distributed load effects
+     * @return Pair of (min, max) extrema with positions and values
+     */
+    std::pair<ActionExtreme, ActionExtreme> find_moment_extremes(
+        char axis,
+        const Eigen::VectorXd& global_displacements,
+        const DOFHandler& dof_handler,
+        const LoadCase* load_case = nullptr) const;
+
+private:
+    // Private helper methods for internal action computation
+
+    /**
+     * @brief Detect release combination for bending in y-direction
+     */
+    ReleaseCombo4DOF detect_release_combination_bending_y() const;
+
+    /**
+     * @brief Detect release combination for bending in z-direction
+     */
+    ReleaseCombo4DOF detect_release_combination_bending_z() const;
+
+    /**
+     * @brief Detect release combination for axial behavior
+     */
+    ReleaseCombo2DOF detect_release_combination_axial() const;
+
+    /**
+     * @brief Detect release combination for torsion
+     */
+    ReleaseCombo2DOF detect_release_combination_torsion() const;
+
 private:
     /**
      * @brief Compute element length from node positions
