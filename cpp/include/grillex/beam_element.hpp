@@ -682,6 +682,42 @@ public:
      */
     double compute_warping_stress(double bimoment) const;
 
+    // Task 7.2c: Displacement/Rotation Lines
+    // ----------------------------------------
+
+    /**
+     * @brief Get displacements and rotations at position x along element
+     *
+     * Uses Hermite shape functions to interpolate displacements and rotations
+     * at any position along the beam element. For bending, cubic Hermite
+     * polynomials ensure C1 continuity. For axial and torsion, linear
+     * interpolation is used.
+     *
+     * @param x Position [0, L] in meters
+     * @param global_displacements Full displacement vector from analysis
+     * @param dof_handler DOF numbering manager
+     * @return DisplacementLine Displacements and rotations at position x
+     *
+     * Hermite shape functions for bending (normalized ξ = x/L):
+     *   N1(ξ) = 1 - 3ξ² + 2ξ³       (displacement at i)
+     *   N2(ξ) = L(ξ - 2ξ² + ξ³)     (rotation at i)
+     *   N3(ξ) = 3ξ² - 2ξ³           (displacement at j)
+     *   N4(ξ) = L(-ξ² + ξ³)         (rotation at j)
+     *
+     * The transverse displacement is then:
+     *   w(x) = N1·w_i + N2·θ_i + N3·w_j + N4·θ_j
+     *
+     * For Euler-Bernoulli beams, the rotation equals the slope:
+     *   θ(x) = dw/dx = N1'·w_i + N2'·θ_i + N3'·w_j + N4'·θ_j
+     *
+     * For Timoshenko beams, the rotation is an independent DOF,
+     * interpolated separately.
+     */
+    DisplacementLine get_displacements_at(
+        double x,
+        const Eigen::VectorXd& global_displacements,
+        const DOFHandler& dof_handler) const;
+
 private:
     // Private helper methods for internal action computation
 

@@ -1531,4 +1531,137 @@ double BeamElement::compute_warping_stress(double bimoment) const {
     return -bimoment * omega_max / section->Iw;
 }
 
+// ============================================================================
+// Task 7.2c: Displacement/Rotation Lines
+// ============================================================================
+
+DisplacementLine BeamElement::get_displacements_at(
+    double x,
+    const Eigen::VectorXd& global_displacements,
+    const DOFHandler& dof_handler) const
+{
+    // Clamp x to valid range [0, L]
+    x = std::max(0.0, std::min(x, length));
+
+    // Get local displacements
+    Eigen::VectorXd u_local = get_element_displacements_local(global_displacements, dof_handler);
+
+    // Normalized position
+    double L = length;
+    double xi = x / L;  // ξ ∈ [0, 1]
+
+    // Powers of xi for shape functions
+    double xi2 = xi * xi;
+    double xi3 = xi2 * xi;
+
+    // Initialize result
+    DisplacementLine result(x);
+
+    // Extract local displacements at element ends
+    // DOF ordering (12-DOF): [u_i, v_i, w_i, θx_i, θy_i, θz_i, u_j, v_j, w_j, θx_j, θy_j, θz_j]
+    double u1 = u_local(0);      // Axial displacement at node i
+    double v1 = u_local(1);      // y-displacement at node i
+    double w1 = u_local(2);      // z-displacement at node i
+    double theta_x1 = u_local(3);  // Torsion rotation at node i
+    double theta_y1 = u_local(4);  // Rotation about y at node i
+    double theta_z1 = u_local(5);  // Rotation about z at node i
+
+    int offset = config.include_warping ? 7 : 6;
+    double u2 = u_local(offset);      // Axial displacement at node j
+    double v2 = u_local(offset + 1);  // y-displacement at node j
+    double w2 = u_local(offset + 2);  // z-displacement at node j
+    double theta_x2 = u_local(offset + 3);  // Torsion rotation at node j
+    double theta_y2 = u_local(offset + 4);  // Rotation about y at node j
+    double theta_z2 = u_local(offset + 5);  // Rotation about z at node j
+
+    // Warping DOFs for 14-DOF elements
+    double phi_prime_1 = 0.0;
+    double phi_prime_2 = 0.0;
+    if (config.include_warping) {
+        phi_prime_1 = u_local(6);   // Rate of twist at node i
+        phi_prime_2 = u_local(13);  // Rate of twist at node j
+    }
+
+    // ===========================================
+    // Axial displacement: Linear interpolation
+    // ===========================================
+    // u(x) = N1_lin * u1 + N2_lin * u2
+    // N1_lin = (1 - ξ), N2_lin = ξ
+    result.u = (1.0 - xi) * u1 + xi * u2;
+
+    // ===========================================
+    // Torsion: Linear interpolation
+    // ===========================================
+    // θx(x) = N1_lin * θx1 + N2_lin * θx2
+    result.theta_x = (1.0 - xi) * theta_x1 + xi * theta_x2;
+
+    // ===========================================
+    // Bending in x-y plane (lateral displacement v)
+    // ===========================================
+    // Hermite shape functions for displacement:
+    //   N1(ξ) = 1 - 3ξ² + 2ξ³       (displacement at i)
+    //   N2(ξ) = L(ξ - 2ξ² + ξ³)     (rotation at i)
+    //   N3(ξ) = 3ξ² - 2ξ³           (displacement at j)
+    //   N4(ξ) = L(-ξ² + ξ³)         (rotation at j)
+    //
+    // v(x) = N1*v1 + N2*θz1 + N3*v2 + N4*θz2
+
+    double N1 = 1.0 - 3.0*xi2 + 2.0*xi3;
+    double N2 = L * (xi - 2.0*xi2 + xi3);
+    double N3 = 3.0*xi2 - 2.0*xi3;
+    double N4 = L * (-xi2 + xi3);
+
+    result.v = N1 * v1 + N2 * theta_z1 + N3 * v2 + N4 * theta_z2;
+
+    // Rotation about z-axis (θz = dv/dx for Euler-Bernoulli)
+    // Shape function derivatives:
+    //   N1' = (-6ξ + 6ξ²) / L
+    //   N2' = (1 - 4ξ + 3ξ²)
+    //   N3' = (6ξ - 6ξ²) / L
+    //   N4' = (-2ξ + 3ξ²)
+    //
+    // θz(x) = dv/dx = N1'*v1 + N2'*θz1 + N3'*v2 + N4'*θz2
+
+    double dN1 = (-6.0*xi + 6.0*xi2) / L;
+    double dN2 = (1.0 - 4.0*xi + 3.0*xi2);
+    double dN3 = (6.0*xi - 6.0*xi2) / L;
+    double dN4 = (-2.0*xi + 3.0*xi2);
+
+    if (config.get_formulation() == BeamFormulation::Timoshenko) {
+        // For Timoshenko beams, rotation is an independent DOF
+        // Use linear interpolation for the rotation itself
+        result.theta_z = (1.0 - xi) * theta_z1 + xi * theta_z2;
+    } else {
+        // For Euler-Bernoulli, rotation equals slope: θz = dv/dx
+        result.theta_z = dN1 * v1 + dN2 * theta_z1 + dN3 * v2 + dN4 * theta_z2;
+    }
+
+    // ===========================================
+    // Bending in x-z plane (lateral displacement w)
+    // ===========================================
+    // w(x) = N1*w1 + N2*(-θy1) + N3*w2 + N4*(-θy2)
+    // Note: The sign convention for θy is such that dw/dx = -θy for positive bending
+
+    result.w = N1 * w1 - N2 * theta_y1 + N3 * w2 - N4 * theta_y2;
+
+    // Rotation about y-axis (θy = -dw/dx for Euler-Bernoulli, consistent with sign convention)
+    if (config.get_formulation() == BeamFormulation::Timoshenko) {
+        // For Timoshenko beams, rotation is an independent DOF
+        result.theta_y = (1.0 - xi) * theta_y1 + xi * theta_y2;
+    } else {
+        // For Euler-Bernoulli, rotation is related to slope: θy = -dw/dx
+        result.theta_y = -(dN1 * w1 - dN2 * theta_y1 + dN3 * w2 - dN4 * theta_y2);
+    }
+
+    // ===========================================
+    // Warping parameter (for 14-DOF elements)
+    // ===========================================
+    if (config.include_warping) {
+        // Linear interpolation for rate of twist
+        result.phi_prime = (1.0 - xi) * phi_prime_1 + xi * phi_prime_2;
+    }
+
+    return result;
+}
+
 } // namespace grillex

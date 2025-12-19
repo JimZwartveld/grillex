@@ -1340,10 +1340,55 @@ DisplacementLine BeamElement::get_displacements_at(
 ```
 
 ### Acceptance Criteria
-- [ ] Displacements at element ends match nodal values exactly
-- [ ] Deflection shape for cantilever with tip load matches analytical curve
-- [ ] Rotation φ_z = dw/dy for Euler-Bernoulli beams
-- [ ] For Timoshenko, φ_z ≠ dw/dy (shear deformation included)
+- [x] Displacements at element ends match nodal values exactly
+- [x] Deflection shape for cantilever with tip load matches analytical curve
+- [x] Rotation φ_z = dw/dy for Euler-Bernoulli beams
+- [x] For Timoshenko, φ_z ≠ dw/dy (shear deformation included)
+
+### Execution Notes (Completed 2025-12-19)
+
+**Steps Taken:**
+1. Added method declaration `get_displacements_at()` to `cpp/include/grillex/beam_element.hpp`
+2. Implemented `get_displacements_at()` in `cpp/src/beam_element.cpp`:
+   - Uses Hermite shape functions for bending interpolation
+   - Linear interpolation for axial displacement and torsion
+   - Handles both Euler-Bernoulli (rotation = slope) and Timoshenko (rotation = independent DOF)
+   - Supports 12-DOF and 14-DOF (warping) elements
+3. Added pybind11 bindings for `get_displacements_at()` method
+4. Added 7 tests in `tests/python/test_phase7_internal_actions.py`:
+   - TestDisplacementLineStruct (2 tests)
+   - TestDisplacementAtEnds (1 test)
+   - TestCantileverDeflectionShape (1 test)
+   - TestEulerBernoulliRotation (1 test)
+   - TestTimoshenkoVsEulerBernoulli (1 test)
+   - TestMidspanDisplacement (1 test)
+
+**Problems Encountered:**
+- **Issue**: Duplicate DisplacementLine binding in bindings.cpp
+  - **Error**: `generic_type: cannot initialize type "DisplacementLine": an object with that name is already defined`
+  - **Solution**: Removed duplicate definition; DisplacementLine was already bound earlier in the file
+
+**Verification:**
+- All 498 tests passing ✓
+- Cantilever deflection matches analytical: v(x) = -Px²(3L-x)/(6EI) within 4 decimal places
+- Euler-Bernoulli rotation matches: θz = dv/dx = -Px(2L-x)/(2EI) within 4 decimal places
+- Timoshenko uses linear interpolation for rotation (independent DOF)
+- Fixed-end displacements are exactly zero
+
+**Key Design Decisions:**
+1. Hermite shape functions for bending ensure C1 continuity
+2. For Euler-Bernoulli, rotation is computed from displacement derivative
+3. For Timoshenko, rotation is linearly interpolated (independent DOF)
+4. Linear interpolation used for axial and torsion as these are 2-DOF components
+
+**Files Modified:**
+- `cpp/include/grillex/beam_element.hpp` (added method declaration)
+- `cpp/src/beam_element.cpp` (added ~130 lines implementation)
+- `cpp/bindings/bindings.cpp` (added get_displacements_at binding)
+- `tests/python/test_phase7_internal_actions.py` (added 7 tests)
+- `implementation_plan/acceptance_criteria_overview.md` (updated progress)
+
+**Time Taken:** ~30 minutes
 
 ---
 

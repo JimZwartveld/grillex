@@ -471,6 +471,23 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "    bimoment: Bimoment at position [kN·m²]\n\n"
              "Returns:\n"
              "    Maximum warping stress [kN/m²]")
+        .def("get_displacements_at", &grillex::BeamElement::get_displacements_at,
+             py::arg("x"),
+             py::arg("global_displacements"),
+             py::arg("dof_handler"),
+             "Get displacements and rotations at position x along element.\n\n"
+             "Uses Hermite shape functions to interpolate displacements and rotations\n"
+             "at any position along the beam element. For bending, cubic Hermite\n"
+             "polynomials ensure C1 continuity. For axial and torsion, linear\n"
+             "interpolation is used.\n\n"
+             "For Euler-Bernoulli beams, rotation equals the slope: θ = dw/dx.\n"
+             "For Timoshenko beams, rotation is an independent DOF.\n\n"
+             "Args:\n"
+             "    x: Position along beam [0, L] in meters\n"
+             "    global_displacements: Displacement vector from analysis\n"
+             "    dof_handler: DOF numbering manager\n\n"
+             "Returns:\n"
+             "    DisplacementLine with u, v, w, θx, θy, θz at position x")
         .def("__repr__", [](const grillex::BeamElement &e) {
             return "<BeamElement id=" + std::to_string(e.id) +
                    " nodes=[" + std::to_string(e.node_i->id) + "," +

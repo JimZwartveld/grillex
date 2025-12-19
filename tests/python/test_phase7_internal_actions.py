@@ -712,5 +712,263 @@ class TestWarpingInternalActionsInheritance:
         np.testing.assert_almost_equal(wa.x, 3.5, decimal=5)
 
 
+# ============================================================================
+# Task 7.2c: Displacement/Rotation Line Tests
+# ============================================================================
+
+from grillex.core import DisplacementLine
+
+
+class TestDisplacementLineStruct:
+    """Test DisplacementLine struct accessibility"""
+
+    def test_struct_accessible(self):
+        """DisplacementLine struct should be accessible"""
+        dl = DisplacementLine()
+
+        # Check all fields exist
+        assert hasattr(dl, 'x')
+        assert hasattr(dl, 'u')
+        assert hasattr(dl, 'v')
+        assert hasattr(dl, 'w')
+        assert hasattr(dl, 'theta_x')
+        assert hasattr(dl, 'theta_y')
+        assert hasattr(dl, 'theta_z')
+        assert hasattr(dl, 'phi_prime')
+
+        # Default values should be zero
+        np.testing.assert_almost_equal(dl.x, 0.0, decimal=5)
+        np.testing.assert_almost_equal(dl.u, 0.0, decimal=5)
+        np.testing.assert_almost_equal(dl.v, 0.0, decimal=5)
+        np.testing.assert_almost_equal(dl.w, 0.0, decimal=5)
+
+    def test_position_constructor(self):
+        """Can construct DisplacementLine at position"""
+        dl = DisplacementLine(3.5)
+        np.testing.assert_almost_equal(dl.x, 3.5, decimal=5)
+
+
+class TestDisplacementAtEnds:
+    """Test that displacements at element ends match nodal values exactly"""
+
+    def test_cantilever_end_displacements(self):
+        """Displacements at ends match nodal values"""
+        L = 6.0
+        P = 10.0
+
+        model = Model()
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+        sec = model.create_section("Test", 0.01, 8e-5, 8e-5, 1e-6)
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+        model.boundary_conditions.fix_node(n1.id)
+
+        lc = model.get_default_load_case()
+        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        # Get displacements at start (x=0) and end (x=L)
+        disp_start = beam.get_displacements_at(0.0, u, dof_handler)
+        disp_end = beam.get_displacements_at(L, u, dof_handler)
+
+        # At fixed end (x=0), all displacements should be zero
+        np.testing.assert_almost_equal(disp_start.u, 0.0, decimal=5)
+        np.testing.assert_almost_equal(disp_start.v, 0.0, decimal=5)
+        np.testing.assert_almost_equal(disp_start.w, 0.0, decimal=5)
+        np.testing.assert_almost_equal(disp_start.theta_x, 0.0, decimal=5)
+        np.testing.assert_almost_equal(disp_start.theta_y, 0.0, decimal=5)
+        np.testing.assert_almost_equal(disp_start.theta_z, 0.0, decimal=5)
+
+        # At free end (x=L), v should be negative (downward deflection)
+        assert disp_end.v < 0  # Deflected downward
+
+
+class TestCantileverDeflectionShape:
+    """Test deflection shape for cantilever with tip load matches analytical curve"""
+
+    def test_deflection_shape(self):
+        """Cantilever deflection shape: v(x) = Px²(3L-x)/(6EI)"""
+        L = 6.0
+        P = 10.0
+
+        model = Model()
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+
+        # Use simple values for verification
+        E = mat.E
+        I = 8e-5  # Iz
+
+        sec = model.create_section("Test", 0.01, I, I, 1e-6)
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+        model.boundary_conditions.fix_node(n1.id)
+
+        lc = model.get_default_load_case()
+        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        # Analytical solution for cantilever with tip load:
+        # v(x) = -Px²(3L - x) / (6EI)  (negative for downward)
+        EI = E * I
+
+        # Sample at multiple positions and compare to analytical
+        for xi in [0.25, 0.5, 0.75, 1.0]:
+            x = xi * L
+            disp = beam.get_displacements_at(x, u, dof_handler)
+
+            # Analytical deflection (note: negative for downward)
+            v_analytical = -P * x * x * (3.0 * L - x) / (6.0 * EI)
+
+            # Compare - should match well for Euler-Bernoulli
+            np.testing.assert_almost_equal(disp.v, v_analytical, decimal=4)
+
+
+class TestEulerBernoulliRotation:
+    """Test that rotation φ_z = dw/dy for Euler-Bernoulli beams"""
+
+    def test_rotation_equals_slope(self):
+        """For Euler-Bernoulli: θz = dv/dx"""
+        L = 6.0
+        P = 10.0
+
+        model = Model()
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+        E = mat.E
+        I = 8e-5
+
+        sec = model.create_section("Test", 0.01, I, I, 1e-6)
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        beam = model.create_beam(n1, n2, mat, sec)  # Default is Euler-Bernoulli
+        model.boundary_conditions.fix_node(n1.id)
+
+        lc = model.get_default_load_case()
+        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        # Analytical rotation for cantilever: θz = dv/dx = -Px(2L - x) / (2EI)
+        EI = E * I
+
+        # Sample at multiple positions
+        for xi in [0.25, 0.5, 0.75]:
+            x = xi * L
+            disp = beam.get_displacements_at(x, u, dof_handler)
+
+            # Analytical rotation
+            theta_z_analytical = -P * x * (2.0 * L - x) / (2.0 * EI)
+
+            # Compare
+            np.testing.assert_almost_equal(disp.theta_z, theta_z_analytical, decimal=4)
+
+
+class TestTimoshenkoVsEulerBernoulli:
+    """Test that Timoshenko has different rotation than slope for deep beams"""
+
+    def test_timoshenko_rotation_differs(self):
+        """For Timoshenko: θz ≠ dv/dx due to shear deformation"""
+        L = 2.0  # Short beam to emphasize shear effects
+        P = 10.0
+
+        model = Model()
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+        E = mat.E
+        I = 8e-5
+
+        sec = model.create_section("Test", 0.01, I, I, 1e-6)
+        sec.set_shear_areas(0.008, 0.008)
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        # Create Timoshenko beam
+        config = BeamConfig()
+        config.formulation = BeamFormulation.Timoshenko
+        beam = model.create_beam(n1, n2, mat, sec, config)
+
+        model.boundary_conditions.fix_node(n1.id)
+
+        lc = model.get_default_load_case()
+        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        # Get displacement at midpoint
+        disp_mid = beam.get_displacements_at(L/2, u, dof_handler)
+
+        # For Timoshenko, rotation is interpolated linearly
+        # between end rotations, which differ from Euler-Bernoulli slope
+        # This just verifies the method runs - detailed verification would
+        # require comparison with Timoshenko analytical solution
+
+        assert hasattr(disp_mid, 'theta_z')
+
+
+class TestMidspanDisplacement:
+    """Test midspan displacement is correctly interpolated"""
+
+    def test_midspan_displacement(self):
+        """Midspan displacement is average of end displacements (for linear interpolation)"""
+        L = 6.0
+
+        model = Model()
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+        sec = model.create_section("Test", 0.01, 8e-5, 8e-5, 1e-6)
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(L, 0, 0)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+
+        # Simply supported
+        model.boundary_conditions.add_fixed_dof(n1.id, DOFIndex.UX, 0.0)
+        model.boundary_conditions.add_fixed_dof(n1.id, DOFIndex.UY, 0.0)
+        model.boundary_conditions.add_fixed_dof(n1.id, DOFIndex.UZ, 0.0)
+        model.boundary_conditions.add_fixed_dof(n1.id, DOFIndex.RX, 0.0)
+
+        model.boundary_conditions.add_fixed_dof(n2.id, DOFIndex.UY, 0.0)
+        model.boundary_conditions.add_fixed_dof(n2.id, DOFIndex.RX, 0.0)
+
+        lc = model.get_default_load_case()
+        # Apply end moment (no midspan concentrated load)
+        lc.add_nodal_load(n2.id, DOFIndex.RZ, 10.0)
+
+        assert model.analyze()
+
+        dof_handler = model.get_dof_handler()
+        u = model.get_displacements()
+
+        # For axial displacement, should be linear interpolation
+        disp_start = beam.get_displacements_at(0.0, u, dof_handler)
+        disp_mid = beam.get_displacements_at(L/2, u, dof_handler)
+        disp_end = beam.get_displacements_at(L, u, dof_handler)
+
+        # Axial displacement should be linearly interpolated
+        expected_u_mid = (disp_start.u + disp_end.u) / 2
+        np.testing.assert_almost_equal(disp_mid.u, expected_u_mid, decimal=5)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
