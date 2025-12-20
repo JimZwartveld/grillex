@@ -16,7 +16,9 @@ from .data_types import (
     EqualityConstraint, RigidLink, ReducedSystem, ConstraintHandler,
     # Phase 7: Internal Actions
     EndForces, InternalActions, WarpingInternalActions, ActionExtreme,
-    ReleaseCombo4DOF, ReleaseCombo2DOF, ReleaseComboWarping, DisplacementLine
+    ReleaseCombo4DOF, ReleaseCombo2DOF, ReleaseComboWarping, DisplacementLine,
+    # Phase 8: Additional Element Types
+    SpringElement, PointMass,
 )
 
 from .model_wrapper import (
@@ -41,5 +43,7 @@ __all__ = [
     # Phase 7: Internal Actions
     'EndForces', 'InternalActions', 'WarpingInternalActions', 'ActionExtreme',
     'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine',
+    # Phase 8: Additional Element Types
+    'SpringElement', 'PointMass',
     'Beam', 'StructuralModel'
 ]

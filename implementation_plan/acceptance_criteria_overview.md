@@ -16,14 +16,14 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 5 | Loads & Load Cases | 15 | 15 | 0 | 100% |
 | 6 | MPC & Rigid Links | 9 | 9 | 0 | 100% |
 | 7 | Internal Actions & Results | 35 | 35 | 0 | 100% |
-| 8 | Additional Element Types | 9 | 0 | 9 | 0% |
+| 8 | Additional Element Types | 9 | 6 | 3 | 67% |
 | 9 | Cargo Modeling | 3 | 0 | 3 | 0% |
 | 10 | Design Codes | 6 | 0 | 6 | 0% |
 | 11 | Error Handling | 9 | 0 | 9 | 0% |
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 10 | 0 | 10 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **183** | **143** | **40** | **78%** |
+| **Total** | | **183** | **149** | **34** | **81%** |
 
 ---
 
@@ -320,14 +320,14 @@ This document provides a comprehensive overview of all acceptance criteria acros
 ## Phase 8: Additional Element Types
 
 ### Task 8.1: Implement Spring Element
-- [ ] Spring provides correct stiffness between nodes
-- [ ] Uncoupled DOFs are independent
-- [ ] Eccentricity can be handled via rigid links
+- [x] Spring provides correct stiffness between nodes
+- [x] Uncoupled DOFs are independent
+- [x] Eccentricity can be handled via rigid links
 
 ### Task 8.2: Implement Point Mass Element
-- [ ] Point mass contributes to global mass matrix
-- [ ] Inertia tensor is correctly represented
-- [ ] Off-diagonal terms work for asymmetric masses
+- [x] Point mass contributes to global mass matrix
+- [x] Inertia tensor is correctly represented
+- [x] Off-diagonal terms work for asymmetric masses
 
 ### Task 8.3: Implement Plate Element
 - [ ] Plate deflects under pressure load

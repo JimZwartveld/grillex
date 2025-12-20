@@ -17,6 +17,8 @@ pybind11_add_module(_grillex_cpp
     src/section.cpp
     src/local_axes.cpp
     src/beam_element.cpp
+    src/spring_element.cpp
+    src/point_mass.cpp
     src/dof_handler.cpp
     src/assembler.cpp
     src/boundary_condition.cpp

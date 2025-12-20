@@ -79,7 +79,10 @@ from grillex._grillex_cpp import (
     ReleaseCombo4DOF,
     ReleaseCombo2DOF,
     ReleaseComboWarping,
-    DisplacementLine
+    DisplacementLine,
+    # Phase 8: Additional Element Types
+    SpringElement,
+    PointMass,
 )
 
 __all__ = [
@@ -98,5 +101,7 @@ __all__ = [
     'EqualityConstraint', 'RigidLink', 'ReducedSystem', 'ConstraintHandler',
     # Phase 7: Internal Actions
     'EndForces', 'InternalActions', 'WarpingInternalActions', 'ActionExtreme',
-    'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine'
+    'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine',
+    # Phase 8: Additional Element Types
+    'SpringElement', 'PointMass',
 ]

@@ -42,9 +42,9 @@ Create spring element connecting two nodes.
    ```
 
 **Acceptance Criteria:**
-- [ ] Spring provides correct stiffness between nodes
-- [ ] Uncoupled DOFs are independent
-- [ ] Eccentricity can be handled via rigid links
+- [x] Spring provides correct stiffness between nodes
+- [x] Uncoupled DOFs are independent
+- [x] Eccentricity can be handled via rigid links
 
 ---
 
@@ -85,9 +85,9 @@ Create point mass/inertia element at a node.
    ```
 
 **Acceptance Criteria:**
-- [ ] Point mass contributes to global mass matrix
-- [ ] Inertia tensor is correctly represented
-- [ ] Off-diagonal terms work for asymmetric masses
+- [x] Point mass contributes to global mass matrix
+- [x] Inertia tensor is correctly represented
+- [x] Off-diagonal terms work for asymmetric masses
 
 ---
 
