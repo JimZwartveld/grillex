@@ -17,13 +17,13 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 6 | MPC & Rigid Links | 9 | 9 | 0 | 100% |
 | 7 | Internal Actions & Results | 35 | 35 | 0 | 100% |
 | 8 | Additional Element Types | 9 | 9 | 0 | 100% |
-| 9 | Cargo Modeling | 20 | 11 | 9 | 55% |
+| 9 | Cargo Modeling | 20 | 20 | 0 | 100% |
 | 10 | Design Codes | 6 | 0 | 6 | 0% |
 | 11 | Error Handling | 9 | 0 | 9 | 0% |
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 12 | 0 | 12 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **200** | **163** | **37** | **82%** |
+| **Total** | | **200** | **172** | **28** | **86%** |
 
 ---
 
@@ -356,17 +356,17 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] LoadingCondition enum is accessible from Python
 
 ### Task 9.4: Filter Springs in Stiffness Matrix Assembly
-- [ ] Static load cases (Permanent) use K matrix without dynamic springs
-- [ ] Dynamic load cases (Variable/Environmental) use K matrix with all springs
-- [ ] Existing tests pass (backward compatibility with loading_condition="all")
-- [ ] Performance is acceptable (no regression for models without conditional springs)
+- [x] Static load cases (Permanent) use K matrix without dynamic springs
+- [x] Dynamic load cases (Variable/Environmental) use K matrix with all springs
+- [x] Existing tests pass (backward compatibility with loading_condition="all")
+- [x] Performance is acceptable (no regression for models without conditional springs)
 
 ### Task 9.5: Tests for Static/Dynamic Cargo Connections
-- [ ] Static connections carry load only in Permanent load cases
-- [ ] Dynamic connections carry load only in Variable/Environmental load cases
-- [ ] Connections with loading_condition="all" work for all load case types
-- [ ] Combined reaction magnitudes match expected values from hand calculations
-- [ ] Test coverage includes all loading_condition values
+- [x] Static connections carry load only in Permanent load cases
+- [x] Dynamic connections carry load only in Variable/Environmental load cases
+- [x] Connections with loading_condition="all" work for all load case types
+- [x] Combined reaction magnitudes match expected values from hand calculations
+- [x] Test coverage includes all loading_condition values
 
 ---
 
