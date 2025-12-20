@@ -559,3 +559,369 @@ class TestImports:
         assert CheckResult is not None
         assert DesignCheck is not None
         assert DesignCode is not None
+
+    def test_import_eurocode3(self):
+        """Test imports of Eurocode 3 classes."""
+        from grillex.design_codes import (
+            Eurocode3,
+            EC3AxialCheck,
+            EC3BendingYCheck,
+            EC3BendingZCheck,
+            EC3ShearYCheck,
+            EC3ShearZCheck,
+            EC3CombinedCheck,
+        )
+
+        assert Eurocode3 is not None
+        assert EC3AxialCheck is not None
+        assert EC3BendingYCheck is not None
+        assert EC3BendingZCheck is not None
+        assert EC3ShearYCheck is not None
+        assert EC3ShearZCheck is not None
+        assert EC3CombinedCheck is not None
+
+
+# =============================================================================
+# Tests for Eurocode 3 Implementation (Task 10.2)
+# =============================================================================
+
+
+class TestEC3AxialCheck:
+    """Tests for EC3 axial capacity check."""
+
+    def test_axial_check_name(self):
+        """Test check name is correct."""
+        from grillex.design_codes import EC3AxialCheck
+
+        check = EC3AxialCheck()
+        assert "Axial" in check.name
+        assert "6.2.4" in check.name
+
+    def test_axial_utilization_50_percent(self):
+        """Test axial utilization at 50%."""
+        from grillex.design_codes import EC3AxialCheck
+
+        check = EC3AxialCheck()
+        section = MockSection(A=0.01)  # 100 cm²
+        material = MockMaterial(fy=355000.0)  # 355 MPa
+
+        # N_Rd = 0.01 * 355000 / 1.0 = 3550 kN
+        actions = {"N": 1775.0}  # 50% utilization
+        util = check.compute_utilization(actions, section, material)
+        assert pytest.approx(util, rel=1e-6) == 0.5
+
+    def test_axial_utilization_with_gamma(self):
+        """Test axial utilization with safety factor."""
+        from grillex.design_codes import EC3AxialCheck
+
+        check = EC3AxialCheck()
+        section = MockSection(A=0.01)
+        material = MockMaterial(fy=355000.0)
+
+        # N_Rd = 0.01 * 355000 / 1.1 = 3227.27 kN
+        # 50% of 3227.27 = 1613.64 kN
+        actions = {"N": 1613.64}
+        util = check.compute_utilization(actions, section, material, gamma_M0=1.1)
+        assert pytest.approx(util, rel=1e-3) == 0.5
+
+    def test_axial_zero_force(self):
+        """Test axial utilization with zero force."""
+        from grillex.design_codes import EC3AxialCheck
+
+        check = EC3AxialCheck()
+        section = MockSection(A=0.01)
+        material = MockMaterial(fy=355000.0)
+
+        actions = {"N": 0.0}
+        util = check.compute_utilization(actions, section, material)
+        assert util == 0.0
+
+    def test_axial_tension_and_compression(self):
+        """Test that both tension and compression give same utilization."""
+        from grillex.design_codes import EC3AxialCheck
+
+        check = EC3AxialCheck()
+        section = MockSection(A=0.01)
+        material = MockMaterial(fy=355000.0)
+
+        util_tension = check.compute_utilization({"N": 1000.0}, section, material)
+        util_compression = check.compute_utilization({"N": -1000.0}, section, material)
+        assert util_tension == util_compression
+
+
+class TestEC3BendingChecks:
+    """Tests for EC3 bending capacity checks."""
+
+    def test_bending_y_check_name(self):
+        """Test My check name."""
+        from grillex.design_codes import EC3BendingYCheck
+
+        check = EC3BendingYCheck()
+        assert "Bending" in check.name
+        assert "My" in check.name
+
+    def test_bending_z_check_name(self):
+        """Test Mz check name."""
+        from grillex.design_codes import EC3BendingZCheck
+
+        check = EC3BendingZCheck()
+        assert "Bending" in check.name
+        assert "Mz" in check.name
+
+    def test_bending_y_utilization(self):
+        """Test bending My utilization."""
+        from grillex.design_codes import EC3BendingYCheck
+
+        check = EC3BendingYCheck()
+        section = MockSection(Iy=1e-4, Wy=0.001)  # W_el = 1000 cm³
+        material = MockMaterial(fy=355000.0)
+
+        # M_Rd = 0.001 * 355000 = 355 kNm
+        actions = {"My": 177.5}  # 50% utilization
+        util = check.compute_utilization(actions, section, material, W_el_y=0.001)
+        assert pytest.approx(util, rel=1e-6) == 0.5
+
+    def test_bending_z_utilization(self):
+        """Test bending Mz utilization."""
+        from grillex.design_codes import EC3BendingZCheck
+
+        check = EC3BendingZCheck()
+        section = MockSection(Iz=1e-5, Wz=0.0005)  # W_el = 500 cm³
+        material = MockMaterial(fy=355000.0)
+
+        # M_Rd = 0.0005 * 355000 = 177.5 kNm
+        actions = {"Mz": 88.75}  # 50% utilization
+        util = check.compute_utilization(actions, section, material, W_el_z=0.0005)
+        assert pytest.approx(util, rel=1e-6) == 0.5
+
+
+class TestEC3ShearChecks:
+    """Tests for EC3 shear capacity checks."""
+
+    def test_shear_y_check_name(self):
+        """Test Vy check name."""
+        from grillex.design_codes import EC3ShearYCheck
+
+        check = EC3ShearYCheck()
+        assert "Shear" in check.name
+        assert "Vy" in check.name
+
+    def test_shear_z_check_name(self):
+        """Test Vz check name."""
+        from grillex.design_codes import EC3ShearZCheck
+
+        check = EC3ShearZCheck()
+        assert "Shear" in check.name
+        assert "Vz" in check.name
+
+    def test_shear_utilization(self):
+        """Test shear utilization calculation."""
+        import math
+        from grillex.design_codes import EC3ShearYCheck
+
+        check = EC3ShearYCheck()
+        section = MockSection(A=0.01)  # 100 cm²
+        material = MockMaterial(fy=355000.0)
+
+        # Av = 0.6 * 0.01 = 0.006 m² (default)
+        # V_Rd = 0.006 * (355000 / sqrt(3)) = 1229.5 kN
+        actions = {"Vy": 614.75}  # 50% utilization
+        util = check.compute_utilization(actions, section, material)
+        assert pytest.approx(util, rel=1e-3) == 0.5
+
+
+class TestEC3CombinedCheck:
+    """Tests for EC3 combined axial + bending check."""
+
+    def test_combined_check_name(self):
+        """Test combined check name."""
+        from grillex.design_codes import EC3CombinedCheck
+
+        check = EC3CombinedCheck()
+        assert "Combined" in check.name
+        assert "N+M" in check.name
+
+    def test_combined_utilization_linear_interaction(self):
+        """Test combined utilization uses linear interaction."""
+        from grillex.design_codes import EC3CombinedCheck
+
+        check = EC3CombinedCheck()
+        section = MockSection(A=0.01, Wy=0.001, Wz=0.0005)
+        material = MockMaterial(fy=355000.0)
+
+        # N_Rd = 3550 kN, M_y_Rd = 355 kNm, M_z_Rd = 177.5 kNm
+        # 20% axial + 30% My + 0% Mz = 50% combined
+        actions = {"N": 710.0, "My": 106.5, "Mz": 0.0}
+        util = check.compute_utilization(
+            actions, section, material, W_el_y=0.001, W_el_z=0.0005
+        )
+        assert pytest.approx(util, rel=1e-3) == 0.5
+
+    def test_combined_all_three_actions(self):
+        """Test combined with N, My, and Mz."""
+        from grillex.design_codes import EC3CombinedCheck
+
+        check = EC3CombinedCheck()
+        section = MockSection(A=0.01, Wy=0.001, Wz=0.0005)
+        material = MockMaterial(fy=355000.0)
+
+        # 20% + 20% + 20% = 60%
+        actions = {"N": 710.0, "My": 71.0, "Mz": 35.5}
+        util = check.compute_utilization(
+            actions, section, material, W_el_y=0.001, W_el_z=0.0005
+        )
+        assert pytest.approx(util, rel=1e-2) == 0.6
+
+
+class TestEurocode3:
+    """Tests for the Eurocode3 design code class."""
+
+    def test_eurocode3_name(self):
+        """Test Eurocode 3 name and version."""
+        from grillex.design_codes import Eurocode3
+
+        code = Eurocode3()
+        assert "Eurocode 3" in code.name
+        assert "1993-1-1" in code.name
+        assert code.version == "2005"
+
+    def test_eurocode3_get_checks(self):
+        """Test get_checks returns all implemented checks."""
+        from grillex.design_codes import Eurocode3
+
+        code = Eurocode3()
+        checks = code.get_checks()
+
+        assert len(checks) == 6
+        check_names = [c.name for c in checks]
+        assert any("Axial" in n for n in check_names)
+        assert any("Bending" in n and "My" in n for n in check_names)
+        assert any("Bending" in n and "Mz" in n for n in check_names)
+        assert any("Shear" in n and "Vy" in n for n in check_names)
+        assert any("Shear" in n and "Vz" in n for n in check_names)
+        assert any("Combined" in n for n in check_names)
+
+    def test_eurocode3_custom_gamma(self):
+        """Test custom safety factors."""
+        from grillex.design_codes import Eurocode3
+
+        code = Eurocode3(gamma_M0=1.1, gamma_M1=1.2)
+        assert code.gamma_M0 == 1.1
+        assert code.gamma_M1 == 1.2
+
+    def test_eurocode3_custom_check_locations(self):
+        """Test custom check locations."""
+        from grillex.design_codes import Eurocode3
+
+        code = Eurocode3(check_locations=[0.0, 0.5, 1.0])
+        assert code.check_locations == [0.0, 0.5, 1.0]
+
+    def test_eurocode3_check_beam(self):
+        """Test check_beam performs all checks at all locations."""
+        from grillex.design_codes import Eurocode3
+
+        code = Eurocode3(check_locations=[0.0, 0.5, 1.0])
+        beam = MockBeam(id=1, section=MockSection(), material=MockMaterial())
+
+        result_case = MockResultCase(
+            {
+                (1, 0.0): {"N": 1000.0, "Vy": 50.0, "Vz": 50.0, "My": 100.0, "Mz": 50.0},
+                (1, 0.5): {"N": 500.0, "Vy": 0.0, "Vz": 0.0, "My": 150.0, "Mz": 30.0},
+                (1, 1.0): {"N": 0.0, "Vy": 50.0, "Vz": 50.0, "My": 0.0, "Mz": 0.0},
+            }
+        )
+        combination = MockCombination(name="ULS1")
+
+        results = code.check_beam(beam, result_case, combination)
+
+        # 3 locations × 6 checks = 18 results
+        assert len(results) == 18
+        assert all(r.element_id == 1 for r in results)
+        assert all(r.load_combination == "ULS1" for r in results)
+
+    def test_eurocode3_governing_identified(self):
+        """Test that governing check is identified."""
+        from grillex.design_codes import Eurocode3
+
+        code = Eurocode3(check_locations=[0.0, 0.5, 1.0])
+        beam = MockBeam(id=1, section=MockSection(), material=MockMaterial())
+
+        # High bending at midspan
+        result_case = MockResultCase(
+            {
+                (1, 0.0): {"N": 100.0, "Vy": 50.0, "Vz": 50.0, "My": 50.0, "Mz": 10.0},
+                (1, 0.5): {"N": 100.0, "Vy": 0.0, "Vz": 0.0, "My": 300.0, "Mz": 10.0},
+                (1, 1.0): {"N": 100.0, "Vy": 50.0, "Vz": 50.0, "My": 50.0, "Mz": 10.0},
+            }
+        )
+        combination = MockCombination(name="ULS1")
+
+        results = code.check_beam(beam, result_case, combination)
+
+        # Find governing result
+        governing = [r for r in results if r.governing]
+        assert len(governing) == 1
+
+        # Should be the combined check at midspan (highest utilization)
+        gov = governing[0]
+        assert gov.location == 0.5
+
+    def test_eurocode3_utilization_computed_correctly(self):
+        """Test that utilizations are computed correctly (acceptance criterion)."""
+        from grillex.design_codes import Eurocode3
+
+        code = Eurocode3()
+        beam = MockBeam(id=1, section=MockSection(A=0.01), material=MockMaterial(fy=355000.0))
+
+        # 50% axial load: N = 1775 kN (N_Rd = 3550 kN)
+        result_case = MockResultCase(
+            {
+                (1, 0.0): {"N": 1775.0, "Vy": 0.0, "Vz": 0.0, "My": 0.0, "Mz": 0.0},
+                (1, 0.25): {"N": 1775.0, "Vy": 0.0, "Vz": 0.0, "My": 0.0, "Mz": 0.0},
+                (1, 0.5): {"N": 1775.0, "Vy": 0.0, "Vz": 0.0, "My": 0.0, "Mz": 0.0},
+                (1, 0.75): {"N": 1775.0, "Vy": 0.0, "Vz": 0.0, "My": 0.0, "Mz": 0.0},
+                (1, 1.0): {"N": 1775.0, "Vy": 0.0, "Vz": 0.0, "My": 0.0, "Mz": 0.0},
+            }
+        )
+        combination = MockCombination(name="ULS1")
+
+        results = code.check_beam(beam, result_case, combination)
+
+        # Find axial check results
+        axial_results = [r for r in results if "Axial" in r.check_name]
+        assert len(axial_results) == 5  # 5 locations
+
+        for r in axial_results:
+            assert pytest.approx(r.utilization, rel=1e-3) == 0.5
+            assert r.status == "PASS"
+
+    def test_eurocode3_failing_check(self):
+        """Test detection of failing checks."""
+        from grillex.design_codes import Eurocode3
+
+        code = Eurocode3()
+        beam = MockBeam(id=1, section=MockSection(A=0.01), material=MockMaterial(fy=355000.0))
+
+        # 120% axial load: N = 4260 kN (N_Rd = 3550 kN)
+        result_case = MockResultCase(
+            {
+                (1, 0.0): {"N": 4260.0, "Vy": 0.0, "Vz": 0.0, "My": 0.0, "Mz": 0.0},
+                (1, 0.25): {"N": 4260.0, "Vy": 0.0, "Vz": 0.0, "My": 0.0, "Mz": 0.0},
+                (1, 0.5): {"N": 4260.0, "Vy": 0.0, "Vz": 0.0, "My": 0.0, "Mz": 0.0},
+                (1, 0.75): {"N": 4260.0, "Vy": 0.0, "Vz": 0.0, "My": 0.0, "Mz": 0.0},
+                (1, 1.0): {"N": 4260.0, "Vy": 0.0, "Vz": 0.0, "My": 0.0, "Mz": 0.0},
+            }
+        )
+        combination = MockCombination(name="ULS1")
+
+        results = code.check_beam(beam, result_case, combination)
+        summary = code.get_summary(results)
+
+        # Should have failures
+        assert summary["failed"] > 0
+        assert summary["max_utilization"] > 1.0
+
+        # Axial checks should fail
+        axial_results = [r for r in results if "Axial" in r.check_name]
+        assert all(r.status == "FAIL" for r in axial_results)
+        assert all(r.utilization > 1.0 for r in axial_results)

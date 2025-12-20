@@ -18,12 +18,12 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 7 | Internal Actions & Results | 35 | 35 | 0 | 100% |
 | 8 | Additional Element Types | 9 | 9 | 0 | 100% |
 | 9 | Cargo Modeling | 20 | 20 | 0 | 100% |
-| 10 | Design Codes | 6 | 3 | 3 | 50% |
+| 10 | Design Codes | 6 | 6 | 0 | 100% |
 | 11 | Error Handling | 9 | 0 | 9 | 0% |
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 12 | 0 | 12 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **200** | **175** | **25** | **88%** |
+| **Total** | | **200** | **178** | **22** | **89%** |
 
 ---
 
@@ -378,9 +378,9 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Check results include all required info
 
 ### Task 10.2: Implement Basic Checks
-- [ ] At least basic checks are implemented
-- [ ] Utilization is computed correctly
-- [ ] Governing check is identified
+- [x] At least basic checks are implemented
+- [x] Utilization is computed correctly
+- [x] Governing check is identified
 
 ---
 
