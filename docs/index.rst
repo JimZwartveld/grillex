@@ -31,6 +31,7 @@ Contents
 
    Overview <readme>
    Internal Actions <internal_actions>
+   Error Reference <errors>
    Contributions & Help <contributing>
    License <license>
    Authors <authors>

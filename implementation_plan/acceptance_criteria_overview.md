@@ -19,11 +19,11 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 8 | Additional Element Types | 9 | 9 | 0 | 100% |
 | 9 | Cargo Modeling | 20 | 20 | 0 | 100% |
 | 10 | Design Codes | 6 | 6 | 0 | 100% |
-| 11 | Error Handling | 9 | 0 | 9 | 0% |
+| 11 | Error Handling | 9 | 6 | 3 | 67% |
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 12 | 0 | 12 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **200** | **178** | **22** | **89%** |
+| **Total** | | **200** | **184** | **16** | **92%** |
 
 ---
 
@@ -387,14 +387,14 @@ This document provides a comprehensive overview of all acceptance criteria acros
 ## Phase 11: Error Handling & Diagnostics
 
 ### Task 11.1: Structured Error Codes
-- [ ] Errors have machine-readable codes
-- [ ] Errors have human-readable messages
-- [ ] Diagnostic info (DOFs, elements) is included
+- [x] Errors have machine-readable codes
+- [x] Errors have human-readable messages
+- [x] Diagnostic info (DOFs, elements) is included
 
 ### Task 11.2: Warning System
-- [ ] Warnings don't block analysis
-- [ ] Severity levels are assigned appropriately
-- [ ] LLM can parse warning codes
+- [x] Warnings don't block analysis
+- [x] Severity levels are assigned appropriately
+- [x] LLM can parse warning codes
 
 ### Task 11.3: Singularity Diagnostics
 - [ ] Free-floating model detected as singular
