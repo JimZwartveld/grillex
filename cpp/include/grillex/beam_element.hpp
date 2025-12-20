@@ -568,6 +568,37 @@ public:
         const DOFHandler& dof_handler) const;
 
     /**
+     * @brief Get displacements and rotations at position x along element
+     *
+     * Uses shape function interpolation to compute displacements and rotations
+     * at any position along the beam. For Euler-Bernoulli beams, uses Hermite
+     * interpolation polynomials. For Timoshenko beams, includes shear deformation.
+     *
+     * @param x Position [0, L] in meters
+     * @param global_displacements Full displacement vector from analysis
+     * @param dof_handler DOF numbering manager
+     * @return DisplacementLine Displacements and rotations at position x
+     *
+     * Components:
+     * - u: Axial displacement [m]
+     * - v: Lateral displacement in local y [m]
+     * - w: Lateral displacement in local z [m]
+     * - theta_x: Twist rotation [rad]
+     * - theta_y: Bending rotation about local y [rad]
+     * - theta_z: Bending rotation about local z [rad]
+     * - phi_prime: Warping parameter [rad] (for 14-DOF elements)
+     *
+     * @param load_case Optional load case for distributed load effects
+     *   When provided, uses analytical beam equations including load terms.
+     *   When null, uses Hermite interpolation (exact for no distributed loads).
+     */
+    DisplacementLine get_displacements_at(
+        double x,
+        const Eigen::VectorXd& global_displacements,
+        const DOFHandler& dof_handler,
+        const LoadCase* load_case = nullptr) const;
+
+    /**
      * @brief Compute end forces in local coordinates
      *
      * Computes internal forces at both element ends using:

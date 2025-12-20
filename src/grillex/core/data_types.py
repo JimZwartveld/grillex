@@ -34,6 +34,9 @@ This module provides Python-friendly access to the C++ core data structures:
 - RigidLink: Rigid link constraint between master and slave nodes
 - ReducedSystem: Result of system reduction with MPC constraints
 - ConstraintHandler: Multi-point constraint (MPC) handler
+- SpringElement: Spring element with 6-DOF stiffness
+- PointMass: Point mass element with inertia tensor
+- PlateElement: 4-node Mindlin plate element (MITC4)
 """
 
 from grillex._grillex_cpp import (
@@ -79,7 +82,11 @@ from grillex._grillex_cpp import (
     ReleaseCombo4DOF,
     ReleaseCombo2DOF,
     ReleaseComboWarping,
-    DisplacementLine
+    DisplacementLine,
+    # Phase 8: Additional Element Types
+    SpringElement,
+    PointMass,
+    PlateElement,
 )
 
 __all__ = [
@@ -98,5 +105,7 @@ __all__ = [
     'EqualityConstraint', 'RigidLink', 'ReducedSystem', 'ConstraintHandler',
     # Phase 7: Internal Actions
     'EndForces', 'InternalActions', 'WarpingInternalActions', 'ActionExtreme',
-    'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine'
+    'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine',
+    # Phase 8: Additional Element Types
+    'SpringElement', 'PointMass', 'PlateElement',
 ]

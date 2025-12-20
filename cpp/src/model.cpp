@@ -1,6 +1,7 @@
 #include "grillex/model.hpp"
 #include <stdexcept>
 #include <sstream>
+#include <cmath>
 
 namespace grillex {
 
@@ -28,6 +29,35 @@ BeamElement* Model::create_beam(Node* node_i, Node* node_j,
                                                   material, section, config);
     BeamElement* ptr = element.get();
     elements.push_back(std::move(element));
+    return ptr;
+}
+
+SpringElement* Model::create_spring(Node* node_i, Node* node_j) {
+    auto spring = std::make_unique<SpringElement>(next_spring_id_++, node_i, node_j);
+    SpringElement* ptr = spring.get();
+    spring_elements.push_back(std::move(spring));
+    // Mark as not analyzed
+    analyzed_ = false;
+    return ptr;
+}
+
+PointMass* Model::create_point_mass(Node* node) {
+    auto pm = std::make_unique<PointMass>(next_point_mass_id_++, node);
+    PointMass* ptr = pm.get();
+    point_masses.push_back(std::move(pm));
+    // Mark as not analyzed
+    analyzed_ = false;
+    return ptr;
+}
+
+PlateElement* Model::create_plate(Node* n1, Node* n2, Node* n3, Node* n4,
+                                   double thickness, Material* material) {
+    auto plate = std::make_unique<PlateElement>(next_plate_id_++, n1, n2, n3, n4,
+                                                 thickness, material);
+    PlateElement* ptr = plate.get();
+    plate_elements.push_back(std::move(plate));
+    // Mark as not analyzed
+    analyzed_ = false;
     return ptr;
 }
 
@@ -129,7 +159,7 @@ bool Model::analyze() {
 
     try {
         // Validation
-        if (elements.empty()) {
+        if (elements.empty() && spring_elements.empty() && plate_elements.empty()) {
             error_msg_ = "Model has no elements";
             return false;
         }
@@ -172,6 +202,70 @@ bool Model::analyze() {
         }
 
         Eigen::SparseMatrix<double> K = assembler_->assemble_stiffness(elem_ptrs);
+
+        // Add spring element stiffness contributions
+        for (const auto& spring : spring_elements) {
+            if (!spring->has_stiffness()) continue;
+
+            auto K_spring = spring->global_stiffness_matrix();
+
+            // Build location array for 12-DOF spring (6 DOFs per node)
+            std::vector<int> loc(12);
+            for (int i = 0; i < 6; ++i) {
+                loc[i] = dof_handler_.get_global_dof(spring->node_i->id, i);
+                loc[i + 6] = dof_handler_.get_global_dof(spring->node_j->id, i);
+            }
+
+            // Add to global K using triplets
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 12; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 12; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_spring(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            // Add triplets to K
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K += K_add;
+        }
+
+        // Add plate element stiffness contributions
+        for (const auto& plate : plate_elements) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            // Build location array for 24-DOF plate (6 DOFs per node × 4 nodes)
+            std::vector<int> loc(24);
+            for (int node_idx = 0; node_idx < 4; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            // Add to global K using triplets
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 24; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 24; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            // Add triplets to K
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K += K_add;
+        }
 
         // Step 3: Analyze each load case
         bool all_success = true;
@@ -304,6 +398,9 @@ void Model::clear() {
     materials.clear();
     sections.clear();
     elements.clear();
+    spring_elements.clear();
+    point_masses.clear();
+    plate_elements.clear();
     load_cases_.clear();
     boundary_conditions.clear();
 
@@ -317,6 +414,9 @@ void Model::clear() {
     next_material_id_ = 1;
     next_section_id_ = 1;
     next_element_id_ = 1;
+    next_spring_id_ = 1;
+    next_point_mass_id_ = 1;
+    next_plate_id_ = 1;
     next_load_case_id_ = 1;
 }
 

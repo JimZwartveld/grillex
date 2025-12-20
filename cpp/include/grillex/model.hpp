@@ -4,6 +4,9 @@
 #include "grillex/material.hpp"
 #include "grillex/section.hpp"
 #include "grillex/beam_element.hpp"
+#include "grillex/spring_element.hpp"
+#include "grillex/point_mass.hpp"
+#include "grillex/plate_element.hpp"
 #include "grillex/dof_handler.hpp"
 #include "grillex/assembler.hpp"
 #include "grillex/boundary_condition.hpp"
@@ -56,6 +59,9 @@ public:
     std::vector<std::unique_ptr<Material>> materials;      ///< Material library
     std::vector<std::unique_ptr<Section>> sections;        ///< Section library
     std::vector<std::unique_ptr<BeamElement>> elements;    ///< Beam elements
+    std::vector<std::unique_ptr<SpringElement>> spring_elements;  ///< Spring elements
+    std::vector<std::unique_ptr<PointMass>> point_masses;  ///< Point mass elements
+    std::vector<std::unique_ptr<PlateElement>> plate_elements;  ///< Plate elements
     BCHandler boundary_conditions;                         ///< Boundary conditions
 
     /**
@@ -105,6 +111,49 @@ public:
     BeamElement* create_beam(Node* node_i, Node* node_j,
                              Material* material, Section* section,
                              const BeamConfig& config = BeamConfig{});
+
+    /**
+     * @brief Create a spring element and add to model
+     * @param node_i Start node
+     * @param node_j End node
+     * @return Pointer to created spring element (owned by model)
+     *
+     * Example:
+     *   auto spring = model.create_spring(n1, n2);
+     *   spring->kx = 1000.0;  // Axial stiffness [kN/m]
+     *   spring->kz = 500.0;   // Vertical stiffness [kN/m]
+     */
+    SpringElement* create_spring(Node* node_i, Node* node_j);
+
+    /**
+     * @brief Create a point mass element and add to model
+     * @param node Node where mass is located
+     * @return Pointer to created point mass (owned by model)
+     *
+     * Example:
+     *   auto pm = model.create_point_mass(node);
+     *   pm->mass = 10.0;  // 10 mT
+     *   pm->set_inertia(5.0, 5.0, 3.0);  // Rotational inertias
+     */
+    PointMass* create_point_mass(Node* node);
+
+    /**
+     * @brief Create a plate element and add to model
+     * @param n1 Node 1 (corner at ξ=-1, η=-1)
+     * @param n2 Node 2 (corner at ξ=+1, η=-1)
+     * @param n3 Node 3 (corner at ξ=+1, η=+1)
+     * @param n4 Node 4 (corner at ξ=-1, η=+1)
+     * @param thickness Plate thickness [m]
+     * @param material Material pointer
+     * @return Pointer to created plate element (owned by model)
+     *
+     * Creates a 4-node Mindlin plate element (MITC4 formulation).
+     *
+     * Example:
+     *   auto plate = model.create_plate(n1, n2, n3, n4, 0.01, steel);
+     */
+    PlateElement* create_plate(Node* n1, Node* n2, Node* n3, Node* n4,
+                               double thickness, Material* material);
 
     /**
      * @brief Remove a beam element from the model by ID
@@ -303,6 +352,9 @@ private:
     int next_material_id_ = 1;
     int next_section_id_ = 1;
     int next_element_id_ = 1;
+    int next_spring_id_ = 1;
+    int next_point_mass_id_ = 1;
+    int next_plate_id_ = 1;
     int next_load_case_id_ = 1;
 
     /**

@@ -17,6 +17,9 @@ pybind11_add_module(_grillex_cpp
     src/section.cpp
     src/local_axes.cpp
     src/beam_element.cpp
+    src/spring_element.cpp
+    src/point_mass.cpp
+    src/plate_element.cpp
     src/dof_handler.cpp
     src/assembler.cpp
     src/boundary_condition.cpp
@@ -27,6 +30,7 @@ pybind11_add_module(_grillex_cpp
     src/internal_actions_axial.cpp
     src/internal_actions_bending_euler.cpp
     src/internal_actions_bending_timoshenko.cpp
+    src/internal_actions_deflection_euler.cpp
     src/internal_actions_warping.cpp
 )
 

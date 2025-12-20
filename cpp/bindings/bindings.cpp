@@ -17,6 +17,9 @@
 #include "grillex/model.hpp"
 #include "grillex/constraints.hpp"
 #include "grillex/internal_actions.hpp"
+#include "grillex/spring_element.hpp"
+#include "grillex/point_mass.hpp"
+#include "grillex/plate_element.hpp"
 
 namespace py = pybind11;
 
@@ -380,6 +383,19 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "    dof_handler: DOF handler for global-to-local mapping\n\n"
              "Returns:\n"
              "    Local displacement vector (12 or 14 components)")
+        .def("get_displacements_at", &grillex::BeamElement::get_displacements_at,
+             py::arg("x"), py::arg("global_displacements"), py::arg("dof_handler"),
+             py::arg("load_case") = nullptr,
+             "Get displacements and rotations at position x along element.\n\n"
+             "Uses analytical beam equations to compute exact displacements and rotations\n"
+             "at any position along the beam, including distributed load effects.\n\n"
+             "Args:\n"
+             "    x: Position along element [0, L] in meters\n"
+             "    global_displacements: Global displacement vector from analysis\n"
+             "    dof_handler: DOF handler for global-to-local mapping\n"
+             "    load_case: Optional load case for distributed load effects\n\n"
+             "Returns:\n"
+             "    DisplacementLine with u, v, w, theta_x, theta_y, theta_z, phi_prime")
         .def("compute_end_forces", &grillex::BeamElement::compute_end_forces,
              py::arg("global_displacements"), py::arg("dof_handler"),
              "Compute end forces in local coordinates.\n\n"
@@ -996,6 +1012,27 @@ PYBIND11_MODULE(_grillex_cpp, m) {
             }
             return result;
         }, "List of beam elements in the model")
+        .def_property_readonly("spring_elements", [](const grillex::Model &m) {
+            py::list result;
+            for (const auto& spring : m.spring_elements) {
+                result.append(spring.get());
+            }
+            return result;
+        }, "List of spring elements in the model")
+        .def_property_readonly("point_masses", [](const grillex::Model &m) {
+            py::list result;
+            for (const auto& pm : m.point_masses) {
+                result.append(pm.get());
+            }
+            return result;
+        }, "List of point mass elements in the model")
+        .def_property_readonly("plate_elements", [](const grillex::Model &m) {
+            py::list result;
+            for (const auto& plate : m.plate_elements) {
+                result.append(plate.get());
+            }
+            return result;
+        }, "List of plate elements in the model")
         .def_readwrite("boundary_conditions", &grillex::Model::boundary_conditions,
                       "BCHandler for managing boundary conditions")
         .def("create_material", &grillex::Model::create_material,
@@ -1020,6 +1057,38 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              py::arg("section"),
              py::arg("config") = grillex::BeamConfig{},
              "Create a beam element and add to model",
+             py::return_value_policy::reference_internal)
+        .def("create_spring", &grillex::Model::create_spring,
+             py::arg("node_i"),
+             py::arg("node_j"),
+             "Create a spring element and add to model.\n\n"
+             "Example:\n"
+             "    spring = model.create_spring(n1, n2)\n"
+             "    spring.kx = 1000.0  # Axial stiffness [kN/m]\n"
+             "    spring.kz = 500.0   # Vertical stiffness [kN/m]",
+             py::return_value_policy::reference_internal)
+        .def("create_point_mass", &grillex::Model::create_point_mass,
+             py::arg("node"),
+             "Create a point mass element and add to model.\n\n"
+             "Example:\n"
+             "    pm = model.create_point_mass(node)\n"
+             "    pm.mass = 10.0  # 10 mT\n"
+             "    pm.set_inertia(5.0, 5.0, 3.0)  # Rotational inertias",
+             py::return_value_policy::reference_internal)
+        .def("create_plate", &grillex::Model::create_plate,
+             py::arg("n1"), py::arg("n2"), py::arg("n3"), py::arg("n4"),
+             py::arg("thickness"), py::arg("material"),
+             "Create a 4-node plate element and add to model.\n\n"
+             "Parameters:\n"
+             "    n1: Node 1 at corner (-1,-1) in natural coordinates\n"
+             "    n2: Node 2 at corner (+1,-1)\n"
+             "    n3: Node 3 at corner (+1,+1)\n"
+             "    n4: Node 4 at corner (-1,+1)\n"
+             "    thickness: Plate thickness [m]\n"
+             "    material: Material properties\n\n"
+             "Example:\n"
+             "    plate = model.create_plate(n1, n2, n3, n4, 0.01, steel)\n\n"
+             "Uses Mindlin plate theory with MITC4 formulation for locking-free behavior.",
              py::return_value_policy::reference_internal)
         .def("remove_element", &grillex::Model::remove_element,
              py::arg("element_id"),
@@ -1453,5 +1522,141 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def("__repr__", [](const grillex::ActionExtreme &e) {
             return "<ActionExtreme x=" + std::to_string(e.x) +
                    " value=" + std::to_string(e.value) + ">";
+        });
+
+    // ========================================================================
+    // Phase 8: Additional Element Types
+    // ========================================================================
+
+    // SpringElement class
+    py::class_<grillex::SpringElement>(m, "SpringElement",
+        "Spring element connecting two nodes with independent stiffness for each DOF.\n\n"
+        "Stiffness values:\n"
+        "- kx, ky, kz: Translational stiffness [kN/m]\n"
+        "- krx, kry, krz: Rotational stiffness [kN·m/rad]")
+        .def(py::init<int, grillex::Node*, grillex::Node*>(),
+             py::arg("id"), py::arg("node_i"), py::arg("node_j"),
+             "Construct a spring element between two nodes")
+        .def_readwrite("id", &grillex::SpringElement::id, "Element ID")
+        .def_readonly("node_i", &grillex::SpringElement::node_i, "Start node")
+        .def_readonly("node_j", &grillex::SpringElement::node_j, "End node")
+        .def_readwrite("kx", &grillex::SpringElement::kx, "Translational stiffness in X [kN/m]")
+        .def_readwrite("ky", &grillex::SpringElement::ky, "Translational stiffness in Y [kN/m]")
+        .def_readwrite("kz", &grillex::SpringElement::kz, "Translational stiffness in Z [kN/m]")
+        .def_readwrite("krx", &grillex::SpringElement::krx, "Rotational stiffness about X [kN·m/rad]")
+        .def_readwrite("kry", &grillex::SpringElement::kry, "Rotational stiffness about Y [kN·m/rad]")
+        .def_readwrite("krz", &grillex::SpringElement::krz, "Rotational stiffness about Z [kN·m/rad]")
+        .def("num_dofs", &grillex::SpringElement::num_dofs, "Get number of DOFs (always 12)")
+        .def("has_warping", &grillex::SpringElement::has_warping, "Check for warping DOF (always false)")
+        .def("global_stiffness_matrix", &grillex::SpringElement::global_stiffness_matrix,
+             "Get 12x12 global stiffness matrix")
+        .def("global_mass_matrix", &grillex::SpringElement::global_mass_matrix,
+             "Get 12x12 global mass matrix (zeros - springs are massless)")
+        .def("set_translational_stiffness", &grillex::SpringElement::set_translational_stiffness,
+             py::arg("kx"), py::arg("ky"), py::arg("kz"),
+             "Set all translational stiffnesses at once")
+        .def("set_rotational_stiffness", &grillex::SpringElement::set_rotational_stiffness,
+             py::arg("krx"), py::arg("kry"), py::arg("krz"),
+             "Set all rotational stiffnesses at once")
+        .def("has_stiffness", &grillex::SpringElement::has_stiffness,
+             "Check if element has any non-zero stiffness")
+        .def("__repr__", [](const grillex::SpringElement &s) {
+            return "<SpringElement id=" + std::to_string(s.id) +
+                   " kx=" + std::to_string(s.kx) +
+                   " ky=" + std::to_string(s.ky) +
+                   " kz=" + std::to_string(s.kz) + ">";
+        });
+
+    // PointMass class
+    py::class_<grillex::PointMass>(m, "PointMass",
+        "Point mass element at a single node.\n\n"
+        "Properties:\n"
+        "- mass: Translational mass [mT]\n"
+        "- Ixx, Iyy, Izz: Moments of inertia [mT·m²]\n"
+        "- Ixy, Ixz, Iyz: Products of inertia [mT·m²]")
+        .def(py::init<int, grillex::Node*>(),
+             py::arg("id"), py::arg("node"),
+             "Construct a point mass at a node")
+        .def_readwrite("id", &grillex::PointMass::id, "Element ID")
+        .def_readonly("node", &grillex::PointMass::node, "Associated node")
+        .def_readwrite("mass", &grillex::PointMass::mass, "Translational mass [mT]")
+        .def_readwrite("Ixx", &grillex::PointMass::Ixx, "Moment of inertia about X [mT·m²]")
+        .def_readwrite("Iyy", &grillex::PointMass::Iyy, "Moment of inertia about Y [mT·m²]")
+        .def_readwrite("Izz", &grillex::PointMass::Izz, "Moment of inertia about Z [mT·m²]")
+        .def_readwrite("Ixy", &grillex::PointMass::Ixy, "Product of inertia XY [mT·m²]")
+        .def_readwrite("Ixz", &grillex::PointMass::Ixz, "Product of inertia XZ [mT·m²]")
+        .def_readwrite("Iyz", &grillex::PointMass::Iyz, "Product of inertia YZ [mT·m²]")
+        .def("num_dofs", &grillex::PointMass::num_dofs, "Get number of DOFs (always 6)")
+        .def("has_warping", &grillex::PointMass::has_warping, "Check for warping DOF (always false)")
+        .def("mass_matrix", &grillex::PointMass::mass_matrix,
+             "Get 6x6 mass matrix including full inertia tensor")
+        .def("set_mass", &grillex::PointMass::set_mass,
+             py::arg("m"), "Set translational mass [mT]")
+        .def("set_inertia", &grillex::PointMass::set_inertia,
+             py::arg("ixx"), py::arg("iyy"), py::arg("izz"),
+             "Set diagonal moments of inertia")
+        .def("set_products_of_inertia", &grillex::PointMass::set_products_of_inertia,
+             py::arg("ixy"), py::arg("ixz"), py::arg("iyz"),
+             "Set products of inertia (off-diagonal terms)")
+        .def("set_full_inertia", &grillex::PointMass::set_full_inertia,
+             py::arg("ixx"), py::arg("iyy"), py::arg("izz"),
+             py::arg("ixy"), py::arg("ixz"), py::arg("iyz"),
+             "Set full inertia tensor at once")
+        .def("is_valid", &grillex::PointMass::is_valid,
+             "Check if mass matrix is physically valid")
+        .def("get_total_mass", &grillex::PointMass::get_total_mass,
+             "Get total translational mass [mT]")
+        .def("__repr__", [](const grillex::PointMass &pm) {
+            return "<PointMass id=" + std::to_string(pm.id) +
+                   " mass=" + std::to_string(pm.mass) +
+                   " Ixx=" + std::to_string(pm.Ixx) +
+                   " Iyy=" + std::to_string(pm.Iyy) +
+                   " Izz=" + std::to_string(pm.Izz) + ">";
+        });
+
+    // PlateElement class
+    py::class_<grillex::PlateElement>(m, "PlateElement",
+        "4-node Mindlin plate element (MITC4 formulation).\n\n"
+        "A plate element for bending analysis using Mindlin plate theory\n"
+        "with MITC4 interpolation to avoid shear locking.\n\n"
+        "Node numbering (natural coordinates):\n"
+        "   4 (-1,+1) -------- 3 (+1,+1)\n"
+        "       |                  |\n"
+        "       |     (0,0)        |\n"
+        "       |                  |\n"
+        "   1 (-1,-1) -------- 2 (+1,-1)\n\n"
+        "Properties:\n"
+        "- thickness: Plate thickness [m]\n"
+        "- material: Material properties (E, nu, rho)")
+        .def(py::init<int, grillex::Node*, grillex::Node*, grillex::Node*,
+                      grillex::Node*, double, grillex::Material*>(),
+             py::arg("id"), py::arg("n1"), py::arg("n2"), py::arg("n3"),
+             py::arg("n4"), py::arg("thickness"), py::arg("material"),
+             "Construct a plate element with 4 corner nodes")
+        .def_readwrite("id", &grillex::PlateElement::id, "Element ID")
+        .def_readonly("nodes", &grillex::PlateElement::nodes, "Array of 4 corner nodes")
+        .def_readwrite("thickness", &grillex::PlateElement::thickness, "Plate thickness [m]")
+        .def_readonly("material", &grillex::PlateElement::material, "Material properties")
+        .def_readonly("x_axis", &grillex::PlateElement::x_axis, "Local x-axis (from node 1 to node 2)")
+        .def_readonly("y_axis", &grillex::PlateElement::y_axis, "Local y-axis")
+        .def_readonly("z_axis", &grillex::PlateElement::z_axis, "Local z-axis (plate normal)")
+        .def("num_dofs", &grillex::PlateElement::num_dofs, "Get number of DOFs (always 24)")
+        .def("has_warping", &grillex::PlateElement::has_warping, "Check for warping DOF (always false)")
+        .def("global_stiffness_matrix", &grillex::PlateElement::global_stiffness_matrix,
+             "Get 24x24 global stiffness matrix")
+        .def("global_mass_matrix", &grillex::PlateElement::global_mass_matrix,
+             "Get 24x24 global mass matrix (lumped)")
+        .def("area", &grillex::PlateElement::area, "Get plate element area [m²]")
+        .def("centroid", &grillex::PlateElement::centroid, "Get centroid position in global coordinates")
+        .def("to_local", &grillex::PlateElement::to_local,
+             py::arg("global_vec"),
+             "Transform vector from global to local coordinates")
+        .def("to_global", &grillex::PlateElement::to_global,
+             py::arg("local_vec"),
+             "Transform vector from local to global coordinates")
+        .def("__repr__", [](const grillex::PlateElement &p) {
+            return "<PlateElement id=" + std::to_string(p.id) +
+                   " thickness=" + std::to_string(p.thickness) +
+                   " area=" + std::to_string(p.area()) + ">";
         });
 }

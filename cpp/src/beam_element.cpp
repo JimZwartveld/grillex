@@ -983,6 +983,127 @@ Eigen::VectorXd BeamElement::get_element_displacements_local(
     return u_local;
 }
 
+DisplacementLine BeamElement::get_displacements_at(
+    double x,
+    const Eigen::VectorXd& global_displacements,
+    const DOFHandler& dof_handler,
+    const LoadCase* load_case) const
+{
+    // Clamp x to valid range [0, L]
+    x = std::max(0.0, std::min(x, length));
+
+    // Get local displacements at nodes
+    Eigen::VectorXd u_local = get_element_displacements_local(global_displacements, dof_handler);
+
+    // Normalized coordinate
+    double L = length;
+    double xi = x / L;
+    double xi2 = xi * xi;
+    double xi3 = xi2 * xi;
+
+    // Extract local displacements at nodes
+    // DOF ordering (12-DOF): [u_i, v_i, w_i, θx_i, θy_i, θz_i, u_j, v_j, w_j, θx_j, θy_j, θz_j]
+    double u1 = u_local(0);        // Axial at i
+    double v1 = u_local(1);        // y-displacement at i
+    double w1 = u_local(2);        // z-displacement at i
+    double theta_x1 = u_local(3);  // Torsion at i
+    double theta_y1 = u_local(4);  // Rotation about y at i
+    double theta_z1 = u_local(5);  // Rotation about z at i
+
+    int offset = config.include_warping ? 7 : 6;
+    double u2 = u_local(offset);        // Axial at j
+    double v2 = u_local(offset + 1);    // y-displacement at j
+    double w2 = u_local(offset + 2);    // z-displacement at j
+    double theta_x2 = u_local(offset + 3);  // Torsion at j
+    double theta_y2 = u_local(offset + 4);  // Rotation about y at j
+    double theta_z2 = u_local(offset + 5);  // Rotation about z at j
+
+    // Initialize result
+    DisplacementLine result(x);
+
+    // Get distributed loads if load case provided
+    DistributedLoad q_y, q_z;
+    if (load_case) {
+        q_y = get_distributed_load_y(*load_case);
+        q_z = get_distributed_load_z(*load_case);
+    }
+
+    // Axial displacement - linear interpolation (no distributed axial deflection effect)
+    // u(x) = (1-xi)*u1 + xi*u2
+    result.u = (1.0 - xi) * u1 + xi * u2;
+
+    // Torsion - linear interpolation
+    // θx(x) = (1-xi)*θx1 + xi*θx2
+    result.theta_x = (1.0 - xi) * theta_x1 + xi * theta_x2;
+
+    // Extract material and section properties for deflection computers
+    double E = material->E;
+    double EIz = E * section->Iz;
+    double EIy = E * section->Iy;
+
+    // Detect release combinations
+    ReleaseCombo4DOF bending_y_release = detect_release_combination_bending_y();
+    ReleaseCombo4DOF bending_z_release = detect_release_combination_bending_z();
+
+    // Compute v (y-deflection) and θz (rotation about z)
+    // For bending in x-y plane (about z-axis)
+    if (config.get_formulation() == BeamFormulation::Timoshenko) {
+        // For Timoshenko beams, use Hermite interpolation for displacement
+        // and linear interpolation for rotation (θ ≠ dv/dx)
+        double N1 = 1.0 - 3.0 * xi2 + 2.0 * xi3;
+        double N2 = L * (xi - 2.0 * xi2 + xi3);
+        double N3 = 3.0 * xi2 - 2.0 * xi3;
+        double N4 = L * (-xi2 + xi3);
+
+        result.v = N1 * v1 + N2 * theta_z1 + N3 * v2 + N4 * theta_z2;
+        result.theta_z = (1.0 - xi) * theta_z1 + xi * theta_z2;
+    } else {
+        // For Euler-Bernoulli, use analytical deflection formulas
+        DeflectionYEulerComputer v_computer(L, EIz, v1, theta_z1, v2, theta_z2,
+                                             q_y.q_start, q_y.q_end);
+        RotationZEulerComputer theta_z_computer(L, EIz, v1, theta_z1, v2, theta_z2,
+                                                 q_y.q_start, q_y.q_end);
+
+        result.v = v_computer.compute(x, bending_z_release);
+        result.theta_z = theta_z_computer.compute(x, bending_z_release);
+    }
+
+    // Compute w (z-deflection) and θy (rotation about y)
+    // For bending in x-z plane (about y-axis)
+    // Note: Sign convention - θy is related to -dw/dx
+    if (config.get_formulation() == BeamFormulation::Timoshenko) {
+        double N1 = 1.0 - 3.0 * xi2 + 2.0 * xi3;
+        double N2 = L * (xi - 2.0 * xi2 + xi3);
+        double N3 = 3.0 * xi2 - 2.0 * xi3;
+        double N4 = L * (-xi2 + xi3);
+
+        result.w = N1 * w1 - N2 * theta_y1 + N3 * w2 - N4 * theta_y2;
+        result.theta_y = (1.0 - xi) * theta_y1 + xi * theta_y2;
+    } else {
+        // Use -θy as the slope input (sign convention)
+        DeflectionZEulerComputer w_computer(L, EIy, w1, -theta_y1, w2, -theta_y2,
+                                             q_z.q_start, q_z.q_end);
+        RotationYEulerComputer theta_y_computer(L, EIy, w1, -theta_y1, w2, -theta_y2,
+                                                 q_z.q_start, q_z.q_end);
+
+        result.w = w_computer.compute(x, bending_y_release);
+        // Negate to get θy from dw/dx (sign convention)
+        result.theta_y = -theta_y_computer.compute(x, bending_y_release);
+    }
+
+    // Warping parameter (for 14-DOF elements)
+    if (config.include_warping) {
+        double phi1 = u_local(6);   // Rate of twist at i
+        double phi2 = u_local(13);  // Rate of twist at j
+        // Linear interpolation for warping parameter
+        result.phi_prime = (1.0 - xi) * phi1 + xi * phi2;
+    } else {
+        result.phi_prime = 0.0;
+    }
+
+    return result;
+}
+
 std::pair<EndForces, EndForces> BeamElement::compute_end_forces(
     const Eigen::VectorXd& global_displacements,
     const DOFHandler& dof_handler) const

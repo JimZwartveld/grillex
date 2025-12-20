@@ -257,6 +257,158 @@ private:
 };
 
 /**
+ * @brief Compute deflection v (displacement in y) along beam - Euler-Bernoulli
+ *
+ * Derived from integrating M = EI * d²v/dx² twice:
+ *   dv/dx = ∫(M/EI)dx + C₁
+ *   v = ∫∫(M/EI)dx² + C₁x + C₂
+ *
+ * Boundary conditions: v₁, φ₁ (rotation), v₂, φ₂
+ * Distributed load: q(x) = q₁ + (q₂ - q₁) * x / L
+ *
+ * This gives the exact deflection including distributed load effects,
+ * unlike Hermite interpolation which only uses nodal values.
+ */
+class DeflectionYEulerComputer {
+public:
+    /**
+     * @brief Construct Euler-Bernoulli deflection computer for y-direction
+     * @param L Element length [m]
+     * @param EI Bending stiffness E*Iz [kN·m²]
+     * @param v1 Lateral displacement at node i [m]
+     * @param phi1 Rotation at node i [rad]
+     * @param v2 Lateral displacement at node j [m]
+     * @param phi2 Rotation at node j [rad]
+     * @param q1 Distributed lateral load at node i [kN/m]
+     * @param q2 Distributed lateral load at node j [kN/m]
+     */
+    DeflectionYEulerComputer(double L, double EI, double v1, double phi1,
+                              double v2, double phi2, double q1, double q2);
+
+    /**
+     * @brief Compute deflection in y-direction at position x
+     * @param x Position along beam [0, L]
+     * @param release Release combination
+     * @return Deflection v [m]
+     */
+    double compute(double x, ReleaseCombo4DOF release) const;
+
+private:
+    double L_, EI_, v1_, phi1_, v2_, phi2_, q1_, q2_;
+
+    double fixed_fixed_fixed_fixed(double x) const;
+    double fixed_fixed_free_fixed(double x) const;
+    double fixed_fixed_fixed_free(double x) const;
+    double fixed_fixed_free_free(double x) const;
+    double fixed_free_fixed_fixed(double x) const;
+    double fixed_free_free_fixed(double x) const;
+    double fixed_free_fixed_free(double x) const;
+    double fixed_free_free_free(double x) const;
+    double free_fixed_fixed_fixed(double x) const;
+    double free_fixed_free_fixed(double x) const;
+    double free_fixed_fixed_free(double x) const;
+    double free_fixed_free_free(double x) const;
+    double free_free_fixed_fixed(double x) const;
+    double free_free_free_fixed(double x) const;
+    double free_free_fixed_free(double x) const;
+};
+
+/**
+ * @brief Compute rotation θz (slope dv/dx) along beam - Euler-Bernoulli
+ *
+ * θz = dv/dx for Euler-Bernoulli beams (no shear deformation)
+ * Derived from integrating M = EI * d²v/dx² once
+ */
+class RotationZEulerComputer {
+public:
+    RotationZEulerComputer(double L, double EI, double v1, double phi1,
+                           double v2, double phi2, double q1, double q2);
+
+    double compute(double x, ReleaseCombo4DOF release) const;
+
+private:
+    double L_, EI_, v1_, phi1_, v2_, phi2_, q1_, q2_;
+
+    double fixed_fixed_fixed_fixed(double x) const;
+    double fixed_fixed_free_fixed(double x) const;
+    double fixed_fixed_fixed_free(double x) const;
+    double fixed_fixed_free_free(double x) const;
+    double fixed_free_fixed_fixed(double x) const;
+    double fixed_free_free_fixed(double x) const;
+    double fixed_free_fixed_free(double x) const;
+    double fixed_free_free_free(double x) const;
+    double free_fixed_fixed_fixed(double x) const;
+    double free_fixed_free_fixed(double x) const;
+    double free_fixed_fixed_free(double x) const;
+    double free_fixed_free_free(double x) const;
+    double free_free_fixed_fixed(double x) const;
+    double free_free_free_fixed(double x) const;
+    double free_free_fixed_free(double x) const;
+};
+
+/**
+ * @brief Compute deflection w (displacement in z) along beam - Euler-Bernoulli
+ *
+ * Same as DeflectionYEulerComputer but for x-z bending plane.
+ */
+class DeflectionZEulerComputer {
+public:
+    DeflectionZEulerComputer(double L, double EI, double w1, double phi1,
+                              double w2, double phi2, double q1, double q2);
+
+    double compute(double x, ReleaseCombo4DOF release) const;
+
+private:
+    double L_, EI_, w1_, phi1_, w2_, phi2_, q1_, q2_;
+
+    double fixed_fixed_fixed_fixed(double x) const;
+    double fixed_fixed_free_fixed(double x) const;
+    double fixed_fixed_fixed_free(double x) const;
+    double fixed_fixed_free_free(double x) const;
+    double fixed_free_fixed_fixed(double x) const;
+    double fixed_free_free_fixed(double x) const;
+    double fixed_free_fixed_free(double x) const;
+    double fixed_free_free_free(double x) const;
+    double free_fixed_fixed_fixed(double x) const;
+    double free_fixed_free_fixed(double x) const;
+    double free_fixed_fixed_free(double x) const;
+    double free_fixed_free_free(double x) const;
+    double free_free_fixed_fixed(double x) const;
+    double free_free_free_fixed(double x) const;
+    double free_free_fixed_free(double x) const;
+};
+
+/**
+ * @brief Compute rotation θy along beam - Euler-Bernoulli
+ */
+class RotationYEulerComputer {
+public:
+    RotationYEulerComputer(double L, double EI, double w1, double phi1,
+                           double w2, double phi2, double q1, double q2);
+
+    double compute(double x, ReleaseCombo4DOF release) const;
+
+private:
+    double L_, EI_, w1_, phi1_, w2_, phi2_, q1_, q2_;
+
+    double fixed_fixed_fixed_fixed(double x) const;
+    double fixed_fixed_free_fixed(double x) const;
+    double fixed_fixed_fixed_free(double x) const;
+    double fixed_fixed_free_free(double x) const;
+    double fixed_free_fixed_fixed(double x) const;
+    double fixed_free_free_fixed(double x) const;
+    double fixed_free_fixed_free(double x) const;
+    double fixed_free_free_free(double x) const;
+    double free_fixed_fixed_fixed(double x) const;
+    double free_fixed_free_fixed(double x) const;
+    double free_fixed_fixed_free(double x) const;
+    double free_fixed_free_free(double x) const;
+    double free_free_fixed_fixed(double x) const;
+    double free_free_free_fixed(double x) const;
+    double free_free_fixed_free(double x) const;
+};
+
+/**
  * @brief Compute moment Mz (bending in x-y plane) - Timoshenko
  *
  * Includes shear deformation effects via kAG (shear stiffness).
