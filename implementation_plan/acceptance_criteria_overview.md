@@ -18,12 +18,12 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 7 | Internal Actions & Results | 35 | 35 | 0 | 100% |
 | 8 | Additional Element Types | 9 | 9 | 0 | 100% |
 | 9 | Cargo Modeling | 20 | 20 | 0 | 100% |
-| 10 | Design Codes | 6 | 0 | 6 | 0% |
+| 10 | Design Codes | 6 | 3 | 3 | 50% |
 | 11 | Error Handling | 9 | 0 | 9 | 0% |
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 12 | 0 | 12 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **200** | **172** | **28** | **86%** |
+| **Total** | | **200** | **175** | **25** | **88%** |
 
 ---
 
@@ -373,9 +373,9 @@ This document provides a comprehensive overview of all acceptance criteria acros
 ## Phase 10: Design Codes
 
 ### Task 10.1: Design Code Base Classes
-- [ ] Base classes are defined
-- [ ] Plugin structure allows multiple codes
-- [ ] Check results include all required info
+- [x] Base classes are defined
+- [x] Plugin structure allows multiple codes
+- [x] Check results include all required info
 
 ### Task 10.2: Implement Basic Checks
 - [ ] At least basic checks are implemented

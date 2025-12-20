@@ -63,9 +63,34 @@ Create the pluggable design code module structure.
    ```
 
 **Acceptance Criteria:**
-- [ ] Base classes are defined
-- [ ] Plugin structure allows multiple codes
-- [ ] Check results include all required info
+- [x] Base classes are defined
+- [x] Plugin structure allows multiple codes
+- [x] Check results include all required info
+
+### Execution Notes (Completed 2025-12-20)
+
+**Steps Taken:**
+1. Created `src/grillex/design_codes/base.py` with:
+   - `CheckResult` dataclass for design check results
+   - `DesignCheck` abstract base class for individual checks
+   - `DesignCode` abstract base class for complete design standards
+2. Updated `src/grillex/design_codes/__init__.py` with exports
+3. Created comprehensive test suite in `tests/python/test_phase10_design_codes.py`
+
+**Implementation Details:**
+- `CheckResult`: Contains element_id, location, check_name, utilization, load_combination, governing flag, and optional details dict. Has `status` property that returns "PASS"/"FAIL" based on utilization <= 1.0
+- `DesignCheck`: Abstract base with `name` property and `compute_utilization()` method. Includes convenience `check()` method that returns a CheckResult
+- `DesignCode`: Abstract base with `name`, `version` properties and `get_checks()`, `check_beam()` methods. Includes helper methods `check_all_beams()`, `get_governing_results()`, `get_summary()`
+
+**Problems Encountered:**
+- None
+
+**Verification:**
+- 24 unit tests passing ✓
+- Full test suite: 667 tests passing ✓
+- Abstract classes correctly prevent direct instantiation
+- Concrete implementations work as expected
+- Multiple design codes can coexist independently
 
 ---
 
