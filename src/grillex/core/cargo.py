@@ -340,55 +340,47 @@ class Cargo:
                 conn.connection_node = self._cog_node
                 spring = model.create_spring(self._cog_node, conn.structural_node)
             else:
-                # Offset connection: create spring from offset position to structure
-                # Calculate offset node position (CoG + offset)
+                # Offset connection: use rigid link from CoG to footprint node
+                # Calculate footprint node position (CoG + offset)
                 offset_pos = [
                     self.cog_position[0] + conn.cargo_offset[0],
                     self.cog_position[1] + conn.cargo_offset[1],
                     self.cog_position[2] + conn.cargo_offset[2]
                 ]
 
-                # Create offset node
-                conn.connection_node = model.get_or_create_node(
+                # Force create a separate footprint node (without merging)
+                # This ensures cargo footprint is a distinct node from structural node,
+                # even when at the same position. Forces transfer via the spring.
+                conn.connection_node = model.create_node(
                     offset_pos[0], offset_pos[1], offset_pos[2]
                 )
 
-                # For now, create spring from offset node to structural node
-                # The offset node is where the cargo physically connects to structure
-                # Note: Full rigid link coupling from CoG to offset node is planned
-                # for a future implementation that would properly transfer rotations
+                # Add rigid link from COG (master) to footprint node (slave)
+                # The offset vector goes from master to slave in global coords
+                offset_vec = np.array(conn.cargo_offset, dtype=float)
+                model.add_rigid_link(conn.connection_node, self._cog_node, offset_vec)
+
+                # Create spring from footprint node to structural node
                 spring = model.create_spring(conn.connection_node, conn.structural_node)
 
-                # Also create a very stiff spring from CoG to offset node to couple them
-                # This provides approximate rigid coupling for small deformations
-                coupling_spring = model.create_spring(self._cog_node, conn.connection_node)
-                coupling_spring.kx = 1e12  # Very stiff
-                coupling_spring.ky = 1e12
-                coupling_spring.kz = 1e12
-                coupling_spring.krx = 1e10
-                coupling_spring.kry = 1e10
-                coupling_spring.krz = 1e10
-                # Note: This approximation doesn't capture the true rigid body
-                # kinematic coupling, but provides reasonable behavior for
-                # most practical applications
+            # Set spring stiffnesses (if spring was created)
+            if spring is not None:
+                spring.kx = conn.stiffness[0]
+                spring.ky = conn.stiffness[1]
+                spring.kz = conn.stiffness[2]
+                spring.krx = conn.stiffness[3]
+                spring.kry = conn.stiffness[4]
+                spring.krz = conn.stiffness[5]
 
-            # Set spring stiffnesses
-            spring.kx = conn.stiffness[0]
-            spring.ky = conn.stiffness[1]
-            spring.kz = conn.stiffness[2]
-            spring.krx = conn.stiffness[3]
-            spring.kry = conn.stiffness[4]
-            spring.krz = conn.stiffness[5]
-
-            # Set loading condition on the spring
-            # Import here to avoid circular import issues
-            from grillex._grillex_cpp import LoadingCondition
-            loading_condition_map = {
-                "all": LoadingCondition.All,
-                "static": LoadingCondition.Static,
-                "dynamic": LoadingCondition.Dynamic
-            }
-            spring.loading_condition = loading_condition_map[conn.loading_condition]
+                # Set loading condition on the spring
+                # Import here to avoid circular import issues
+                from grillex._grillex_cpp import LoadingCondition
+                loading_condition_map = {
+                    "all": LoadingCondition.All,
+                    "static": LoadingCondition.Static,
+                    "dynamic": LoadingCondition.Dynamic
+                }
+                spring.loading_condition = loading_condition_map[conn.loading_condition]
 
             conn.spring_element = spring
 

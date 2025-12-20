@@ -83,6 +83,10 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              py::arg("x"), py::arg("y"), py::arg("z"),
              "Get existing node or create new one at (x, y, z)",
              py::return_value_policy::reference_internal)
+        .def("create_node", &grillex::NodeRegistry::create_node,
+             py::arg("x"), py::arg("y"), py::arg("z"),
+             "Force create a new node at (x, y, z) without merging",
+             py::return_value_policy::reference_internal)
         .def("get_node_by_id", &grillex::NodeRegistry::get_node_by_id,
              py::arg("id"), "Get node by ID",
              py::return_value_policy::reference_internal)
@@ -970,6 +974,11 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         }, py::arg("x"), py::arg("y"), py::arg("z"),
            py::return_value_policy::reference_internal,
            "Get existing node or create new one at (x, y, z)")
+        .def("create_node", [](grillex::Model &m, double x, double y, double z) {
+            return m.nodes.create_node(x, y, z);
+        }, py::arg("x"), py::arg("y"), py::arg("z"),
+           py::return_value_policy::reference_internal,
+           "Force create a new node at (x, y, z) without merging")
         .def("get_all_nodes", [](grillex::Model &m) {
             py::list result;
             for (const auto& node : m.nodes.all_nodes()) {
@@ -1076,6 +1085,23 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "    plate = model.create_plate(n1, n2, n3, n4, 0.01, steel)\n\n"
              "Uses Mindlin plate theory with MITC4 formulation for locking-free behavior.",
              py::return_value_policy::reference_internal)
+        .def("add_rigid_link", &grillex::Model::add_rigid_link,
+             py::arg("slave_node"), py::arg("master_node"), py::arg("offset"),
+             "Add a rigid link constraint between two nodes.\n\n"
+             "Creates a kinematic constraint where the slave node's motion is\n"
+             "determined by the master node's motion:\n"
+             "    u_slave = u_master + θ_master × offset\n"
+             "    θ_slave = θ_master\n\n"
+             "Parameters:\n"
+             "    slave_node: Slave (constrained) node - its motion follows master\n"
+             "    master_node: Master (independent) node\n"
+             "    offset: Offset vector from master to slave [m] as numpy array\n\n"
+             "Example:\n"
+             "    cog = model.get_or_create_node(5, 5, 2)\n"
+             "    foot = model.get_or_create_node(5, 5, 0)\n"
+             "    model.add_rigid_link(foot, cog, np.array([0, 0, -2]))")
+        .def_readonly("constraints", &grillex::Model::constraints,
+             "MPC and rigid link constraint handler")
         .def("remove_element", &grillex::Model::remove_element,
              py::arg("element_id"),
              "Remove a beam element from the model by ID.\n\n"
