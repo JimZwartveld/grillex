@@ -53,4 +53,20 @@ bool SpringElement::has_stiffness() const {
            std::abs(krx) > 1e-20 || std::abs(kry) > 1e-20 || std::abs(krz) > 1e-20;
 }
 
+bool SpringElement::is_active_for_load_case(LoadCaseType type) const {
+    switch (loading_condition) {
+        case LoadingCondition::All:
+            return true;
+        case LoadingCondition::Static:
+            // Static connections only active for Permanent (gravity, dead load)
+            return (type == LoadCaseType::Permanent);
+        case LoadingCondition::Dynamic:
+            // Dynamic connections active for all non-permanent load cases
+            return (type == LoadCaseType::Variable ||
+                    type == LoadCaseType::Environmental ||
+                    type == LoadCaseType::Accidental);
+    }
+    return true;  // Default: always active
+}
+
 } // namespace grillex

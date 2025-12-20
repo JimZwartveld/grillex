@@ -192,7 +192,7 @@ bool Model::analyze() {
             return false;
         }
 
-        // Step 2: Assemble global stiffness matrix (same for all cases)
+        // Step 2: Assemble global stiffness matrix
         assembler_ = std::make_unique<Assembler>(dof_handler_);
 
         std::vector<BeamElement*> elem_ptrs;
@@ -201,41 +201,76 @@ bool Model::analyze() {
             elem_ptrs.push_back(elem.get());
         }
 
-        Eigen::SparseMatrix<double> K = assembler_->assemble_stiffness(elem_ptrs);
+        Eigen::SparseMatrix<double> K_base = assembler_->assemble_stiffness(elem_ptrs);
 
-        // Add spring element stiffness contributions
+        // Check if any springs have conditional loading (static/dynamic)
+        bool has_conditional_springs = false;
         for (const auto& spring : spring_elements) {
-            if (!spring->has_stiffness()) continue;
-
-            auto K_spring = spring->global_stiffness_matrix();
-
-            // Build location array for 12-DOF spring (6 DOFs per node)
-            std::vector<int> loc(12);
-            for (int i = 0; i < 6; ++i) {
-                loc[i] = dof_handler_.get_global_dof(spring->node_i->id, i);
-                loc[i + 6] = dof_handler_.get_global_dof(spring->node_j->id, i);
+            if (spring->loading_condition != LoadingCondition::All) {
+                has_conditional_springs = true;
+                break;
             }
-
-            // Add to global K using triplets
-            std::vector<Eigen::Triplet<double>> triplets;
-            for (int i = 0; i < 12; ++i) {
-                if (loc[i] < 0) continue;
-                for (int j = 0; j < 12; ++j) {
-                    if (loc[j] < 0) continue;
-                    double val = K_spring(i, j);
-                    if (std::abs(val) > 1e-20) {
-                        triplets.emplace_back(loc[i], loc[j], val);
-                    }
-                }
-            }
-
-            // Add triplets to K
-            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
-            K_add.setFromTriplets(triplets.begin(), triplets.end());
-            K += K_add;
         }
 
-        // Add plate element stiffness contributions
+        // Lambda to add spring stiffness to K matrix with optional load case filter
+        auto add_spring_stiffness = [&](Eigen::SparseMatrix<double>& K,
+                                        std::optional<LoadCaseType> filter_type) {
+            for (const auto& spring : spring_elements) {
+                if (!spring->has_stiffness()) continue;
+
+                // Check if spring should be included based on filter
+                if (filter_type.has_value()) {
+                    if (!spring->is_active_for_load_case(*filter_type)) {
+                        continue;  // Skip this spring for this load case type
+                    }
+                }
+
+                auto K_spring = spring->global_stiffness_matrix();
+
+                // Build location array for 12-DOF spring (6 DOFs per node)
+                std::vector<int> loc(12);
+                for (int i = 0; i < 6; ++i) {
+                    loc[i] = dof_handler_.get_global_dof(spring->node_i->id, i);
+                    loc[i + 6] = dof_handler_.get_global_dof(spring->node_j->id, i);
+                }
+
+                // Add to global K using triplets
+                std::vector<Eigen::Triplet<double>> triplets;
+                for (int i = 0; i < 12; ++i) {
+                    if (loc[i] < 0) continue;
+                    for (int j = 0; j < 12; ++j) {
+                        if (loc[j] < 0) continue;
+                        double val = K_spring(i, j);
+                        if (std::abs(val) > 1e-20) {
+                            triplets.emplace_back(loc[i], loc[j], val);
+                        }
+                    }
+                }
+
+                // Add triplets to K
+                Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+                K_add.setFromTriplets(triplets.begin(), triplets.end());
+                K += K_add;
+            }
+        };
+
+        // Build stiffness matrices based on whether we have conditional springs
+        // K_static: For Permanent load cases (excludes Dynamic springs)
+        // K_dynamic: For Variable/Environmental/Accidental load cases (includes all springs)
+        Eigen::SparseMatrix<double> K_static = K_base;
+        Eigen::SparseMatrix<double> K_dynamic = K_base;
+
+        if (has_conditional_springs) {
+            // Build separate matrices for static and dynamic cases
+            add_spring_stiffness(K_static, LoadCaseType::Permanent);
+            add_spring_stiffness(K_dynamic, LoadCaseType::Variable);  // Variable includes all dynamic springs
+        } else {
+            // All springs have LoadingCondition::All, use single matrix
+            add_spring_stiffness(K_static, std::nullopt);
+            K_dynamic = K_static;  // Same matrix for both
+        }
+
+        // Add plate element stiffness contributions (to both matrices)
         for (const auto& plate : plate_elements) {
             auto K_plate = plate->global_stiffness_matrix();
 
@@ -261,10 +296,13 @@ bool Model::analyze() {
                 }
             }
 
-            // Add triplets to K
+            // Add triplets to both K matrices (plates are always active)
             Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
             K_add.setFromTriplets(triplets.begin(), triplets.end());
-            K += K_add;
+            K_static += K_add;
+            if (has_conditional_springs) {
+                K_dynamic += K_add;
+            }
         }
 
         // Step 3: Analyze each load case
@@ -275,6 +313,12 @@ bool Model::analyze() {
             LoadCaseResult result(lc);
 
             try {
+                // Select appropriate stiffness matrix based on load case type
+                // Static load cases (Permanent) use K_static (excludes Dynamic springs)
+                // Dynamic load cases (Variable/Environmental/Accidental) use K_dynamic (all springs)
+                const Eigen::SparseMatrix<double>& K =
+                    (lc->type() == LoadCaseType::Permanent) ? K_static : K_dynamic;
+
                 // Assemble load vector for this case
                 Eigen::VectorXd F = lc->assemble_load_vector(*this, dof_handler_);
                 Eigen::VectorXd F_applied = F;  // Store for reactions

@@ -17,13 +17,13 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 6 | MPC & Rigid Links | 9 | 9 | 0 | 100% |
 | 7 | Internal Actions & Results | 35 | 35 | 0 | 100% |
 | 8 | Additional Element Types | 9 | 9 | 0 | 100% |
-| 9 | Cargo Modeling | 20 | 3 | 17 | 15% |
+| 9 | Cargo Modeling | 20 | 11 | 9 | 55% |
 | 10 | Design Codes | 6 | 0 | 6 | 0% |
 | 11 | Error Handling | 9 | 0 | 9 | 0% |
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 12 | 0 | 12 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **200** | **155** | **45** | **78%** |
+| **Total** | | **200** | **163** | **37** | **82%** |
 
 ---
 
@@ -344,16 +344,16 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Cargo mass contributes to inertial loads under acceleration
 
 ### Task 9.2: Static vs Dynamic Cargo Connections
-- [ ] CargoConnection has loading_condition attribute with values "all", "static", "dynamic"
-- [ ] add_connection accepts loading_condition parameter
-- [ ] Validation rejects invalid loading_condition values
-- [ ] Default loading_condition="all" maintains backward compatibility
+- [x] CargoConnection has loading_condition attribute with values "all", "static", "dynamic"
+- [x] add_connection accepts loading_condition parameter
+- [x] Validation rejects invalid loading_condition values
+- [x] Default loading_condition="all" maintains backward compatibility
 
 ### Task 9.3: Add Loading Condition to Spring Element (C++)
-- [ ] SpringElement has loading_condition property
-- [ ] is_active_for_load_case correctly maps load case types to connection activity
-- [ ] Python can get/set loading_condition on spring elements
-- [ ] LoadingCondition enum is accessible from Python
+- [x] SpringElement has loading_condition property
+- [x] is_active_for_load_case correctly maps load case types to connection activity
+- [x] Python can get/set loading_condition on spring elements
+- [x] LoadingCondition enum is accessible from Python
 
 ### Task 9.4: Filter Springs in Stiffness Matrix Assembly
 - [ ] Static load cases (Permanent) use K matrix without dynamic springs

@@ -383,7 +383,10 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "    dof_handler: DOF handler for global-to-local mapping\n\n"
              "Returns:\n"
              "    Local displacement vector (12 or 14 components)")
-        .def("get_displacements_at", &grillex::BeamElement::get_displacements_at,
+        .def("get_displacements_at",
+             static_cast<grillex::DisplacementLine (grillex::BeamElement::*)(
+                 double, const Eigen::VectorXd&, const grillex::DOFHandler&, const grillex::LoadCase*) const>(
+                 &grillex::BeamElement::get_displacements_at),
              py::arg("x"), py::arg("global_displacements"), py::arg("dof_handler"),
              py::arg("load_case") = nullptr,
              "Get displacements and rotations at position x along element.\n\n"
@@ -487,23 +490,6 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "    bimoment: Bimoment at position [kN·m²]\n\n"
              "Returns:\n"
              "    Maximum warping stress [kN/m²]")
-        .def("get_displacements_at", &grillex::BeamElement::get_displacements_at,
-             py::arg("x"),
-             py::arg("global_displacements"),
-             py::arg("dof_handler"),
-             "Get displacements and rotations at position x along element.\n\n"
-             "Uses Hermite shape functions to interpolate displacements and rotations\n"
-             "at any position along the beam element. For bending, cubic Hermite\n"
-             "polynomials ensure C1 continuity. For axial and torsion, linear\n"
-             "interpolation is used.\n\n"
-             "For Euler-Bernoulli beams, rotation equals the slope: θ = dw/dx.\n"
-             "For Timoshenko beams, rotation is an independent DOF.\n\n"
-             "Args:\n"
-             "    x: Position along beam [0, L] in meters\n"
-             "    global_displacements: Displacement vector from analysis\n"
-             "    dof_handler: DOF numbering manager\n\n"
-             "Returns:\n"
-             "    DisplacementLine with u, v, w, θx, θy, θz at position x")
         .def("__repr__", [](const grillex::BeamElement &e) {
             return "<BeamElement id=" + std::to_string(e.id) +
                    " nodes=[" + std::to_string(e.node_i->id) + "," +
@@ -1528,6 +1514,23 @@ PYBIND11_MODULE(_grillex_cpp, m) {
     // Phase 8: Additional Element Types
     // ========================================================================
 
+    // LoadingCondition enum for spring elements
+    py::enum_<grillex::LoadingCondition>(m, "LoadingCondition",
+        "Loading condition for spring elements.\n\n"
+        "Controls when a spring is active based on load case type.\n"
+        "Used for modeling cargo connections that behave differently\n"
+        "for static (set-down) vs dynamic (environmental) loads.\n\n"
+        "- All: Active for all load cases (default)\n"
+        "- Static: Only active for Permanent load cases (e.g., bearing pads)\n"
+        "- Dynamic: Only active for Variable/Environmental load cases (e.g., seafastening)")
+        .value("All", grillex::LoadingCondition::All,
+               "Active for all load cases (default)")
+        .value("Static", grillex::LoadingCondition::Static,
+               "Only active for Permanent load cases (gravity, dead load)")
+        .value("Dynamic", grillex::LoadingCondition::Dynamic,
+               "Only active for Variable/Environmental/Accidental load cases")
+        .export_values();
+
     // SpringElement class
     py::class_<grillex::SpringElement>(m, "SpringElement",
         "Spring element connecting two nodes with independent stiffness for each DOF.\n\n"
@@ -1560,11 +1563,30 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Set all rotational stiffnesses at once")
         .def("has_stiffness", &grillex::SpringElement::has_stiffness,
              "Check if element has any non-zero stiffness")
+        .def_readwrite("loading_condition", &grillex::SpringElement::loading_condition,
+             "Loading condition controlling when this spring is active.\n\n"
+             "- LoadingCondition.All: Active for all load cases (default)\n"
+             "- LoadingCondition.Static: Only for Permanent load cases\n"
+             "- LoadingCondition.Dynamic: Only for Variable/Environmental load cases")
+        .def("is_active_for_load_case", &grillex::SpringElement::is_active_for_load_case,
+             py::arg("load_case_type"),
+             "Check if this spring is active for a given load case type.\n\n"
+             "Args:\n"
+             "    load_case_type: The LoadCaseType to check against\n\n"
+             "Returns:\n"
+             "    True if this spring should contribute to the load case")
         .def("__repr__", [](const grillex::SpringElement &s) {
+            std::string cond_str;
+            switch (s.loading_condition) {
+                case grillex::LoadingCondition::All: cond_str = "All"; break;
+                case grillex::LoadingCondition::Static: cond_str = "Static"; break;
+                case grillex::LoadingCondition::Dynamic: cond_str = "Dynamic"; break;
+            }
             return "<SpringElement id=" + std::to_string(s.id) +
                    " kx=" + std::to_string(s.kx) +
                    " ky=" + std::to_string(s.ky) +
-                   " kz=" + std::to_string(s.kz) + ">";
+                   " kz=" + std::to_string(s.kz) +
+                   " loading_condition=" + cond_str + ">";
         });
 
     // PointMass class

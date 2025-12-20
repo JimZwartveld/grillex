@@ -1,9 +1,27 @@
 #pragma once
 
 #include "grillex/node.hpp"
+#include "grillex/load_case.hpp"
 #include <Eigen/Dense>
 
 namespace grillex {
+
+/**
+ * @brief Loading condition for spring elements
+ *
+ * Controls when a spring is active based on load case type.
+ * Used for modeling cargo connections that behave differently
+ * for static (set-down) vs dynamic (environmental) loads.
+ *
+ * - All: Spring is active for all load cases (default)
+ * - Static: Spring only active for Permanent load cases (e.g., bearing pads)
+ * - Dynamic: Spring only active for Variable/Environmental load cases (e.g., seafastening)
+ */
+enum class LoadingCondition {
+    All = 0,      ///< Active for all load cases (default)
+    Static = 1,   ///< Only active for Permanent load cases
+    Dynamic = 2   ///< Only active for Variable/Environmental/Accidental load cases
+};
 
 /**
  * @brief Spring element connecting two nodes
@@ -18,10 +36,16 @@ namespace grillex {
  *
  * For uncoupled springs, each DOF is independent.
  *
+ * The loading_condition property controls when the spring is active:
+ * - LoadingCondition::All: Active for all load cases (default)
+ * - LoadingCondition::Static: Only for Permanent load cases
+ * - LoadingCondition::Dynamic: Only for Variable/Environmental/Accidental
+ *
  * Usage:
  *   SpringElement spring(1, node_i, node_j);
  *   spring.kx = 1000.0;  // Axial stiffness [kN/m]
  *   spring.kz = 500.0;   // Vertical stiffness [kN/m]
+ *   spring.loading_condition = LoadingCondition::Static;  // Only for gravity
  *   auto K = spring.global_stiffness_matrix();
  */
 class SpringElement {
@@ -39,6 +63,9 @@ public:
     double krx = 0.0; ///< Rotational stiffness about x axis
     double kry = 0.0; ///< Rotational stiffness about y axis
     double krz = 0.0; ///< Rotational stiffness about z axis
+
+    /// Loading condition controlling when this spring is active
+    LoadingCondition loading_condition = LoadingCondition::All;
 
     /**
      * @brief Construct a spring element
@@ -104,6 +131,18 @@ public:
      * @return true if any stiffness component is non-zero
      */
     bool has_stiffness() const;
+
+    /**
+     * @brief Check if this spring is active for a given load case type
+     * @param type The load case type to check against
+     * @return true if this spring should contribute to the load case
+     *
+     * Based on loading_condition:
+     * - All: Returns true for all load case types
+     * - Static: Returns true only for Permanent load cases
+     * - Dynamic: Returns true for Variable, Environmental, and Accidental
+     */
+    bool is_active_for_load_case(LoadCaseType type) const;
 };
 
 } // namespace grillex

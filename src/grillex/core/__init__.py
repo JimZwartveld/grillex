@@ -18,7 +18,7 @@ from .data_types import (
     EndForces, InternalActions, WarpingInternalActions, ActionExtreme,
     ReleaseCombo4DOF, ReleaseCombo2DOF, ReleaseComboWarping, DisplacementLine,
     # Phase 8: Additional Element Types
-    SpringElement, PointMass, PlateElement,
+    SpringElement, PointMass, PlateElement, LoadingCondition,
 )
 
 from .model_wrapper import (
@@ -49,7 +49,7 @@ __all__ = [
     'EndForces', 'InternalActions', 'WarpingInternalActions', 'ActionExtreme',
     'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine',
     # Phase 8: Additional Element Types
-    'SpringElement', 'PointMass', 'PlateElement',
+    'SpringElement', 'PointMass', 'PlateElement', 'LoadingCondition',
     # Phase 9: Cargo Modelling
     'Cargo', 'CargoConnection',
     'Beam', 'StructuralModel'

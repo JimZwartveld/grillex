@@ -123,10 +123,24 @@ Implement the ability to mark cargo connections as "static" or "dynamic" to mode
 3. Update `generate_elements()` to tag springs with their loading condition
 
 **Acceptance Criteria:**
-- [ ] CargoConnection has loading_condition attribute with values "all", "static", "dynamic"
-- [ ] add_connection accepts loading_condition parameter
-- [ ] Validation rejects invalid loading_condition values
-- [ ] Default loading_condition="all" maintains backward compatibility
+- [x] CargoConnection has loading_condition attribute with values "all", "static", "dynamic"
+- [x] add_connection accepts loading_condition parameter
+- [x] Validation rejects invalid loading_condition values
+- [x] Default loading_condition="all" maintains backward compatibility
+
+### Execution Notes (Completed 2025-12-20)
+
+**Steps Taken:**
+1. Added `VALID_LOADING_CONDITIONS = ("all", "static", "dynamic")` constant
+2. Added `loading_condition: str = "all"` attribute to `CargoConnection` dataclass
+3. Updated `Cargo.add_connection()` to accept and validate `loading_condition` parameter
+4. Added comprehensive docstrings with examples for static/dynamic connections
+5. Updated `generate_elements()` to set `loading_condition` on generated spring elements
+
+**Verification:**
+- All 7 loading condition tests passing ✓
+- All 27 cargo tests passing ✓
+- Backward compatible: default "all" works like before
 
 ---
 
@@ -165,10 +179,30 @@ Extend the C++ SpringElement to support loading condition filtering, enabling sp
 3. Add pybind11 bindings for `LoadingCondition` enum and property
 
 **Acceptance Criteria:**
-- [ ] SpringElement has loading_condition property
-- [ ] is_active_for_load_case correctly maps load case types to connection activity
-- [ ] Python can get/set loading_condition on spring elements
-- [ ] LoadingCondition enum is accessible from Python
+- [x] SpringElement has loading_condition property
+- [x] is_active_for_load_case correctly maps load case types to connection activity
+- [x] Python can get/set loading_condition on spring elements
+- [x] LoadingCondition enum is accessible from Python
+
+### Execution Notes (Completed 2025-12-20)
+
+**Steps Taken:**
+1. Added `LoadingCondition` enum to `spring_element.hpp` with values All, Static, Dynamic
+2. Added `loading_condition` member variable to SpringElement class
+3. Implemented `is_active_for_load_case(LoadCaseType)` method in `spring_element.cpp`
+4. Added pybind11 bindings for `LoadingCondition` enum with docstrings
+5. Updated SpringElement bindings to expose `loading_condition` property and `is_active_for_load_case` method
+6. Exported `LoadingCondition` from Python `data_types.py` and `__init__.py`
+
+**Problems Encountered:**
+- **Issue**: Duplicate `get_displacements_at` binding in bindings.cpp (pre-existing)
+  - **Error**: pybind11 couldn't select between overloaded methods
+  - **Solution**: Used `static_cast` to explicitly select the overload with 4 parameters
+
+**Verification:**
+- `test_loading_condition_set_on_spring_element` passing ✓
+- `test_is_active_for_load_case` verifies all LoadCaseType mappings ✓
+- LoadingCondition enum accessible from Python ✓
 
 ---
 
@@ -230,6 +264,11 @@ Only build separate K matrices if any springs have non-"all" loading_condition. 
 
 **Description:**
 Add comprehensive tests verifying that static and dynamic cargo connections behave correctly under different load case types.
+
+**Important Modelling Note:**
+When using static/dynamic spring filtering, ensure the model has sufficient restraints for each load case type independently. For example, if static springs only provide vertical stiffness (bearing pads), the cargo CoG node will be unrestrained horizontally in Permanent load cases (since dynamic springs are excluded). This will cause a singular stiffness matrix. Either:
+- Provide full 6-DOF stiffness in static connections (representing friction), or
+- Add explicit boundary conditions to the cargo CoG node for DOFs not covered by static springs
 
 **Test Cases:**
 

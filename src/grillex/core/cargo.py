@@ -44,8 +44,13 @@ if TYPE_CHECKING:
         Node,
         PointMass,
         SpringElement,
-        RigidLink
+        RigidLink,
+        LoadingCondition as _LoadingCondition
     )
+
+
+# Valid loading condition values
+VALID_LOADING_CONDITIONS = ("all", "static", "dynamic")
 
 
 @dataclass
@@ -57,6 +62,7 @@ class CargoConnection:
     - The structural position where the connection point is located
     - Spring stiffnesses in 6 DOFs (translations + rotations)
     - Optional offset from cargo CoG to the connection point on the cargo
+    - Loading condition to control when the connection is active
 
     Attributes:
         structural_position: Position [x, y, z] where cargo connects to structure
@@ -64,15 +70,27 @@ class CargoConnection:
                    Units: translations [kN/m], rotations [kN·m/rad]
         cargo_offset: Offset from cargo CoG to connection point on cargo [dx, dy, dz]
                       If None, connection is directly at CoG
+        loading_condition: When this connection is active:
+            - "all": Active for all load cases (default, backward compatible)
+            - "static": Only active for Permanent load cases (e.g., bearing pads)
+            - "dynamic": Only active for Variable/Environmental load cases (e.g., seafastening)
 
     Note:
         If cargo_offset is specified, a rigid link is created from the cargo CoG
         node to an intermediate node at the offset position, which then connects
         via spring to the structural node.
+
+    Example:
+        # Static connection (bearing pad) - only takes gravity load
+        CargoConnection([0, 0, 0], [0, 0, 1e9, 0, 0, 0], loading_condition="static")
+
+        # Dynamic connection (seafastening) - only takes environmental loads
+        CargoConnection([5, 0, 0], [1e9, 1e9, 0, 0, 0, 0], loading_condition="dynamic")
     """
     structural_position: List[float]
     stiffness: List[float]  # [kx, ky, kz, krx, kry, krz]
     cargo_offset: Optional[List[float]] = None
+    loading_condition: str = "all"  # "all", "static", "dynamic"
 
     # Internal references (set during element generation)
     structural_node: Optional["Node"] = field(default=None, repr=False)
@@ -193,7 +211,8 @@ class Cargo:
         self,
         structural_position: List[float],
         stiffness: List[float],
-        cargo_offset: Optional[List[float]] = None
+        cargo_offset: Optional[List[float]] = None,
+        loading_condition: str = "all"
     ) -> "Cargo":
         """
         Add a connection to the structure.
@@ -209,6 +228,10 @@ class Cargo:
                        Translations in [kN/m], rotations in [kN·m/rad]
             cargo_offset: Optional offset from CoG to cargo connection point [m]
                           If None, connection is directly at CoG
+            loading_condition: When this connection is active:
+                - "all": Active for all load cases (default)
+                - "static": Only active for Permanent load cases (bearing pads)
+                - "dynamic": Only active for Variable/Environmental load cases (seafastening)
 
         Returns:
             Self for method chaining
@@ -223,6 +246,20 @@ class Cargo:
                 [1e6, 1e6, 1e6, 1e4, 1e4, 1e4],
                 cargo_offset=[0.0, 0.0, -1.5]  # 1.5m below CoG
             )
+
+            # Static connection (bearing pad) - only takes gravity load
+            cargo.add_connection(
+                [0.0, 0.0, 0.0],
+                [0, 0, 1e9, 0, 0, 0],
+                loading_condition="static"
+            )
+
+            # Dynamic connection (seafastening) - only takes environmental loads
+            cargo.add_connection(
+                [5.0, 0.0, 0.0],
+                [1e9, 1e9, 0, 0, 0, 0],
+                loading_condition="dynamic"
+            )
         """
         if len(structural_position) != 3:
             raise ValueError("Structural position must be a 3-element list [x, y, z]")
@@ -230,11 +267,17 @@ class Cargo:
             raise ValueError("Stiffness must be a 6-element list [kx, ky, kz, krx, kry, krz]")
         if cargo_offset is not None and len(cargo_offset) != 3:
             raise ValueError("Cargo offset must be a 3-element list [dx, dy, dz]")
+        if loading_condition not in VALID_LOADING_CONDITIONS:
+            raise ValueError(
+                f"loading_condition must be one of {VALID_LOADING_CONDITIONS}, "
+                f"got '{loading_condition}'"
+            )
 
         connection = CargoConnection(
             structural_position=list(structural_position),
             stiffness=list(stiffness),
-            cargo_offset=list(cargo_offset) if cargo_offset else None
+            cargo_offset=list(cargo_offset) if cargo_offset else None,
+            loading_condition=loading_condition
         )
         self.connections.append(connection)
         return self
@@ -336,6 +379,16 @@ class Cargo:
             spring.krx = conn.stiffness[3]
             spring.kry = conn.stiffness[4]
             spring.krz = conn.stiffness[5]
+
+            # Set loading condition on the spring
+            # Import here to avoid circular import issues
+            from grillex._grillex_cpp import LoadingCondition
+            loading_condition_map = {
+                "all": LoadingCondition.All,
+                "static": LoadingCondition.Static,
+                "dynamic": LoadingCondition.Dynamic
+            }
+            spring.loading_condition = loading_condition_map[conn.loading_condition]
 
             conn.spring_element = spring
 
