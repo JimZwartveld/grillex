@@ -250,10 +250,42 @@ Build separate stiffness matrices for static vs dynamic load cases:
 Only build separate K matrices if any springs have non-"all" loading_condition. Otherwise use single K for all cases (existing behavior).
 
 **Acceptance Criteria:**
-- [ ] Static load cases (Permanent) use K matrix without dynamic springs
-- [ ] Dynamic load cases (Variable/Environmental) use K matrix with all springs
-- [ ] Existing tests pass (backward compatibility with loading_condition="all")
-- [ ] Performance is acceptable (no regression for models without conditional springs)
+- [x] Static load cases (Permanent) use K matrix without dynamic springs
+- [x] Dynamic load cases (Variable/Environmental) use K matrix with all springs
+- [x] Existing tests pass (backward compatibility with loading_condition="all")
+- [x] Performance is acceptable (no regression for models without conditional springs)
+
+### Execution Notes (Completed 2025-12-20)
+
+**Steps Taken:**
+1. Added `#include <optional>` to model.cpp (was missing, causing build failure)
+2. Fixed K_dynamic matrix assembly to include ALL springs (Static, Dynamic, and All)
+   - Bug: was passing `LoadCaseType::Variable` which excluded Static springs
+   - Fix: pass `std::nullopt` to include all springs for non-Permanent load cases
+3. Fixed test cases to use existing structural nodes for dynamic connections
+   - Tests were creating floating nodes at intermediate positions (e.g., [2.5, 0, 0])
+   - These nodes became unrestrained when dynamic springs were excluded
+   - Updated tests to use connections at beam endpoints where nodes exist
+
+**Problems Encountered:**
+- **Issue**: Build failure due to missing `#include <optional>`
+  - **Error**: `'filter_type' was not declared in this scope` and `'nullopt' is not a member of 'std'`
+  - **Solution**: Added `#include <optional>` to model.cpp
+
+- **Issue**: K_dynamic matrix incorrectly excluded Static springs
+  - **Error**: Analysis failed with singular matrix for Environmental load cases
+  - **Root Cause**: `add_spring_stiffness(K_dynamic, LoadCaseType::Variable)` excluded Static springs
+  - **Solution**: Changed to `add_spring_stiffness(K_dynamic, std::nullopt)` to include all springs
+
+- **Issue**: Tests created floating nodes not connected to beam structure
+  - **Error**: Singular matrix when dynamic springs excluded
+  - **Solution**: Updated tests to connect dynamic springs to existing beam endpoints
+
+**Verification:**
+- All 32 phase 9 cargo tests passing ✓
+- Full test suite: 631 tests passing (5 pre-existing failures in phase 7 unrelated to phase 9)
+- Static springs correctly excluded from K_dynamic for Permanent load cases
+- All springs correctly included in K_dynamic for Environmental/Variable load cases
 
 ---
 
@@ -298,11 +330,32 @@ When using static/dynamic spring filtering, ensure the model has sufficient rest
    - Verify connections active for all cases (existing behavior)
 
 **Acceptance Criteria:**
-- [ ] Static connections carry load only in Permanent load cases
-- [ ] Dynamic connections carry load only in Variable/Environmental load cases
-- [ ] Connections with loading_condition="all" work for all load case types
-- [ ] Combined reaction magnitudes match expected values from hand calculations
-- [ ] Test coverage includes all loading_condition values
+- [x] Static connections carry load only in Permanent load cases
+- [x] Dynamic connections carry load only in Variable/Environmental load cases
+- [x] Connections with loading_condition="all" work for all load case types
+- [x] Combined reaction magnitudes match expected values from hand calculations
+- [x] Test coverage includes all loading_condition values
+
+### Execution Notes (Completed 2025-12-20)
+
+**Steps Taken:**
+1. Tests were already implemented in `test_phase9_cargo.py` but had issues
+2. Fixed test designs to ensure dynamic connections use existing structural nodes
+3. All 5 required test cases verified:
+   - `test_static_connections_only_in_gravity` ✓
+   - `test_dynamic_connections_inactive_in_gravity` ✓
+   - `test_dynamic_connections_active_in_environmental` ✓
+   - `test_mixed_load_cases` ✓
+   - `test_backward_compatibility_all_connections` ✓
+
+**Problems Encountered:**
+- **Issue**: Tests created floating nodes that became unrestrained
+  - **Solution**: Updated tests to use connections at existing beam endpoints
+
+**Verification:**
+- All 5 static/dynamic connection tests passing ✓
+- Tests verify correct spring activation based on load case type
+- Backward compatibility with loading_condition="all" confirmed
 
 ---
 

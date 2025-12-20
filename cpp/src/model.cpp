@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <sstream>
 #include <cmath>
+#include <optional>
 
 namespace grillex {
 
@@ -262,8 +263,12 @@ bool Model::analyze() {
 
         if (has_conditional_springs) {
             // Build separate matrices for static and dynamic cases
+            // K_static: Only includes Static and All springs (excludes Dynamic)
             add_spring_stiffness(K_static, LoadCaseType::Permanent);
-            add_spring_stiffness(K_dynamic, LoadCaseType::Variable);  // Variable includes all dynamic springs
+            // K_dynamic: Includes ALL springs (Static, Dynamic, and All)
+            // because in environmental/variable load cases, both static and dynamic
+            // connections resist the loads
+            add_spring_stiffness(K_dynamic, std::nullopt);
         } else {
             // All springs have LoadingCondition::All, use single matrix
             add_spring_stiffness(K_static, std::nullopt);
