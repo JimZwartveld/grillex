@@ -19,6 +19,7 @@
 #include "grillex/internal_actions.hpp"
 #include "grillex/spring_element.hpp"
 #include "grillex/point_mass.hpp"
+#include "grillex/plate_element.hpp"
 
 namespace py = pybind11;
 
@@ -1008,6 +1009,13 @@ PYBIND11_MODULE(_grillex_cpp, m) {
             }
             return result;
         }, "List of point mass elements in the model")
+        .def_property_readonly("plate_elements", [](const grillex::Model &m) {
+            py::list result;
+            for (const auto& plate : m.plate_elements) {
+                result.append(plate.get());
+            }
+            return result;
+        }, "List of plate elements in the model")
         .def_readwrite("boundary_conditions", &grillex::Model::boundary_conditions,
                       "BCHandler for managing boundary conditions")
         .def("create_material", &grillex::Model::create_material,
@@ -1049,6 +1057,21 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "    pm = model.create_point_mass(node)\n"
              "    pm.mass = 10.0  # 10 mT\n"
              "    pm.set_inertia(5.0, 5.0, 3.0)  # Rotational inertias",
+             py::return_value_policy::reference_internal)
+        .def("create_plate", &grillex::Model::create_plate,
+             py::arg("n1"), py::arg("n2"), py::arg("n3"), py::arg("n4"),
+             py::arg("thickness"), py::arg("material"),
+             "Create a 4-node plate element and add to model.\n\n"
+             "Parameters:\n"
+             "    n1: Node 1 at corner (-1,-1) in natural coordinates\n"
+             "    n2: Node 2 at corner (+1,-1)\n"
+             "    n3: Node 3 at corner (+1,+1)\n"
+             "    n4: Node 4 at corner (-1,+1)\n"
+             "    thickness: Plate thickness [m]\n"
+             "    material: Material properties\n\n"
+             "Example:\n"
+             "    plate = model.create_plate(n1, n2, n3, n4, 0.01, steel)\n\n"
+             "Uses Mindlin plate theory with MITC4 formulation for locking-free behavior.",
              py::return_value_policy::reference_internal)
         .def("remove_element", &grillex::Model::remove_element,
              py::arg("element_id"),
@@ -1572,5 +1595,51 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                    " Ixx=" + std::to_string(pm.Ixx) +
                    " Iyy=" + std::to_string(pm.Iyy) +
                    " Izz=" + std::to_string(pm.Izz) + ">";
+        });
+
+    // PlateElement class
+    py::class_<grillex::PlateElement>(m, "PlateElement",
+        "4-node Mindlin plate element (MITC4 formulation).\n\n"
+        "A plate element for bending analysis using Mindlin plate theory\n"
+        "with MITC4 interpolation to avoid shear locking.\n\n"
+        "Node numbering (natural coordinates):\n"
+        "   4 (-1,+1) -------- 3 (+1,+1)\n"
+        "       |                  |\n"
+        "       |     (0,0)        |\n"
+        "       |                  |\n"
+        "   1 (-1,-1) -------- 2 (+1,-1)\n\n"
+        "Properties:\n"
+        "- thickness: Plate thickness [m]\n"
+        "- material: Material properties (E, nu, rho)")
+        .def(py::init<int, grillex::Node*, grillex::Node*, grillex::Node*,
+                      grillex::Node*, double, grillex::Material*>(),
+             py::arg("id"), py::arg("n1"), py::arg("n2"), py::arg("n3"),
+             py::arg("n4"), py::arg("thickness"), py::arg("material"),
+             "Construct a plate element with 4 corner nodes")
+        .def_readwrite("id", &grillex::PlateElement::id, "Element ID")
+        .def_readonly("nodes", &grillex::PlateElement::nodes, "Array of 4 corner nodes")
+        .def_readwrite("thickness", &grillex::PlateElement::thickness, "Plate thickness [m]")
+        .def_readonly("material", &grillex::PlateElement::material, "Material properties")
+        .def_readonly("x_axis", &grillex::PlateElement::x_axis, "Local x-axis (from node 1 to node 2)")
+        .def_readonly("y_axis", &grillex::PlateElement::y_axis, "Local y-axis")
+        .def_readonly("z_axis", &grillex::PlateElement::z_axis, "Local z-axis (plate normal)")
+        .def("num_dofs", &grillex::PlateElement::num_dofs, "Get number of DOFs (always 24)")
+        .def("has_warping", &grillex::PlateElement::has_warping, "Check for warping DOF (always false)")
+        .def("global_stiffness_matrix", &grillex::PlateElement::global_stiffness_matrix,
+             "Get 24x24 global stiffness matrix")
+        .def("global_mass_matrix", &grillex::PlateElement::global_mass_matrix,
+             "Get 24x24 global mass matrix (lumped)")
+        .def("area", &grillex::PlateElement::area, "Get plate element area [m²]")
+        .def("centroid", &grillex::PlateElement::centroid, "Get centroid position in global coordinates")
+        .def("to_local", &grillex::PlateElement::to_local,
+             py::arg("global_vec"),
+             "Transform vector from global to local coordinates")
+        .def("to_global", &grillex::PlateElement::to_global,
+             py::arg("local_vec"),
+             "Transform vector from local to global coordinates")
+        .def("__repr__", [](const grillex::PlateElement &p) {
+            return "<PlateElement id=" + std::to_string(p.id) +
+                   " thickness=" + std::to_string(p.thickness) +
+                   " area=" + std::to_string(p.area()) + ">";
         });
 }

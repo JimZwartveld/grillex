@@ -18,7 +18,7 @@ from .data_types import (
     EndForces, InternalActions, WarpingInternalActions, ActionExtreme,
     ReleaseCombo4DOF, ReleaseCombo2DOF, ReleaseComboWarping, DisplacementLine,
     # Phase 8: Additional Element Types
-    SpringElement, PointMass,
+    SpringElement, PointMass, PlateElement,
 )
 
 from .model_wrapper import (
@@ -44,6 +44,6 @@ __all__ = [
     'EndForces', 'InternalActions', 'WarpingInternalActions', 'ActionExtreme',
     'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine',
     # Phase 8: Additional Element Types
-    'SpringElement', 'PointMass',
+    'SpringElement', 'PointMass', 'PlateElement',
     'Beam', 'StructuralModel'
 ]

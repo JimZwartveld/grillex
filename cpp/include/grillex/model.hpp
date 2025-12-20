@@ -6,6 +6,7 @@
 #include "grillex/beam_element.hpp"
 #include "grillex/spring_element.hpp"
 #include "grillex/point_mass.hpp"
+#include "grillex/plate_element.hpp"
 #include "grillex/dof_handler.hpp"
 #include "grillex/assembler.hpp"
 #include "grillex/boundary_condition.hpp"
@@ -60,6 +61,7 @@ public:
     std::vector<std::unique_ptr<BeamElement>> elements;    ///< Beam elements
     std::vector<std::unique_ptr<SpringElement>> spring_elements;  ///< Spring elements
     std::vector<std::unique_ptr<PointMass>> point_masses;  ///< Point mass elements
+    std::vector<std::unique_ptr<PlateElement>> plate_elements;  ///< Plate elements
     BCHandler boundary_conditions;                         ///< Boundary conditions
 
     /**
@@ -134,6 +136,24 @@ public:
      *   pm->set_inertia(5.0, 5.0, 3.0);  // Rotational inertias
      */
     PointMass* create_point_mass(Node* node);
+
+    /**
+     * @brief Create a plate element and add to model
+     * @param n1 Node 1 (corner at ξ=-1, η=-1)
+     * @param n2 Node 2 (corner at ξ=+1, η=-1)
+     * @param n3 Node 3 (corner at ξ=+1, η=+1)
+     * @param n4 Node 4 (corner at ξ=-1, η=+1)
+     * @param thickness Plate thickness [m]
+     * @param material Material pointer
+     * @return Pointer to created plate element (owned by model)
+     *
+     * Creates a 4-node Mindlin plate element (MITC4 formulation).
+     *
+     * Example:
+     *   auto plate = model.create_plate(n1, n2, n3, n4, 0.01, steel);
+     */
+    PlateElement* create_plate(Node* n1, Node* n2, Node* n3, Node* n4,
+                               double thickness, Material* material);
 
     /**
      * @brief Remove a beam element from the model by ID
@@ -334,6 +354,7 @@ private:
     int next_element_id_ = 1;
     int next_spring_id_ = 1;
     int next_point_mass_id_ = 1;
+    int next_plate_id_ = 1;
     int next_load_case_id_ = 1;
 
     /**

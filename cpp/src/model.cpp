@@ -50,6 +50,17 @@ PointMass* Model::create_point_mass(Node* node) {
     return ptr;
 }
 
+PlateElement* Model::create_plate(Node* n1, Node* n2, Node* n3, Node* n4,
+                                   double thickness, Material* material) {
+    auto plate = std::make_unique<PlateElement>(next_plate_id_++, n1, n2, n3, n4,
+                                                 thickness, material);
+    PlateElement* ptr = plate.get();
+    plate_elements.push_back(std::move(plate));
+    // Mark as not analyzed
+    analyzed_ = false;
+    return ptr;
+}
+
 bool Model::remove_element(int element_id) {
     // Find element with matching ID
     for (auto it = elements.begin(); it != elements.end(); ++it) {
@@ -148,7 +159,7 @@ bool Model::analyze() {
 
     try {
         // Validation
-        if (elements.empty() && spring_elements.empty()) {
+        if (elements.empty() && spring_elements.empty() && plate_elements.empty()) {
             error_msg_ = "Model has no elements";
             return false;
         }
@@ -212,6 +223,38 @@ bool Model::analyze() {
                 for (int j = 0; j < 12; ++j) {
                     if (loc[j] < 0) continue;
                     double val = K_spring(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            // Add triplets to K
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K += K_add;
+        }
+
+        // Add plate element stiffness contributions
+        for (const auto& plate : plate_elements) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            // Build location array for 24-DOF plate (6 DOFs per node × 4 nodes)
+            std::vector<int> loc(24);
+            for (int node_idx = 0; node_idx < 4; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            // Add to global K using triplets
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 24; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 24; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
                     if (std::abs(val) > 1e-20) {
                         triplets.emplace_back(loc[i], loc[j], val);
                     }
@@ -357,6 +400,7 @@ void Model::clear() {
     elements.clear();
     spring_elements.clear();
     point_masses.clear();
+    plate_elements.clear();
     load_cases_.clear();
     boundary_conditions.clear();
 
@@ -372,6 +416,7 @@ void Model::clear() {
     next_element_id_ = 1;
     next_spring_id_ = 1;
     next_point_mass_id_ = 1;
+    next_plate_id_ = 1;
     next_load_case_id_ = 1;
 }
 
