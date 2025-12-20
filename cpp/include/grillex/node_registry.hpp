@@ -38,6 +38,21 @@ public:
     Node* get_or_create_node(double x, double y, double z);
 
     /**
+     * @brief Force create a new node without checking for existing nodes
+     *
+     * Always creates a new node at the specified position, even if an existing
+     * node is within the merge tolerance. Use this for cases where you need
+     * separate nodes at the same position (e.g., cargo footprint nodes that
+     * connect to structural nodes via springs).
+     *
+     * @param x X-coordinate [m]
+     * @param y Y-coordinate [m]
+     * @param z Z-coordinate [m]
+     * @return Node* Pointer to newly created node
+     */
+    Node* create_node(double x, double y, double z);
+
+    /**
      * @brief Get node by its ID
      *
      * @param id Node ID to find

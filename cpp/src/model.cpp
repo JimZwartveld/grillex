@@ -62,6 +62,16 @@ PlateElement* Model::create_plate(Node* n1, Node* n2, Node* n3, Node* n4,
     return ptr;
 }
 
+void Model::add_rigid_link(Node* slave_node, Node* master_node,
+                            const Eigen::Vector3d& offset) {
+    if (!slave_node || !master_node) {
+        throw std::runtime_error("add_rigid_link: null node pointer");
+    }
+    constraints.add_rigid_link(slave_node->id, master_node->id, offset);
+    // Mark as not analyzed since constraints changed
+    analyzed_ = false;
+}
+
 bool Model::remove_element(int element_id) {
     // Find element with matching ID
     for (auto it = elements.begin(); it != elements.end(); ++it) {
@@ -310,7 +320,25 @@ bool Model::analyze() {
             }
         }
 
-        // Step 3: Analyze each load case
+        // Step 3: Handle constraints if present
+        // The transformation matrix T maps reduced DOFs to full DOFs: u_full = T * u_reduced
+        bool has_constraints = constraints.has_constraints();
+        Eigen::SparseMatrix<double> T;  // Transformation matrix (only used if has_constraints)
+
+        // If we have constraints, we need to reduce K_static and K_dynamic
+        Eigen::SparseMatrix<double> K_static_reduced;
+        Eigen::SparseMatrix<double> K_dynamic_reduced;
+
+        if (has_constraints) {
+            // Build transformation matrix once
+            T = constraints.build_transformation_matrix(dof_handler_);
+
+            // Reduce both stiffness matrices: K_reduced = T^T * K * T
+            K_static_reduced = T.transpose() * K_static * T;
+            K_dynamic_reduced = T.transpose() * K_dynamic * T;
+        }
+
+        // Step 4: Analyze each load case
         bool all_success = true;
 
         for (const auto& lc_ptr : load_cases_) {
@@ -321,30 +349,89 @@ bool Model::analyze() {
                 // Select appropriate stiffness matrix based on load case type
                 // Static load cases (Permanent) use K_static (excludes Dynamic springs)
                 // Dynamic load cases (Variable/Environmental/Accidental) use K_dynamic (all springs)
-                const Eigen::SparseMatrix<double>& K =
-                    (lc->type() == LoadCaseType::Permanent) ? K_static : K_dynamic;
+                bool use_static = (lc->type() == LoadCaseType::Permanent);
 
                 // Assemble load vector for this case
                 Eigen::VectorXd F = lc->assemble_load_vector(*this, dof_handler_);
                 Eigen::VectorXd F_applied = F;  // Store for reactions
 
-                // Apply boundary conditions (same K structure, modifies values)
-                Eigen::SparseMatrix<double> K_bc = K;  // Copy K for modification
-                Eigen::VectorXd F_bc = F;              // Copy F for modification
-                auto [K_mod, F_mod] = boundary_conditions.apply_to_system(K_bc, F_bc, dof_handler_);
+                if (has_constraints) {
+                    // Use reduced system
+                    const Eigen::SparseMatrix<double>& K_reduced =
+                        use_static ? K_static_reduced : K_dynamic_reduced;
 
-                // Solve
-                result.displacements = solver_.solve(K_mod, F_mod);
+                    // Reduce F: F_reduced = T^T * F
+                    Eigen::VectorXd F_reduced = T.transpose() * F;
 
-                if (solver_.is_singular()) {
-                    result.success = false;
-                    result.error_message = "Solver detected singular system: " + solver_.get_error_message();
-                    all_success = false;
+                    // Apply boundary conditions to reduced system
+                    // Note: BCs need to reference reduced DOF indices
+                    // For now, we apply BCs to the full K first, then reduce
+                    // This is a simplification - proper handling would track
+                    // which reduced DOFs correspond to constrained full DOFs
+
+                    // Apply boundary conditions to reduced system
+                    Eigen::SparseMatrix<double> K_bc = K_reduced;
+                    Eigen::VectorXd F_bc = F_reduced;
+
+                    // For constraints, we need to apply BCs differently
+                    // The slave DOFs are eliminated, so BCs on master DOFs
+                    // need to be applied to the reduced system
+                    // For simplicity, we apply BCs to full system first, then reduce
+                    // (This handles the common case where BCs are on independent DOFs)
+
+                    // Rebuild with BCs applied to full system first
+                    const Eigen::SparseMatrix<double>& K_full =
+                        use_static ? K_static : K_dynamic;
+                    Eigen::SparseMatrix<double> K_full_bc = K_full;
+                    Eigen::VectorXd F_full_bc = F;
+                    auto [K_with_bc, F_with_bc] = boundary_conditions.apply_to_system(
+                        K_full_bc, F_full_bc, dof_handler_);
+
+                    // Now reduce the BC-modified system
+                    Eigen::SparseMatrix<double> K_final = T.transpose() * K_with_bc * T;
+                    Eigen::VectorXd F_final = T.transpose() * F_with_bc;
+
+                    // Solve reduced system
+                    Eigen::VectorXd u_reduced = solver_.solve(K_final, F_final);
+
+                    if (solver_.is_singular()) {
+                        result.success = false;
+                        result.error_message = "Solver detected singular system: " + solver_.get_error_message();
+                        all_success = false;
+                    } else {
+                        result.success = true;
+
+                        // Expand to full DOFs: u_full = T * u_reduced
+                        result.displacements = T * u_reduced;
+
+                        // Compute reactions: R = K * u - F_applied (using full K)
+                        const Eigen::SparseMatrix<double>& K_full_orig =
+                            use_static ? K_static : K_dynamic;
+                        result.reactions = K_full_orig * result.displacements - F_applied;
+                    }
                 } else {
-                    result.success = true;
+                    // No constraints - use original system directly
+                    const Eigen::SparseMatrix<double>& K =
+                        use_static ? K_static : K_dynamic;
 
-                    // Compute reactions: R = K * u - F_applied
-                    result.reactions = K * result.displacements - F_applied;
+                    // Apply boundary conditions (same K structure, modifies values)
+                    Eigen::SparseMatrix<double> K_bc = K;  // Copy K for modification
+                    Eigen::VectorXd F_bc = F;              // Copy F for modification
+                    auto [K_mod, F_mod] = boundary_conditions.apply_to_system(K_bc, F_bc, dof_handler_);
+
+                    // Solve
+                    result.displacements = solver_.solve(K_mod, F_mod);
+
+                    if (solver_.is_singular()) {
+                        result.success = false;
+                        result.error_message = "Solver detected singular system: " + solver_.get_error_message();
+                        all_success = false;
+                    } else {
+                        result.success = true;
+
+                        // Compute reactions: R = K * u - F_applied
+                        result.reactions = K * result.displacements - F_applied;
+                    }
                 }
 
             } catch (const std::exception& e) {

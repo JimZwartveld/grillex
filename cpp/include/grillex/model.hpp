@@ -12,6 +12,7 @@
 #include "grillex/boundary_condition.hpp"
 #include "grillex/solver.hpp"
 #include "grillex/load_case.hpp"
+#include "grillex/constraints.hpp"
 
 #include <vector>
 #include <memory>
@@ -63,6 +64,7 @@ public:
     std::vector<std::unique_ptr<PointMass>> point_masses;  ///< Point mass elements
     std::vector<std::unique_ptr<PlateElement>> plate_elements;  ///< Plate elements
     BCHandler boundary_conditions;                         ///< Boundary conditions
+    ConstraintHandler constraints;                         ///< MPC and rigid link constraints
 
     /**
      * @brief Get node registry (for Python bindings)
@@ -154,6 +156,29 @@ public:
      */
     PlateElement* create_plate(Node* n1, Node* n2, Node* n3, Node* n4,
                                double thickness, Material* material);
+
+    /**
+     * @brief Add a rigid link constraint between two nodes
+     * @param slave_node Slave (constrained) node - its motion follows master
+     * @param master_node Master (independent) node
+     * @param offset Offset vector from master to slave in global coordinates [m]
+     *
+     * Creates a kinematic constraint where the slave node's motion is
+     * completely determined by the master node's motion:
+     *
+     * u_slave = u_master + θ_master × offset
+     * θ_slave = θ_master
+     *
+     * This is used for modeling rigid connections between nodes, such as
+     * cargo COG to footprint connections.
+     *
+     * Example:
+     *   auto cog_node = model.nodes.get_or_create_node(5, 5, 2);
+     *   auto foot_node = model.nodes.get_or_create_node(5, 5, 0);
+     *   model.add_rigid_link(foot_node, cog_node, Eigen::Vector3d(0, 0, -2));
+     */
+    void add_rigid_link(Node* slave_node, Node* master_node,
+                        const Eigen::Vector3d& offset);
 
     /**
      * @brief Remove a beam element from the model by ID

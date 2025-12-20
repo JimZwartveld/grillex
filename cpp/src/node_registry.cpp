@@ -28,6 +28,14 @@ Node* NodeRegistry::get_or_create_node(double x, double y, double z) {
     return node_ptr;
 }
 
+Node* NodeRegistry::create_node(double x, double y, double z) {
+    // Always create a new node without checking for existing nodes
+    auto new_node = std::make_unique<Node>(next_id_++, x, y, z);
+    Node* node_ptr = new_node.get();
+    nodes_.push_back(std::move(new_node));
+    return node_ptr;
+}
+
 Node* NodeRegistry::get_node_by_id(int id) {
     for (const auto& node : nodes_) {
         if (node->id == id) {
