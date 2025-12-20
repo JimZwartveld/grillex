@@ -288,33 +288,9 @@ class Beam:
         # Edge case: x_global == total length
         return self.elements[-1], self.elements[-1].length
 
-    def get_internal_actions_at(
-        self,
-        x_global: float,
-        model: 'StructuralModel'
-    ) -> InternalActions:
-        """Query internal actions at any position along the entire beam.
-
-        Args:
-            x_global: Position along beam [0, L_total] in meters
-            model: StructuralModel object (must be analyzed)
-
-        Returns:
-            InternalActions (N, Vy, Vz, Mx, My, Mz) at x_global
-
-        Raises:
-            ValueError: If position is outside beam or model not analyzed
-        """
-        if not model.is_analyzed():
-            raise ValueError("Model must be analyzed before querying internal actions")
-
-        element, x_local = self._find_element_at_position(x_global)
-
-        return element.get_internal_actions(
-            x_local,
-            model.get_all_displacements(),
-            model._cpp_model.get_dof_handler()
-        )
+    # NOTE: get_internal_actions_at is defined earlier in this class (line ~192)
+    # with the full signature including load_case parameter.
+    # This duplicate was removed to avoid method shadowing.
 
     def get_moment_line(
         self,
