@@ -26,6 +26,11 @@ from .model_wrapper import (
     StructuralModel
 )
 
+from .cargo import (
+    Cargo,
+    CargoConnection
+)
+
 __all__ = [
     'Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes',
     'BeamElement', 'BeamFormulation', 'EndRelease',
@@ -45,5 +50,7 @@ __all__ = [
     'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine',
     # Phase 8: Additional Element Types
     'SpringElement', 'PointMass', 'PlateElement',
+    # Phase 9: Cargo Modelling
+    'Cargo', 'CargoConnection',
     'Beam', 'StructuralModel'
 ]

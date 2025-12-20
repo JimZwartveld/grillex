@@ -35,7 +35,7 @@ Usage:
     disp = model.get_displacement_at([6, 0, 0], DOFIndex.UY)
 """
 
-from typing import List, Tuple, Optional, Union, Dict
+from typing import List, Tuple, Optional, Union, Dict, TYPE_CHECKING
 import numpy as np
 
 from grillex._grillex_cpp import (
@@ -49,6 +49,8 @@ from grillex._grillex_cpp import (
     Node,
     InternalActions
 )
+
+from .cargo import Cargo, CargoConnection
 
 
 class Beam:
@@ -278,6 +280,7 @@ class StructuralModel:
         self.name = name
         self._cpp_model = _CppModel(node_tolerance=node_tolerance)
         self.beams: List[Beam] = []
+        self.cargos: List[Cargo] = []
         self._materials: dict[str, _CppMaterial] = {}
         self._sections: dict[str, _CppSection] = {}
         self._node_map: dict[Tuple[float, float, float], Node] = {}
@@ -429,6 +432,55 @@ class StructuralModel:
         self.beams.append(beam)
 
         return beam
+
+    # ===== Cargo Modelling =====
+
+    def add_cargo(self, cargo: Cargo) -> Cargo:
+        """Add a cargo object to the model.
+
+        This method generates the underlying finite elements for the cargo:
+        - A point mass at the cargo's center of gravity
+        - Spring elements connecting to the structure
+        - Rigid links for offset connections (if applicable)
+
+        Args:
+            cargo: A Cargo object with CoG, mass, inertia, and connections defined
+
+        Returns:
+            The same Cargo object (for method chaining)
+
+        Raises:
+            ValueError: If cargo has no connections defined
+            RuntimeError: If cargo has already been added to a model
+
+        Example:
+            cargo = Cargo("Equipment")
+            cargo.set_cog([5.0, 2.0, 1.5])
+            cargo.set_mass(50.0)
+            cargo.add_connection([5.0, 2.0, 0.0], [1e6, 1e6, 1e6, 1e4, 1e4, 1e4])
+            model.add_cargo(cargo)
+        """
+        # Generate the underlying FE elements
+        cargo.generate_elements(self._cpp_model)
+
+        # Track the cargo
+        self.cargos.append(cargo)
+
+        return cargo
+
+    def get_cargo(self, name: str) -> Optional[Cargo]:
+        """Get a cargo by name.
+
+        Args:
+            name: Name of the cargo to find
+
+        Returns:
+            Cargo object if found, None otherwise
+        """
+        for cargo in self.cargos:
+            if cargo.name == name:
+                return cargo
+        return None
 
     # ===== Boundary Conditions =====
 

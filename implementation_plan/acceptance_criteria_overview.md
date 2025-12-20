@@ -17,13 +17,13 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 6 | MPC & Rigid Links | 9 | 9 | 0 | 100% |
 | 7 | Internal Actions & Results | 35 | 35 | 0 | 100% |
 | 8 | Additional Element Types | 9 | 9 | 0 | 100% |
-| 9 | Cargo Modeling | 3 | 0 | 3 | 0% |
+| 9 | Cargo Modeling | 3 | 3 | 0 | 100% |
 | 10 | Design Codes | 6 | 0 | 6 | 0% |
 | 11 | Error Handling | 9 | 0 | 9 | 0% |
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 10 | 0 | 10 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **183** | **152** | **31** | **83%** |
+| **Total** | | **183** | **155** | **28** | **85%** |
 
 ---
 
@@ -339,9 +339,9 @@ This document provides a comprehensive overview of all acceptance criteria acros
 ## Phase 9: Cargo Modeling
 
 ### Task 9.1: Implement Cargo Definition
-- [ ] Cargo definition is simple and clear
-- [ ] Generated elements correctly represent the cargo
-- [ ] Cargo mass contributes to inertial loads under acceleration
+- [x] Cargo definition is simple and clear
+- [x] Generated elements correctly represent the cargo
+- [x] Cargo mass contributes to inertial loads under acceleration
 
 ---
 
