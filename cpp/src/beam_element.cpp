@@ -983,6 +983,113 @@ Eigen::VectorXd BeamElement::get_element_displacements_local(
     return u_local;
 }
 
+DisplacementLine BeamElement::get_displacements_at(
+    double x,
+    const Eigen::VectorXd& global_displacements,
+    const DOFHandler& dof_handler) const
+{
+    // Clamp x to valid range [0, L]
+    x = std::max(0.0, std::min(x, length));
+
+    // Get local displacements at nodes
+    Eigen::VectorXd u_local = get_element_displacements_local(global_displacements, dof_handler);
+
+    // Normalized coordinate
+    double L = length;
+    double xi = x / L;
+    double xi2 = xi * xi;
+    double xi3 = xi2 * xi;
+
+    // Extract local displacements at nodes
+    // DOF ordering (12-DOF): [u_i, v_i, w_i, θx_i, θy_i, θz_i, u_j, v_j, w_j, θx_j, θy_j, θz_j]
+    double u1 = u_local(0);        // Axial at i
+    double v1 = u_local(1);        // y-displacement at i
+    double w1 = u_local(2);        // z-displacement at i
+    double theta_x1 = u_local(3);  // Torsion at i
+    double theta_y1 = u_local(4);  // Rotation about y at i
+    double theta_z1 = u_local(5);  // Rotation about z at i
+
+    int offset = config.include_warping ? 7 : 6;
+    double u2 = u_local(offset);        // Axial at j
+    double v2 = u_local(offset + 1);    // y-displacement at j
+    double w2 = u_local(offset + 2);    // z-displacement at j
+    double theta_x2 = u_local(offset + 3);  // Torsion at j
+    double theta_y2 = u_local(offset + 4);  // Rotation about y at j
+    double theta_z2 = u_local(offset + 5);  // Rotation about z at j
+
+    // Initialize result
+    DisplacementLine result(x);
+
+    // Axial displacement - linear interpolation
+    // u(x) = (1-xi)*u1 + xi*u2
+    result.u = (1.0 - xi) * u1 + xi * u2;
+
+    // Torsion - linear interpolation
+    // θx(x) = (1-xi)*θx1 + xi*θx2
+    result.theta_x = (1.0 - xi) * theta_x1 + xi * theta_x2;
+
+    // Hermite shape functions for bending
+    // For displacement v(x) in x-y plane (bending about z):
+    //   N1 = 1 - 3ξ² + 2ξ³
+    //   N2 = L(ξ - 2ξ² + ξ³)
+    //   N3 = 3ξ² - 2ξ³
+    //   N4 = L(-ξ² + ξ³)
+    //   v(x) = N1*v1 + N2*θz1 + N3*v2 + N4*θz2
+    double N1 = 1.0 - 3.0 * xi2 + 2.0 * xi3;
+    double N2 = L * (xi - 2.0 * xi2 + xi3);
+    double N3 = 3.0 * xi2 - 2.0 * xi3;
+    double N4 = L * (-xi2 + xi3);
+
+    result.v = N1 * v1 + N2 * theta_z1 + N3 * v2 + N4 * theta_z2;
+
+    // For displacement w(x) in x-z plane (bending about y):
+    // Sign convention: positive θy causes positive w' (dw/dx)
+    // w(x) = N1*w1 + N2*(-θy1) + N3*w2 + N4*(-θy2)
+    // Note: The sign on θy depends on the convention. Our beam uses:
+    // θy is rotation about y-axis (positive = counter-clockwise when looking down +y)
+    // For bending in x-z plane, dw/dx ≈ -θy
+    result.w = N1 * w1 - N2 * theta_y1 + N3 * w2 - N4 * theta_y2;
+
+    // Shape function derivatives for rotations
+    // dN1/dxi = -6ξ + 6ξ²,  dN1/dx = dN1/dxi * (1/L)
+    // dN2/dxi = L(1 - 4ξ + 3ξ²),  dN2/dx = 1 - 4ξ + 3ξ²
+    // dN3/dxi = 6ξ - 6ξ²,  dN3/dx = dN3/dxi * (1/L)
+    // dN4/dxi = L(-2ξ + 3ξ²),  dN4/dx = -2ξ + 3ξ²
+    double dN1_dxi = -6.0 * xi + 6.0 * xi2;
+    double dN2_dxi = L * (1.0 - 4.0 * xi + 3.0 * xi2);
+    double dN3_dxi = 6.0 * xi - 6.0 * xi2;
+    double dN4_dxi = L * (-2.0 * xi + 3.0 * xi2);
+
+    double dN1_dx = dN1_dxi / L;
+    double dN2_dx = dN2_dxi / L;  // = (1 - 4ξ + 3ξ²)
+    double dN3_dx = dN3_dxi / L;
+    double dN4_dx = dN4_dxi / L;  // = (-2ξ + 3ξ²)
+
+    // Rotations depend on beam formulation
+    if (config.get_formulation() == BeamFormulation::Timoshenko) {
+        // For Timoshenko beams, θ is independent of dv/dx due to shear deformation
+        // Rotations are linearly interpolated from nodal values
+        result.theta_z = (1.0 - xi) * theta_z1 + xi * theta_z2;
+        result.theta_y = (1.0 - xi) * theta_y1 + xi * theta_y2;
+    } else {
+        // For Euler-Bernoulli, θz = dv/dx and θy = -dw/dx
+        result.theta_z = dN1_dx * v1 + dN2_dx * theta_z1 + dN3_dx * v2 + dN4_dx * theta_z2;
+        result.theta_y = -(dN1_dx * w1 - dN2_dx * theta_y1 + dN3_dx * w2 - dN4_dx * theta_y2);
+    }
+
+    // Warping parameter (for 14-DOF elements)
+    if (config.include_warping) {
+        double phi1 = u_local(6);   // Rate of twist at i
+        double phi2 = u_local(13);  // Rate of twist at j
+        // Linear interpolation for warping parameter
+        result.phi_prime = (1.0 - xi) * phi1 + xi * phi2;
+    } else {
+        result.phi_prime = 0.0;
+    }
+
+    return result;
+}
+
 std::pair<EndForces, EndForces> BeamElement::compute_end_forces(
     const Eigen::VectorXd& global_displacements,
     const DOFHandler& dof_handler) const

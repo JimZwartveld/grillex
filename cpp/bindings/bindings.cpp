@@ -382,6 +382,17 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "    dof_handler: DOF handler for global-to-local mapping\n\n"
              "Returns:\n"
              "    Local displacement vector (12 or 14 components)")
+        .def("get_displacements_at", &grillex::BeamElement::get_displacements_at,
+             py::arg("x"), py::arg("global_displacements"), py::arg("dof_handler"),
+             "Get displacements and rotations at position x along element.\n\n"
+             "Uses shape function interpolation to compute displacements and rotations\n"
+             "at any position along the beam.\n\n"
+             "Args:\n"
+             "    x: Position along element [0, L] in meters\n"
+             "    global_displacements: Global displacement vector from analysis\n"
+             "    dof_handler: DOF handler for global-to-local mapping\n\n"
+             "Returns:\n"
+             "    DisplacementLine with u, v, w, theta_x, theta_y, theta_z, phi_prime")
         .def("compute_end_forces", &grillex::BeamElement::compute_end_forces,
              py::arg("global_displacements"), py::arg("dof_handler"),
              "Compute end forces in local coordinates.\n\n"
