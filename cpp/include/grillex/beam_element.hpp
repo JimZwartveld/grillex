@@ -587,11 +587,16 @@ public:
      * - theta_y: Bending rotation about local y [rad]
      * - theta_z: Bending rotation about local z [rad]
      * - phi_prime: Warping parameter [rad] (for 14-DOF elements)
+     *
+     * @param load_case Optional load case for distributed load effects
+     *   When provided, uses analytical beam equations including load terms.
+     *   When null, uses Hermite interpolation (exact for no distributed loads).
      */
     DisplacementLine get_displacements_at(
         double x,
         const Eigen::VectorXd& global_displacements,
-        const DOFHandler& dof_handler) const;
+        const DOFHandler& dof_handler,
+        const LoadCase* load_case = nullptr) const;
 
     /**
      * @brief Compute end forces in local coordinates

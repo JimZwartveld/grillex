@@ -986,7 +986,8 @@ Eigen::VectorXd BeamElement::get_element_displacements_local(
 DisplacementLine BeamElement::get_displacements_at(
     double x,
     const Eigen::VectorXd& global_displacements,
-    const DOFHandler& dof_handler) const
+    const DOFHandler& dof_handler,
+    const LoadCase* load_case) const
 {
     // Clamp x to valid range [0, L]
     x = std::max(0.0, std::min(x, length));
@@ -1020,7 +1021,14 @@ DisplacementLine BeamElement::get_displacements_at(
     // Initialize result
     DisplacementLine result(x);
 
-    // Axial displacement - linear interpolation
+    // Get distributed loads if load case provided
+    DistributedLoad q_y, q_z;
+    if (load_case) {
+        q_y = get_distributed_load_y(*load_case);
+        q_z = get_distributed_load_z(*load_case);
+    }
+
+    // Axial displacement - linear interpolation (no distributed axial deflection effect)
     // u(x) = (1-xi)*u1 + xi*u2
     result.u = (1.0 - xi) * u1 + xi * u2;
 
@@ -1028,53 +1036,59 @@ DisplacementLine BeamElement::get_displacements_at(
     // θx(x) = (1-xi)*θx1 + xi*θx2
     result.theta_x = (1.0 - xi) * theta_x1 + xi * theta_x2;
 
-    // Hermite shape functions for bending
-    // For displacement v(x) in x-y plane (bending about z):
-    //   N1 = 1 - 3ξ² + 2ξ³
-    //   N2 = L(ξ - 2ξ² + ξ³)
-    //   N3 = 3ξ² - 2ξ³
-    //   N4 = L(-ξ² + ξ³)
-    //   v(x) = N1*v1 + N2*θz1 + N3*v2 + N4*θz2
-    double N1 = 1.0 - 3.0 * xi2 + 2.0 * xi3;
-    double N2 = L * (xi - 2.0 * xi2 + xi3);
-    double N3 = 3.0 * xi2 - 2.0 * xi3;
-    double N4 = L * (-xi2 + xi3);
+    // Extract material and section properties for deflection computers
+    double E = material->E;
+    double EIz = E * section->Iz;
+    double EIy = E * section->Iy;
 
-    result.v = N1 * v1 + N2 * theta_z1 + N3 * v2 + N4 * theta_z2;
+    // Detect release combinations
+    ReleaseCombo4DOF bending_y_release = detect_release_combination_bending_y();
+    ReleaseCombo4DOF bending_z_release = detect_release_combination_bending_z();
 
-    // For displacement w(x) in x-z plane (bending about y):
-    // Sign convention: positive θy causes positive w' (dw/dx)
-    // w(x) = N1*w1 + N2*(-θy1) + N3*w2 + N4*(-θy2)
-    // Note: The sign on θy depends on the convention. Our beam uses:
-    // θy is rotation about y-axis (positive = counter-clockwise when looking down +y)
-    // For bending in x-z plane, dw/dx ≈ -θy
-    result.w = N1 * w1 - N2 * theta_y1 + N3 * w2 - N4 * theta_y2;
-
-    // Shape function derivatives for rotations
-    // dN1/dxi = -6ξ + 6ξ²,  dN1/dx = dN1/dxi * (1/L)
-    // dN2/dxi = L(1 - 4ξ + 3ξ²),  dN2/dx = 1 - 4ξ + 3ξ²
-    // dN3/dxi = 6ξ - 6ξ²,  dN3/dx = dN3/dxi * (1/L)
-    // dN4/dxi = L(-2ξ + 3ξ²),  dN4/dx = -2ξ + 3ξ²
-    double dN1_dxi = -6.0 * xi + 6.0 * xi2;
-    double dN2_dxi = L * (1.0 - 4.0 * xi + 3.0 * xi2);
-    double dN3_dxi = 6.0 * xi - 6.0 * xi2;
-    double dN4_dxi = L * (-2.0 * xi + 3.0 * xi2);
-
-    double dN1_dx = dN1_dxi / L;
-    double dN2_dx = dN2_dxi / L;  // = (1 - 4ξ + 3ξ²)
-    double dN3_dx = dN3_dxi / L;
-    double dN4_dx = dN4_dxi / L;  // = (-2ξ + 3ξ²)
-
-    // Rotations depend on beam formulation
+    // Compute v (y-deflection) and θz (rotation about z)
+    // For bending in x-y plane (about z-axis)
     if (config.get_formulation() == BeamFormulation::Timoshenko) {
-        // For Timoshenko beams, θ is independent of dv/dx due to shear deformation
-        // Rotations are linearly interpolated from nodal values
+        // For Timoshenko beams, use Hermite interpolation for displacement
+        // and linear interpolation for rotation (θ ≠ dv/dx)
+        double N1 = 1.0 - 3.0 * xi2 + 2.0 * xi3;
+        double N2 = L * (xi - 2.0 * xi2 + xi3);
+        double N3 = 3.0 * xi2 - 2.0 * xi3;
+        double N4 = L * (-xi2 + xi3);
+
+        result.v = N1 * v1 + N2 * theta_z1 + N3 * v2 + N4 * theta_z2;
         result.theta_z = (1.0 - xi) * theta_z1 + xi * theta_z2;
+    } else {
+        // For Euler-Bernoulli, use analytical deflection formulas
+        DeflectionYEulerComputer v_computer(L, EIz, v1, theta_z1, v2, theta_z2,
+                                             q_y.q_start, q_y.q_end);
+        RotationZEulerComputer theta_z_computer(L, EIz, v1, theta_z1, v2, theta_z2,
+                                                 q_y.q_start, q_y.q_end);
+
+        result.v = v_computer.compute(x, bending_z_release);
+        result.theta_z = theta_z_computer.compute(x, bending_z_release);
+    }
+
+    // Compute w (z-deflection) and θy (rotation about y)
+    // For bending in x-z plane (about y-axis)
+    // Note: Sign convention - θy is related to -dw/dx
+    if (config.get_formulation() == BeamFormulation::Timoshenko) {
+        double N1 = 1.0 - 3.0 * xi2 + 2.0 * xi3;
+        double N2 = L * (xi - 2.0 * xi2 + xi3);
+        double N3 = 3.0 * xi2 - 2.0 * xi3;
+        double N4 = L * (-xi2 + xi3);
+
+        result.w = N1 * w1 - N2 * theta_y1 + N3 * w2 - N4 * theta_y2;
         result.theta_y = (1.0 - xi) * theta_y1 + xi * theta_y2;
     } else {
-        // For Euler-Bernoulli, θz = dv/dx and θy = -dw/dx
-        result.theta_z = dN1_dx * v1 + dN2_dx * theta_z1 + dN3_dx * v2 + dN4_dx * theta_z2;
-        result.theta_y = -(dN1_dx * w1 - dN2_dx * theta_y1 + dN3_dx * w2 - dN4_dx * theta_y2);
+        // Use -θy as the slope input (sign convention)
+        DeflectionZEulerComputer w_computer(L, EIy, w1, -theta_y1, w2, -theta_y2,
+                                             q_z.q_start, q_z.q_end);
+        RotationYEulerComputer theta_y_computer(L, EIy, w1, -theta_y1, w2, -theta_y2,
+                                                 q_z.q_start, q_z.q_end);
+
+        result.w = w_computer.compute(x, bending_y_release);
+        // Negate to get θy from dw/dx (sign convention)
+        result.theta_y = -theta_y_computer.compute(x, bending_y_release);
     }
 
     // Warping parameter (for 14-DOF elements)
