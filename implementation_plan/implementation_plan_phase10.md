@@ -63,9 +63,34 @@ Create the pluggable design code module structure.
    ```
 
 **Acceptance Criteria:**
-- [ ] Base classes are defined
-- [ ] Plugin structure allows multiple codes
-- [ ] Check results include all required info
+- [x] Base classes are defined
+- [x] Plugin structure allows multiple codes
+- [x] Check results include all required info
+
+### Execution Notes (Completed 2025-12-20)
+
+**Steps Taken:**
+1. Created `src/grillex/design_codes/base.py` with:
+   - `CheckResult` dataclass for design check results
+   - `DesignCheck` abstract base class for individual checks
+   - `DesignCode` abstract base class for complete design standards
+2. Updated `src/grillex/design_codes/__init__.py` with exports
+3. Created comprehensive test suite in `tests/python/test_phase10_design_codes.py`
+
+**Implementation Details:**
+- `CheckResult`: Contains element_id, location, check_name, utilization, load_combination, governing flag, and optional details dict. Has `status` property that returns "PASS"/"FAIL" based on utilization <= 1.0
+- `DesignCheck`: Abstract base with `name` property and `compute_utilization()` method. Includes convenience `check()` method that returns a CheckResult
+- `DesignCode`: Abstract base with `name`, `version` properties and `get_checks()`, `check_beam()` methods. Includes helper methods `check_all_beams()`, `get_governing_results()`, `get_summary()`
+
+**Problems Encountered:**
+- None
+
+**Verification:**
+- 24 unit tests passing ✓
+- Full test suite: 667 tests passing ✓
+- Abstract classes correctly prevent direct instantiation
+- Concrete implementations work as expected
+- Multiple design codes can coexist independently
 
 ---
 
@@ -104,9 +129,46 @@ Implement a sample design code module.
 2. This is an illustrative example; full Eurocode implementation is extensive
 
 **Acceptance Criteria:**
-- [ ] At least basic checks are implemented
-- [ ] Utilization is computed correctly
-- [ ] Governing check is identified
+- [x] At least basic checks are implemented
+- [x] Utilization is computed correctly
+- [x] Governing check is identified
+
+### Execution Notes (Completed 2025-12-20)
+
+**Steps Taken:**
+1. Created `src/grillex/design_codes/eurocode3.py` with:
+   - `EC3AxialCheck`: Cross-section axial resistance (Clause 6.2.4)
+   - `EC3BendingYCheck`: Bending about y-axis (Clause 6.2.5)
+   - `EC3BendingZCheck`: Bending about z-axis (Clause 6.2.5)
+   - `EC3ShearYCheck`: Shear in y-direction (Clause 6.2.6)
+   - `EC3ShearZCheck`: Shear in z-direction (Clause 6.2.6)
+   - `EC3CombinedCheck`: Combined axial + bending interaction (Clause 6.2.1)
+   - `Eurocode3`: Main design code class with configurable safety factors
+2. Updated `__init__.py` to export all Eurocode 3 classes
+3. Added 24 new tests for Eurocode 3 implementation
+
+**Implementation Details:**
+- Uses simplified linear interaction for combined checks: N/N_Rd + My/M_y,Rd + Mz/M_z,Rd
+- Supports configurable safety factors (gamma_M0, gamma_M1, gamma_M2)
+- Supports custom check locations along beam
+- Plastic shear resistance using tau_y = fy/sqrt(3)
+- Default check locations: [0.0, 0.25, 0.5, 0.75, 1.0]
+
+**Problems Encountered:**
+- None
+
+**Verification:**
+- 48 unit tests passing (24 new for Eurocode 3) ✓
+- Full test suite: 691 tests passing ✓
+- Utilization computed correctly (verified against hand calculations)
+- Governing check identified per element
+- Both passing and failing checks detected correctly
+
+**Limitations (for future enhancement):**
+- Section classification not implemented (assumes Class 1/2)
+- No buckling checks (flexural, lateral-torsional)
+- No connection design
+- Simplified shear area calculation (60% of gross area)
 
 ---
 
