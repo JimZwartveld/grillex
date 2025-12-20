@@ -17,13 +17,13 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 6 | MPC & Rigid Links | 9 | 9 | 0 | 100% |
 | 7 | Internal Actions & Results | 35 | 35 | 0 | 100% |
 | 8 | Additional Element Types | 9 | 9 | 0 | 100% |
-| 9 | Cargo Modeling | 3 | 3 | 0 | 100% |
+| 9 | Cargo Modeling | 20 | 3 | 17 | 15% |
 | 10 | Design Codes | 6 | 0 | 6 | 0% |
 | 11 | Error Handling | 9 | 0 | 9 | 0% |
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 12 | 0 | 12 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **183** | **155** | **28** | **85%** |
+| **Total** | | **200** | **155** | **45** | **78%** |
 
 ---
 
@@ -342,6 +342,31 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Cargo definition is simple and clear
 - [x] Generated elements correctly represent the cargo
 - [x] Cargo mass contributes to inertial loads under acceleration
+
+### Task 9.2: Static vs Dynamic Cargo Connections
+- [ ] CargoConnection has loading_condition attribute with values "all", "static", "dynamic"
+- [ ] add_connection accepts loading_condition parameter
+- [ ] Validation rejects invalid loading_condition values
+- [ ] Default loading_condition="all" maintains backward compatibility
+
+### Task 9.3: Add Loading Condition to Spring Element (C++)
+- [ ] SpringElement has loading_condition property
+- [ ] is_active_for_load_case correctly maps load case types to connection activity
+- [ ] Python can get/set loading_condition on spring elements
+- [ ] LoadingCondition enum is accessible from Python
+
+### Task 9.4: Filter Springs in Stiffness Matrix Assembly
+- [ ] Static load cases (Permanent) use K matrix without dynamic springs
+- [ ] Dynamic load cases (Variable/Environmental) use K matrix with all springs
+- [ ] Existing tests pass (backward compatibility with loading_condition="all")
+- [ ] Performance is acceptable (no regression for models without conditional springs)
+
+### Task 9.5: Tests for Static/Dynamic Cargo Connections
+- [ ] Static connections carry load only in Permanent load cases
+- [ ] Dynamic connections carry load only in Variable/Environmental load cases
+- [ ] Connections with loading_condition="all" work for all load case types
+- [ ] Combined reaction magnitudes match expected values from hand calculations
+- [ ] Test coverage includes all loading_condition values
 
 ---
 

@@ -84,3 +84,186 @@ Create the Cargo Python-level abstraction.
 
 ---
 
+### Task 9.2: Static vs Dynamic Cargo Connections
+**Requirements:** R-CARGO-001, R-CARGO-002
+**Dependencies:** Task 9.1
+**Difficulty:** Medium
+
+**Description:**
+Implement the ability to mark cargo connections as "static" or "dynamic" to model the physical reality of cargo set-down and seafastening operations on vessels.
+
+**Physical Scenario:**
+1. **Set-down phase**: Cargo placed on deck → only static connections (bearing pads) take gravity
+2. **Fastening phase**: Seafastening connected → dynamic connections don't see gravity (cargo already settled)
+3. **Environmental loading**: Both connection types resist roll/pitch/heave accelerations
+
+**Steps:**
+
+1. Add `loading_condition` parameter to `CargoConnection` dataclass:
+   ```python
+   @dataclass
+   class CargoConnection:
+       structural_position: List[float]
+       stiffness: List[float]
+       cargo_offset: Optional[List[float]] = None
+       loading_condition: str = "all"  # "static", "dynamic", "all"
+   ```
+
+2. Update `Cargo.add_connection()` to accept `loading_condition`:
+   ```python
+   def add_connection(
+       self,
+       structural_position: List[float],
+       stiffness: List[float],
+       cargo_offset: Optional[List[float]] = None,
+       loading_condition: str = "all"
+   ) -> "Cargo":
+   ```
+
+3. Update `generate_elements()` to tag springs with their loading condition
+
+**Acceptance Criteria:**
+- [ ] CargoConnection has loading_condition attribute with values "all", "static", "dynamic"
+- [ ] add_connection accepts loading_condition parameter
+- [ ] Validation rejects invalid loading_condition values
+- [ ] Default loading_condition="all" maintains backward compatibility
+
+---
+
+### Task 9.3: Add Loading Condition to Spring Element (C++)
+**Requirements:** R-CARGO-001
+**Dependencies:** Task 9.2, Task 8.1
+**Difficulty:** Medium
+
+**Description:**
+Extend the C++ SpringElement to support loading condition filtering, enabling springs to be active only for certain load case types.
+
+**Steps:**
+
+1. Add `LoadingCondition` enum to SpringElement:
+   ```cpp
+   enum class LoadingCondition { All = 0, Static = 1, Dynamic = 2 };
+   LoadingCondition loading_condition = LoadingCondition::All;
+   ```
+
+2. Implement `is_active_for_load_case(LoadCaseType type)` method:
+   ```cpp
+   bool is_active_for_load_case(LoadCaseType type) const {
+       switch (loading_condition) {
+           case LoadingCondition::All: return true;
+           case LoadingCondition::Static:
+               return (type == LoadCaseType::Permanent);
+           case LoadingCondition::Dynamic:
+               return (type == LoadCaseType::Variable ||
+                       type == LoadCaseType::Environmental ||
+                       type == LoadCaseType::Accidental);
+       }
+       return true;
+   }
+   ```
+
+3. Add pybind11 bindings for `LoadingCondition` enum and property
+
+**Acceptance Criteria:**
+- [ ] SpringElement has loading_condition property
+- [ ] is_active_for_load_case correctly maps load case types to connection activity
+- [ ] Python can get/set loading_condition on spring elements
+- [ ] LoadingCondition enum is accessible from Python
+
+---
+
+### Task 9.4: Filter Springs in Stiffness Matrix Assembly
+**Requirements:** R-CARGO-001
+**Dependencies:** Task 9.3
+**Difficulty:** High
+
+**Description:**
+Modify the stiffness matrix assembly to filter spring elements based on load case type, enabling different structural behavior for static vs dynamic load cases.
+
+**Design Decision:**
+Build separate stiffness matrices for static vs dynamic load cases:
+- K_static: Only includes springs with loading_condition ∈ {All, Static}
+- K_dynamic: Includes all springs (loading_condition ∈ {All, Static, Dynamic})
+
+**Steps:**
+
+1. Update `Assembler::assemble_stiffness()` to accept optional load case type filter:
+   ```cpp
+   Eigen::SparseMatrix<double> assemble_stiffness(
+       const std::vector<std::unique_ptr<Element>>& elements,
+       std::optional<LoadCaseType> filter_type = std::nullopt
+   );
+   ```
+
+2. In assembly loop, skip springs that are not active for the filter type:
+   ```cpp
+   if (filter_type.has_value()) {
+       if (auto* spring = dynamic_cast<SpringElement*>(elem.get())) {
+           if (!spring->is_active_for_load_case(*filter_type)) {
+               continue;
+           }
+       }
+   }
+   ```
+
+3. Update `Model::analyze()` to group load cases by type and use appropriate K:
+   ```cpp
+   // Static load cases use K_static
+   // Dynamic load cases use K_dynamic
+   ```
+
+**Performance Consideration:**
+Only build separate K matrices if any springs have non-"all" loading_condition. Otherwise use single K for all cases (existing behavior).
+
+**Acceptance Criteria:**
+- [ ] Static load cases (Permanent) use K matrix without dynamic springs
+- [ ] Dynamic load cases (Variable/Environmental) use K matrix with all springs
+- [ ] Existing tests pass (backward compatibility with loading_condition="all")
+- [ ] Performance is acceptable (no regression for models without conditional springs)
+
+---
+
+### Task 9.5: Tests for Static/Dynamic Cargo Connections
+**Requirements:** R-CARGO-001, R-CARGO-002
+**Dependencies:** Task 9.4
+**Difficulty:** Low
+
+**Description:**
+Add comprehensive tests verifying that static and dynamic cargo connections behave correctly under different load case types.
+
+**Test Cases:**
+
+1. **test_static_connections_only_in_gravity**:
+   - Cargo with 4 static vertical connections
+   - Apply gravity (Permanent load case)
+   - Verify all 4 connections have vertical reactions
+
+2. **test_dynamic_connections_inactive_in_gravity**:
+   - Cargo with 4 static + 2 dynamic connections
+   - Apply gravity (Permanent load case)
+   - Verify static connections have reactions, dynamic connections have zero
+
+3. **test_dynamic_connections_active_in_environmental**:
+   - Same cargo as above
+   - Apply lateral acceleration (Environmental load case)
+   - Verify dynamic connections now have horizontal reactions
+
+4. **test_mixed_load_cases**:
+   - Cargo with static bearings + dynamic seafastening
+   - Analyze both gravity (Permanent) and roll (Environmental)
+   - Verify correct reaction distribution for each case
+
+5. **test_backward_compatibility**:
+   - Cargo with loading_condition="all" (default)
+   - Both static and dynamic load cases
+   - Verify connections active for all cases (existing behavior)
+
+**Acceptance Criteria:**
+- [ ] Static connections carry load only in Permanent load cases
+- [ ] Dynamic connections carry load only in Variable/Environmental load cases
+- [ ] Connections with loading_condition="all" work for all load case types
+- [ ] Combined reaction magnitudes match expected values from hand calculations
+- [ ] Test coverage includes all loading_condition values
+
+---
+

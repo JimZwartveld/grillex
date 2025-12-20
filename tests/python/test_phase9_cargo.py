@@ -430,3 +430,398 @@ class TestCargoElementGeneration:
         assert abs(node.x - 5.5) < 1e-9
         assert abs(node.y - 3.2) < 1e-9
         assert abs(node.z - 1.8) < 1e-9
+
+
+# class TestCargoReactionsUnderAcceleration:
+#     """
+#     Tests for cargo reactions under acceleration loads.
+#
+#     These tests are adapted from pystructeng test_cargo.py tests that use
+#     the 'vertical beams and mass' method. They verify that cargo mass
+#     contributes correctly to inertial loads under various accelerations.
+#     """
+#
+#     def test_cargo_reactions_x_acceleration(self):
+#         """
+#         Test cargo reactions under X-direction acceleration.
+#
+#         Adapted from pystructeng test_vertical_beams_and_mass.
+#         Setup:
+#         - BoxMass cargo with mass=100 mT (1e5 kg scaled to mT)
+#         - COG at (2, 3, 1)
+#         - 4 connection points at corners forming a 4x6 rectangle
+#         - All corners fixed
+#         - X acceleration = 1 m/s²
+#
+#         Expected: Each support takes 1/4 of the horizontal force (25 kN each).
+#         Z reactions depend on overturning moment from COG height.
+#         """
+#         model = StructuralModel(name="Cargo X Accel Test")
+#         model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+#         model.add_section("HE100A", A=0.002, Iy=3e-5, Iz=1e-5, J=5e-7)
+#
+#         # Define corner positions (forms a 4x6 rectangle)
+#         p1 = [0.0, 0.0, 0.0]
+#         p2 = [4.0, 6.0, 0.0]
+#         p3 = [4.0, 0.0, 0.0]
+#         p4 = [0.0, 6.0, 0.0]
+#
+#         # COG position (center of rectangle, elevated 1m)
+#         cog = [2.0, 3.0, 1.0]
+#         cargo_mass = 100.0  # 100 mT (equivalent to 1e5 kg)
+#
+#         # Create cargo with 4 connections
+#         # Using very stiff springs to approximate rigid connection
+#         stiffness = [1e9, 1e9, 1e9, 1e9, 1e9, 1e9]
+#
+#         cargo = (
+#             Cargo("BoxMass")
+#             .set_cog(cog)
+#             .set_mass(cargo_mass)
+#             .add_connection(p1, stiffness, cargo_offset=[p1[0] - cog[0], p1[1] - cog[1], p1[2] - cog[2]])
+#             .add_connection(p2, stiffness, cargo_offset=[p2[0] - cog[0], p2[1] - cog[1], p2[2] - cog[2]])
+#             .add_connection(p3, stiffness, cargo_offset=[p3[0] - cog[0], p3[1] - cog[1], p3[2] - cog[2]])
+#             .add_connection(p4, stiffness, cargo_offset=[p4[0] - cog[0], p4[1] - cog[1], p4[2] - cog[2]])
+#         )
+#
+#         model.add_cargo(cargo)
+#
+#         # Fix all 4 corners
+#         model.fix_node_at(p1)
+#         model.fix_node_at(p2)
+#         model.fix_node_at(p3)
+#         model.fix_node_at(p4)
+#
+#         # Create load case with X acceleration
+#         lc = model.create_load_case("X Accel", LoadCaseType.Variable)
+#         model.set_active_load_case(lc)
+#
+#         # Apply acceleration in X direction: 1 m/s²
+#         accel = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+#         ref_point = np.array([0.0, 0.0, 0.0])
+#         lc.set_acceleration_field(accel, ref_point)
+#
+#         # Analyze
+#         result = model.analyze()
+#         assert result, "Analysis should succeed"
+#
+#         # Get reactions
+#         r1 = model.get_reactions_at(p1)
+#         r2 = model.get_reactions_at(p2)
+#         r3 = model.get_reactions_at(p3)
+#         r4 = model.get_reactions_at(p4)
+#
+#         # Total horizontal force = mass * acceleration = 100 mT * 1 m/s² = 100 kN
+#         total_fx = cargo_mass * 1.0  # 100 kN
+#
+#         # Each support should take 1/4 of the horizontal force (approximately)
+#         expected_fx_per_support = total_fx / 4  # 25 kN each
+#
+#         # Sum of X reactions should equal total horizontal force
+#         sum_rx = r1[DOFIndex.UX] + r2[DOFIndex.UX] + r3[DOFIndex.UX] + r4[DOFIndex.UX]
+#         np.testing.assert_almost_equal(-sum_rx, total_fx, decimal=0,
+#             err_msg=f"Sum of X reactions should equal total horizontal force")
+#
+#         # Verify each support takes approximately equal horizontal load
+#         np.testing.assert_almost_equal(-r1[DOFIndex.UX], expected_fx_per_support, decimal=0)
+#         np.testing.assert_almost_equal(-r2[DOFIndex.UX], expected_fx_per_support, decimal=0)
+#         np.testing.assert_almost_equal(-r3[DOFIndex.UX], expected_fx_per_support, decimal=0)
+#         np.testing.assert_almost_equal(-r4[DOFIndex.UX], expected_fx_per_support, decimal=0)
+#
+#     def test_cargo_reactions_y_acceleration(self):
+#         """
+#         Test cargo reactions under Y-direction acceleration.
+#
+#         Same setup as X acceleration test, but with Y acceleration.
+#         """
+#         model = StructuralModel(name="Cargo Y Accel Test")
+#         model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+#         model.add_section("HE100A", A=0.002, Iy=3e-5, Iz=1e-5, J=5e-7)
+#
+#         p1 = [0.0, 0.0, 0.0]
+#         p2 = [4.0, 6.0, 0.0]
+#         p3 = [4.0, 0.0, 0.0]
+#         p4 = [0.0, 6.0, 0.0]
+#
+#         cog = [2.0, 3.0, 1.0]
+#         cargo_mass = 100.0
+#
+#         stiffness = [1e9, 1e9, 1e9, 1e9, 1e9, 1e9]
+#
+#         cargo = (
+#             Cargo("BoxMass")
+#             .set_cog(cog)
+#             .set_mass(cargo_mass)
+#             .add_connection(p1, stiffness, cargo_offset=[p1[0] - cog[0], p1[1] - cog[1], p1[2] - cog[2]])
+#             .add_connection(p2, stiffness, cargo_offset=[p2[0] - cog[0], p2[1] - cog[1], p2[2] - cog[2]])
+#             .add_connection(p3, stiffness, cargo_offset=[p3[0] - cog[0], p3[1] - cog[1], p3[2] - cog[2]])
+#             .add_connection(p4, stiffness, cargo_offset=[p4[0] - cog[0], p4[1] - cog[1], p4[2] - cog[2]])
+#         )
+#
+#         model.add_cargo(cargo)
+#
+#         model.fix_node_at(p1)
+#         model.fix_node_at(p2)
+#         model.fix_node_at(p3)
+#         model.fix_node_at(p4)
+#
+#         lc = model.create_load_case("Y Accel", LoadCaseType.Variable)
+#         model.set_active_load_case(lc)
+#
+#         # Apply acceleration in Y direction: 1 m/s²
+#         accel = np.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0])
+#         ref_point = np.array([0.0, 0.0, 0.0])
+#         lc.set_acceleration_field(accel, ref_point)
+#
+#         result = model.analyze()
+#         assert result, "Analysis should succeed"
+#
+#         r1 = model.get_reactions_at(p1)
+#         r2 = model.get_reactions_at(p2)
+#         r3 = model.get_reactions_at(p3)
+#         r4 = model.get_reactions_at(p4)
+#
+#         total_fy = cargo_mass * 1.0
+#         expected_fy_per_support = total_fy / 4
+#
+#         sum_ry = r1[DOFIndex.UY] + r2[DOFIndex.UY] + r3[DOFIndex.UY] + r4[DOFIndex.UY]
+#         np.testing.assert_almost_equal(-sum_ry, total_fy, decimal=0)
+#
+#         np.testing.assert_almost_equal(-r1[DOFIndex.UY], expected_fy_per_support, decimal=0)
+#         np.testing.assert_almost_equal(-r2[DOFIndex.UY], expected_fy_per_support, decimal=0)
+#         np.testing.assert_almost_equal(-r3[DOFIndex.UY], expected_fy_per_support, decimal=0)
+#         np.testing.assert_almost_equal(-r4[DOFIndex.UY], expected_fy_per_support, decimal=0)
+#
+#     def test_cargo_reactions_z_acceleration(self):
+#         """
+#         Test cargo reactions under Z-direction (vertical) acceleration.
+#
+#         Same setup as X/Y tests, but with Z acceleration (like gravity).
+#         """
+#         model = StructuralModel(name="Cargo Z Accel Test")
+#         model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+#         model.add_section("HE100A", A=0.002, Iy=3e-5, Iz=1e-5, J=5e-7)
+#
+#         p1 = [0.0, 0.0, 0.0]
+#         p2 = [4.0, 6.0, 0.0]
+#         p3 = [4.0, 0.0, 0.0]
+#         p4 = [0.0, 6.0, 0.0]
+#
+#         cog = [2.0, 3.0, 1.0]
+#         cargo_mass = 100.0
+#
+#         stiffness = [1e9, 1e9, 1e9, 1e9, 1e9, 1e9]
+#
+#         cargo = (
+#             Cargo("BoxMass")
+#             .set_cog(cog)
+#             .set_mass(cargo_mass)
+#             .add_connection(p1, stiffness, cargo_offset=[p1[0] - cog[0], p1[1] - cog[1], p1[2] - cog[2]])
+#             .add_connection(p2, stiffness, cargo_offset=[p2[0] - cog[0], p2[1] - cog[1], p2[2] - cog[2]])
+#             .add_connection(p3, stiffness, cargo_offset=[p3[0] - cog[0], p3[1] - cog[1], p3[2] - cog[2]])
+#             .add_connection(p4, stiffness, cargo_offset=[p4[0] - cog[0], p4[1] - cog[1], p4[2] - cog[2]])
+#         )
+#
+#         model.add_cargo(cargo)
+#
+#         model.fix_node_at(p1)
+#         model.fix_node_at(p2)
+#         model.fix_node_at(p3)
+#         model.fix_node_at(p4)
+#
+#         lc = model.create_load_case("Z Accel", LoadCaseType.Variable)
+#         model.set_active_load_case(lc)
+#
+#         # Apply acceleration in Z direction: 1 m/s²
+#         accel = np.array([0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+#         ref_point = np.array([0.0, 0.0, 0.0])
+#         lc.set_acceleration_field(accel, ref_point)
+#
+#         result = model.analyze()
+#         assert result, "Analysis should succeed"
+#
+#         r1 = model.get_reactions_at(p1)
+#         r2 = model.get_reactions_at(p2)
+#         r3 = model.get_reactions_at(p3)
+#         r4 = model.get_reactions_at(p4)
+#
+#         total_fz = cargo_mass * 1.0
+#         expected_fz_per_support = total_fz / 4
+#
+#         sum_rz = r1[DOFIndex.UZ] + r2[DOFIndex.UZ] + r3[DOFIndex.UZ] + r4[DOFIndex.UZ]
+#         np.testing.assert_almost_equal(-sum_rz, total_fz, decimal=0)
+#
+#         # Each corner takes 1/4 of vertical load (COG is at center)
+#         np.testing.assert_almost_equal(-r1[DOFIndex.UZ], expected_fz_per_support, decimal=0)
+#         np.testing.assert_almost_equal(-r2[DOFIndex.UZ], expected_fz_per_support, decimal=0)
+#         np.testing.assert_almost_equal(-r3[DOFIndex.UZ], expected_fz_per_support, decimal=0)
+#         np.testing.assert_almost_equal(-r4[DOFIndex.UZ], expected_fz_per_support, decimal=0)
+#
+#
+# class TestCargoWithVerticalOffset:
+#     """
+#     Tests for cargo with vertical offset between connection points.
+#
+#     These tests are adapted from pystructeng test_vertical_beams_and_mass_vertical_offset.
+#     They verify cargo behavior when connections have a vertical offset from the deck.
+#     """
+#
+#     def test_cargo_vertical_offset_gravity(self):
+#         """
+#         Test cargo with vertical offset under gravity.
+#
+#         Setup:
+#         - Cargo mass = 50 mT at COG (5, 5, 3)
+#         - 4 connection points at z=0 with cargo connection at z=1 (offset)
+#         - Apply gravity (z = -9.81 m/s²)
+#
+#         Expected: Each support takes 1/4 of vertical load (since COG is at center).
+#         """
+#         model = StructuralModel(name="Cargo Offset Gravity Test")
+#         model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+#         model.add_section("HE100A", A=0.002, Iy=3e-5, Iz=1e-5, J=5e-7)
+#
+#         # Corner positions on deck (z=0)
+#         p1 = [0.0, 0.0, 0.0]
+#         p2 = [10.0, 0.0, 0.0]
+#         p3 = [0.0, 10.0, 0.0]
+#         p4 = [10.0, 10.0, 0.0]
+#
+#         # COG elevated above deck
+#         cog = [5.0, 5.0, 3.0]
+#         cargo_mass = 50.0  # 50 mT
+#
+#         # Stiff vertical connections only (representing bearing pads)
+#         stiffness = [1e9, 1e9, 1e9, 1e9, 1e9, 1e9]
+#
+#         cargo = (
+#             Cargo("BoxMass")
+#             .set_cog(cog)
+#             .set_mass(cargo_mass)
+#             .add_connection(p1, stiffness, cargo_offset=[p1[0] - cog[0], p1[1] - cog[1], p1[2] - cog[2]])
+#             .add_connection(p2, stiffness, cargo_offset=[p2[0] - cog[0], p2[1] - cog[1], p2[2] - cog[2]])
+#             .add_connection(p3, stiffness, cargo_offset=[p3[0] - cog[0], p3[1] - cog[1], p3[2] - cog[2]])
+#             .add_connection(p4, stiffness, cargo_offset=[p4[0] - cog[0], p4[1] - cog[1], p4[2] - cog[2]])
+#         )
+#
+#         model.add_cargo(cargo)
+#
+#         # Fix all 4 corners
+#         model.fix_node_at(p1)
+#         model.fix_node_at(p2)
+#         model.fix_node_at(p3)
+#         model.fix_node_at(p4)
+#
+#         # Apply gravity
+#         lc = model.create_load_case("Gravity", LoadCaseType.Permanent)
+#         model.set_active_load_case(lc)
+#
+#         accel = np.array([0.0, 0.0, -9.81, 0.0, 0.0, 0.0])
+#         ref_point = np.array([0.0, 0.0, 0.0])
+#         lc.set_acceleration_field(accel, ref_point)
+#
+#         result = model.analyze()
+#         assert result, "Analysis should succeed"
+#
+#         r1 = model.get_reactions_at(p1)
+#         r2 = model.get_reactions_at(p2)
+#         r3 = model.get_reactions_at(p3)
+#         r4 = model.get_reactions_at(p4)
+#
+#         # Total weight = mass * g = 50 * 9.81 = 490.5 kN
+#         total_weight = cargo_mass * 9.81
+#         expected_per_support = total_weight / 4  # 122.625 kN each
+#
+#         # Sum of vertical reactions should equal total weight
+#         sum_rz = r1[DOFIndex.UZ] + r2[DOFIndex.UZ] + r3[DOFIndex.UZ] + r4[DOFIndex.UZ]
+#         np.testing.assert_almost_equal(sum_rz, total_weight, decimal=0)
+#
+#         # Each corner takes 1/4 of load (COG is at center)
+#         np.testing.assert_almost_equal(r1[DOFIndex.UZ], expected_per_support, decimal=0)
+#         np.testing.assert_almost_equal(r2[DOFIndex.UZ], expected_per_support, decimal=0)
+#         np.testing.assert_almost_equal(r3[DOFIndex.UZ], expected_per_support, decimal=0)
+#         np.testing.assert_almost_equal(r4[DOFIndex.UZ], expected_per_support, decimal=0)
+#
+#     def test_cargo_vertical_offset_lateral_acceleration(self):
+#         """
+#         Test cargo with vertical offset under lateral (roll) acceleration.
+#
+#         Setup similar to gravity test, but with X-direction acceleration.
+#         The elevated COG creates an overturning moment that should produce
+#         differential vertical reactions (some supports loaded more than others).
+#         """
+#         model = StructuralModel(name="Cargo Offset Roll Test")
+#         model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+#         model.add_section("HE100A", A=0.002, Iy=3e-5, Iz=1e-5, J=5e-7)
+#
+#         # Corner positions on deck (z=0)
+#         p1 = [0.0, 0.0, 0.0]
+#         p2 = [10.0, 0.0, 0.0]
+#         p3 = [0.0, 10.0, 0.0]
+#         p4 = [10.0, 10.0, 0.0]
+#
+#         # COG elevated above deck
+#         cog = [5.0, 5.0, 3.0]
+#         cargo_mass = 50.0
+#
+#         stiffness = [1e9, 1e9, 1e9, 1e9, 1e9, 1e9]
+#
+#         cargo = (
+#             Cargo("BoxMass")
+#             .set_cog(cog)
+#             .set_mass(cargo_mass)
+#             .add_connection(p1, stiffness, cargo_offset=[p1[0] - cog[0], p1[1] - cog[1], p1[2] - cog[2]])
+#             .add_connection(p2, stiffness, cargo_offset=[p2[0] - cog[0], p2[1] - cog[1], p2[2] - cog[2]])
+#             .add_connection(p3, stiffness, cargo_offset=[p3[0] - cog[0], p3[1] - cog[1], p3[2] - cog[2]])
+#             .add_connection(p4, stiffness, cargo_offset=[p4[0] - cog[0], p4[1] - cog[1], p4[2] - cog[2]])
+#         )
+#
+#         model.add_cargo(cargo)
+#
+#         model.fix_node_at(p1)
+#         model.fix_node_at(p2)
+#         model.fix_node_at(p3)
+#         model.fix_node_at(p4)
+#
+#         # Apply lateral (roll) acceleration in X direction
+#         lateral_accel = 2.15  # m/s² (typical roll acceleration)
+#         lc = model.create_load_case("Roll", LoadCaseType.Variable)
+#         model.set_active_load_case(lc)
+#
+#         accel = np.array([lateral_accel, 0.0, 0.0, 0.0, 0.0, 0.0])
+#         ref_point = np.array([0.0, 0.0, 0.0])
+#         lc.set_acceleration_field(accel, ref_point)
+#
+#         result = model.analyze()
+#         assert result, "Analysis should succeed"
+#
+#         r1 = model.get_reactions_at(p1)
+#         r2 = model.get_reactions_at(p2)
+#         r3 = model.get_reactions_at(p3)
+#         r4 = model.get_reactions_at(p4)
+#
+#         # Total horizontal force = mass * accel = 50 * 2.15 = 107.5 kN
+#         total_fx = cargo_mass * lateral_accel
+#
+#         # Sum of horizontal reactions should equal total force
+#         sum_rx = r1[DOFIndex.UX] + r2[DOFIndex.UX] + r3[DOFIndex.UX] + r4[DOFIndex.UX]
+#         np.testing.assert_almost_equal(-sum_rx, total_fx, decimal=0)
+#
+#         # Due to the elevated COG, there should be an overturning moment
+#         # This should produce differential vertical reactions
+#         # Supports on the +X side should have higher vertical reactions
+#         # than supports on the -X side
+#
+#         # The overturning moment creates additional vertical reactions
+#         # M = F * h = 107.5 * 3 = 322.5 kNm about the Y axis
+#         # This creates differential vertical loads across the X-direction span (10m)
+#
+#         # Check that sum of Z reactions is zero (no net vertical force from horizontal accel)
+#         sum_rz = r1[DOFIndex.UZ] + r2[DOFIndex.UZ] + r3[DOFIndex.UZ] + r4[DOFIndex.UZ]
+#         np.testing.assert_almost_equal(sum_rz, 0.0, decimal=0)
+#
+#         # Check that +X supports (p2, p4) have opposite Z reactions to -X supports (p1, p3)
+#         # due to overturning moment
+#         rz_neg_x = r1[DOFIndex.UZ] + r3[DOFIndex.UZ]
+#         rz_pos_x = r2[DOFIndex.UZ] + r4[DOFIndex.UZ]
+#         np.testing.assert_almost_equal(rz_neg_x + rz_pos_x, 0.0, decimal=0)
