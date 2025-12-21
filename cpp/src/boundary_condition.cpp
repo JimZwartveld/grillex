@@ -13,7 +13,8 @@ void BCHandler::add_fixed_dof(int node_id, int local_dof, double value) {
 
     // Check if this DOF is already fixed
     for (const auto& fixed : fixed_dofs_) {
-        if (fixed.node_id == node_id && fixed.local_dof == local_dof) {
+        if (fixed.node_id == node_id && fixed.local_dof == local_dof &&
+            fixed.element_id == -1) {
             // DOF already fixed - could update value or throw error
             // For now, we'll just skip to avoid duplicates
             return;
@@ -21,6 +22,18 @@ void BCHandler::add_fixed_dof(int node_id, int local_dof, double value) {
     }
 
     fixed_dofs_.emplace_back(node_id, local_dof, value);
+}
+
+void BCHandler::add_fixed_warping_dof(int element_id, int node_id, double value) {
+    // Check if this warping DOF is already fixed for this element
+    for (const auto& fixed : fixed_dofs_) {
+        if (fixed.node_id == node_id && fixed.local_dof == WARP &&
+            fixed.element_id == element_id) {
+            return;
+        }
+    }
+
+    fixed_dofs_.emplace_back(node_id, WARP, element_id, value);
 }
 
 void BCHandler::fix_node(int node_id) {
@@ -31,10 +44,19 @@ void BCHandler::fix_node(int node_id) {
 }
 
 void BCHandler::fix_node_with_warping(int node_id) {
-    // Fix all 7 DOFs including warping
+    // Fix all 7 DOFs including warping (for all elements)
     for (int dof = 0; dof <= 6; ++dof) {
         add_fixed_dof(node_id, dof, 0.0);
     }
+}
+
+void BCHandler::fix_node_with_warping(int node_id, int element_id) {
+    // Fix all 6 standard DOFs
+    for (int dof = 0; dof <= 5; ++dof) {
+        add_fixed_dof(node_id, dof, 0.0);
+    }
+    // Fix warping for specific element
+    add_fixed_warping_dof(element_id, node_id, 0.0);
 }
 
 void BCHandler::pin_node(int node_id) {
@@ -78,8 +100,16 @@ std::pair<Eigen::SparseMatrix<double>, Eigen::VectorXd> BCHandler::apply_to_syst
 
     // Apply penalty method for each fixed DOF
     for (const auto& fixed : fixed_dofs_) {
-        // Get global DOF index
-        int global_dof = dof_handler.get_global_dof(fixed.node_id, fixed.local_dof);
+        int global_dof = -1;
+
+        // For warping DOF with element-specific fixity
+        if (fixed.local_dof == WARP && fixed.element_id >= 0) {
+            global_dof = dof_handler.get_warping_dof(fixed.element_id, fixed.node_id);
+        }
+        // For standard DOFs or node-level warping
+        else {
+            global_dof = dof_handler.get_global_dof(fixed.node_id, fixed.local_dof);
+        }
 
         if (global_dof < 0) {
             // DOF is not active - skip
@@ -112,7 +142,17 @@ std::vector<int> BCHandler::get_fixed_global_dofs(const DOFHandler& dof_handler)
     global_dofs.reserve(fixed_dofs_.size());
 
     for (const auto& fixed : fixed_dofs_) {
-        int global_dof = dof_handler.get_global_dof(fixed.node_id, fixed.local_dof);
+        int global_dof = -1;
+
+        // For warping DOF with element-specific fixity
+        if (fixed.local_dof == WARP && fixed.element_id >= 0) {
+            global_dof = dof_handler.get_warping_dof(fixed.element_id, fixed.node_id);
+        }
+        // For standard DOFs or node-level warping
+        else {
+            global_dof = dof_handler.get_global_dof(fixed.node_id, fixed.local_dof);
+        }
+
         if (global_dof >= 0) {
             global_dofs.push_back(global_dof);
         }

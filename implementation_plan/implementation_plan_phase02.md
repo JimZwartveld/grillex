@@ -1261,9 +1261,9 @@ This gives users full control over warping compatibility at complex joints.
 - [x] Collinearity detection correctly identifies parallel elements
 - [x] Non-collinear elements have independent warping DOFs
 - [x] Collinear elements share warping DOFs (continuous warping)
-- [ ] Boundary conditions work for element-specific warping DOFs *(Phase 3 complete - can now verify)*
-- [ ] T-joint with torque shows no warping coupling between orthogonal beams *(Phase 3 complete - can now verify)*
-- [ ] Continuous beam shows warping continuity at internal nodes *(Phase 3 complete - can now verify)*
+- [x] Boundary conditions work for element-specific warping DOFs *(Verified: test_element_specific_warping_bc_applied_correctly)*
+- [x] T-joint with torque shows no warping coupling between orthogonal beams *(Verified: test_t_joint_no_warping_coupling)*
+- [x] Continuous beam shows warping continuity at internal nodes *(Verified: test_continuous_beam_warping_continuity)*
 - [x] User can override automatic coupling detection
 - [x] Backward compatible: models without warping unchanged
 
@@ -1500,22 +1500,37 @@ dof_handler.number_dofs_with_elements(registry, [elem1, elem2])
 assert dof_handler.get_warping_dof(1, n2.id) == dof_handler.get_warping_dof(2, n2.id)
 ```
 
-### Remaining Work (Verification Tests)
+### Remaining Work (Verification Tests) - COMPLETED
 
-The following acceptance criteria require the solver (Phase 3) to fully verify.
-**Note:** Phase 3 is now complete, so these can be verified when needed.
+**Completed:** December 21, 2025
 
-- [ ] Boundary conditions work for element-specific warping DOFs
-  - Can now be tested with Phase 3 solver
-  - Create test with 14-DOF elements and warping BCs
-- [ ] T-joint with torque shows no warping coupling between orthogonal beams
-  - Can now be tested with Phase 3 solver
-  - Create T-joint model, apply torque, verify no warping transfer
-- [ ] Continuous beam shows warping continuity at internal nodes
-  - Can now be tested with Phase 3 solver
-  - Create continuous beam with collinear elements, verify warping DOFs are coupled
+All remaining verification tests have been implemented:
 
-The DOF numbering and coupling infrastructure is complete. Verification tests can be added to the test suite as integration tests.
+- [x] Boundary conditions work for element-specific warping DOFs
+  - Extended `FixedDOF` struct with `element_id` for element-specific warping
+  - Added `BCHandler::add_fixed_warping_dof(element_id, node_id, value)`
+  - Added `BCHandler::fix_node_with_warping(node_id, element_id)` overload
+  - Updated `apply_to_system()` to use `get_warping_dof()` for element-specific BCs
+  - Test: `test_element_specific_warping_bc_applied_correctly`
+
+- [x] T-joint with torque shows no warping coupling between orthogonal beams
+  - Created T-joint model with orthogonal 14-DOF beams
+  - Applied torque to one beam, verified other beam's warping is independent
+  - Test: `test_t_joint_no_warping_coupling`
+
+- [x] Continuous beam shows warping continuity at internal nodes
+  - Created two-span continuous beam with collinear elements
+  - Verified warping DOFs are shared at internal node
+  - Test: `test_continuous_beam_warping_continuity`
+  - Test: `test_warping_continuity_produces_coupled_bimoments`
+
+**Files Modified:**
+- `cpp/include/grillex/boundary_condition.hpp` - Extended FixedDOF, added new methods
+- `cpp/src/boundary_condition.cpp` - Implemented element-specific warping BC handling
+- `cpp/bindings/bindings.cpp` - Added Python bindings for new methods
+- `tests/python/test_warping_decoupling.py` - Added 6 new verification tests
+
+**All 32 Task 2.9 tests now pass (790 tests total).**
 
 ---
 

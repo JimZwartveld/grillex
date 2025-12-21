@@ -130,9 +130,9 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Collinearity detection correctly identifies parallel elements
 - [x] Non-collinear elements have independent warping DOFs
 - [x] Collinear elements share warping DOFs (continuous warping)
-- [ ] Boundary conditions work for element-specific warping DOFs
-- [ ] T-joint with torque shows no warping coupling between orthogonal beams
-- [ ] Continuous beam shows warping continuity at internal nodes
+- [x] Boundary conditions work for element-specific warping DOFs
+- [x] T-joint with torque shows no warping coupling between orthogonal beams
+- [x] Continuous beam shows warping continuity at internal nodes
 - [x] User can override automatic coupling detection
 - [x] Backward compatible: models without warping unchanged
 

@@ -27,20 +27,35 @@ enum DOFIndex {
 
 /**
  * @brief Represents a fixed degree of freedom with optional prescribed value
+ *
+ * For standard DOFs (0-5), only node_id and local_dof are needed.
+ * For warping DOF (6), element_id must also be specified because warping
+ * DOFs are element-specific at shared nodes.
  */
 struct FixedDOF {
     int node_id;        ///< Node ID where DOF is fixed
     int local_dof;      ///< Local DOF index (0-5 for standard, 6 for warping)
     double value;       ///< Prescribed value (0.0 for standard fixity)
+    int element_id;     ///< Element ID (only used for warping DOF, -1 for standard DOFs)
 
     /**
-     * @brief Construct a fixed DOF
+     * @brief Construct a fixed DOF (standard DOFs)
      * @param node Node ID
      * @param dof Local DOF index (0-6)
      * @param val Prescribed value (default 0.0)
      */
     FixedDOF(int node, int dof, double val = 0.0)
-        : node_id(node), local_dof(dof), value(val) {}
+        : node_id(node), local_dof(dof), value(val), element_id(-1) {}
+
+    /**
+     * @brief Construct a fixed warping DOF (element-specific)
+     * @param node Node ID
+     * @param dof Local DOF index (should be 6 for warping)
+     * @param elem Element ID for element-specific warping DOF
+     * @param val Prescribed value (default 0.0)
+     */
+    FixedDOF(int node, int dof, int elem, double val)
+        : node_id(node), local_dof(dof), value(val), element_id(elem) {}
 };
 
 /**
@@ -69,8 +84,24 @@ public:
      * @param node_id Node ID where DOF is fixed
      * @param local_dof Local DOF index (0-6)
      * @param value Prescribed displacement/rotation (default 0.0)
+     *
+     * Note: For warping DOF (local_dof=6), this fixes the warping at a node
+     * for ALL elements connected to that node. For element-specific warping
+     * fixity, use add_fixed_warping_dof() instead.
      */
     void add_fixed_dof(int node_id, int local_dof, double value = 0.0);
+
+    /**
+     * @brief Add a fixed warping DOF for a specific element
+     * @param element_id Element ID for which to fix warping
+     * @param node_id Node ID where warping is fixed (must be end of element)
+     * @param value Prescribed warping value (default 0.0)
+     *
+     * Warping DOFs are element-specific at shared nodes. This allows fixing
+     * the warping DOF for a specific element without affecting other elements
+     * connected to the same node.
+     */
+    void add_fixed_warping_dof(int element_id, int node_id, double value = 0.0);
 
     /**
      * @brief Fix all 6 standard DOFs at a node (full fixity, no warping)
@@ -82,13 +113,24 @@ public:
     void fix_node(int node_id);
 
     /**
-     * @brief Fix all 7 DOFs at a node (including warping)
+     * @brief Fix all 7 DOFs at a node (including warping) for ALL elements
      * @param node_id Node ID to fix
      *
      * Equivalent to a built-in support with warping restraint.
      * Use this for fixed ends of thin-walled beams where warping is prevented.
+     * This fixes warping for ALL elements connected to the node.
      */
     void fix_node_with_warping(int node_id);
+
+    /**
+     * @brief Fix all 7 DOFs at a node for a specific element's warping
+     * @param node_id Node ID to fix
+     * @param element_id Element ID for element-specific warping fixity
+     *
+     * Fixes all 6 standard DOFs plus the warping DOF for the specified element.
+     * Other elements connected to the node will have their warping DOFs unaffected.
+     */
+    void fix_node_with_warping(int node_id, int element_id);
 
     /**
      * @brief Fix only translations at a node (pin support)

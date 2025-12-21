@@ -645,10 +645,17 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                       "Local DOF index (0-6)")
         .def_readwrite("value", &grillex::FixedDOF::value,
                       "Prescribed value")
+        .def_readwrite("element_id", &grillex::FixedDOF::element_id,
+                      "Element ID for element-specific warping DOF (-1 for standard DOFs)")
         .def("__repr__", [](const grillex::FixedDOF &fd) {
-            return "<FixedDOF node=" + std::to_string(fd.node_id) +
+            std::string repr = "<FixedDOF node=" + std::to_string(fd.node_id) +
                    " dof=" + std::to_string(fd.local_dof) +
-                   " value=" + std::to_string(fd.value) + ">";
+                   " value=" + std::to_string(fd.value);
+            if (fd.element_id >= 0) {
+                repr += " element=" + std::to_string(fd.element_id);
+            }
+            repr += ">";
+            return repr;
         });
 
     // BCHandler class
@@ -660,12 +667,23 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              py::arg("local_dof"),
              py::arg("value") = 0.0,
              "Add a single fixed DOF with optional prescribed value")
+        .def("add_fixed_warping_dof", &grillex::BCHandler::add_fixed_warping_dof,
+             py::arg("element_id"),
+             py::arg("node_id"),
+             py::arg("value") = 0.0,
+             "Add a fixed warping DOF for a specific element at a node")
         .def("fix_node", &grillex::BCHandler::fix_node,
              py::arg("node_id"),
              "Fix all 6 standard DOFs at a node (full fixity, no warping)")
-        .def("fix_node_with_warping", &grillex::BCHandler::fix_node_with_warping,
+        .def("fix_node_with_warping",
+             py::overload_cast<int>(&grillex::BCHandler::fix_node_with_warping),
              py::arg("node_id"),
-             "Fix all 7 DOFs at a node (including warping)")
+             "Fix all 7 DOFs at a node (including warping for all elements)")
+        .def("fix_node_with_warping",
+             py::overload_cast<int, int>(&grillex::BCHandler::fix_node_with_warping),
+             py::arg("node_id"),
+             py::arg("element_id"),
+             "Fix all 7 DOFs at a node with element-specific warping fixity")
         .def("pin_node", &grillex::BCHandler::pin_node,
              py::arg("node_id"),
              "Fix only translations at a node (pin support)")
