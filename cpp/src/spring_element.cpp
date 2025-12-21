@@ -1,4 +1,5 @@
 #include "grillex/spring_element.hpp"
+#include "grillex/dof_handler.hpp"
 #include <cmath>
 
 namespace grillex {
@@ -67,6 +68,208 @@ bool SpringElement::is_active_for_load_case(LoadCaseType type) const {
                     type == LoadCaseType::Accidental);
     }
     return true;  // Default: always active
+}
+
+// === Nonlinear spring methods (Phase 15) ===
+
+void SpringElement::update_state(const Eigen::VectorXd& u,
+                                  const DOFHandler& dof_handler) {
+    // Store previous state to detect changes
+    std::array<bool, 6> previous_state = is_active;
+
+    // Get DOF indices for both nodes
+    for (int i = 0; i < 6; ++i) {
+        int dof_i = dof_handler.get_global_dof(node_i->id, i);
+        int dof_j = dof_handler.get_global_dof(node_j->id, i);
+
+        // Compute deformation: δ = u_j - u_i
+        double u_i_val = (dof_i >= 0 && dof_i < u.size()) ? u(dof_i) : 0.0;
+        double u_j_val = (dof_j >= 0 && dof_j < u.size()) ? u(dof_j) : 0.0;
+        deformation[i] = u_j_val - u_i_val;
+
+        double g = gap[i];
+        double delta = deformation[i];
+
+        // Update active state based on behavior and gap
+        switch (behavior[i]) {
+            case SpringBehavior::Linear:
+                // Linear spring: always active (gap handling for linear is rare but supported)
+                if (g <= gap_tolerance_) {
+                    // No gap: always active
+                    is_active[i] = true;
+                } else {
+                    // Linear with gap: active when |δ| > gap
+                    is_active[i] = (std::abs(delta) > g - gap_tolerance_);
+                }
+                break;
+
+            case SpringBehavior::TensionOnly:
+                // Active when elongation exceeds gap: δ > gap
+                is_active[i] = (delta > g - gap_tolerance_);
+                break;
+
+            case SpringBehavior::CompressionOnly:
+                // Active when compression exceeds gap: δ < -gap
+                is_active[i] = (delta < -g + gap_tolerance_);
+                break;
+        }
+    }
+
+    // Check if any state changed
+    state_changed_ = (previous_state != is_active);
+}
+
+bool SpringElement::has_gap() const {
+    for (int i = 0; i < 6; ++i) {
+        if (std::abs(gap[i]) > gap_tolerance_) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SpringElement::is_nonlinear() const {
+    for (int i = 0; i < 6; ++i) {
+        if (behavior[i] != SpringBehavior::Linear) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::array<double, 6> SpringElement::compute_forces() const {
+    std::array<double, 6> forces = {{0.0, 0.0, 0.0, 0.0, 0.0, 0.0}};
+    std::array<double, 6> k_values = {{kx, ky, kz, krx, kry, krz}};
+
+    for (int i = 0; i < 6; ++i) {
+        if (!is_active[i]) {
+            forces[i] = 0.0;
+            continue;
+        }
+
+        double k = k_values[i];
+        double delta = deformation[i];
+        double g = gap[i];
+
+        switch (behavior[i]) {
+            case SpringBehavior::Linear:
+                if (g <= gap_tolerance_) {
+                    // No gap: F = k × δ
+                    forces[i] = k * delta;
+                } else if (delta > g) {
+                    // Tension beyond gap: F = k × (δ - gap)
+                    forces[i] = k * (delta - g);
+                } else if (delta < -g) {
+                    // Compression beyond gap: F = k × (δ + gap)
+                    forces[i] = k * (delta + g);
+                } else {
+                    // Within gap: no force
+                    forces[i] = 0.0;
+                }
+                break;
+
+            case SpringBehavior::TensionOnly:
+                // F = k × (δ - gap)
+                forces[i] = k * (delta - g);
+                break;
+
+            case SpringBehavior::CompressionOnly:
+                // F = k × (δ + gap), where δ is negative
+                forces[i] = k * (delta + g);
+                break;
+        }
+    }
+    return forces;
+}
+
+Eigen::Matrix<double, 12, 1> SpringElement::compute_gap_forces() const {
+    // Returns the gap closure forces to add to F vector
+    // F_gap = ±k×gap for active gap springs
+
+    Eigen::Matrix<double, 12, 1> F_gap = Eigen::Matrix<double, 12, 1>::Zero();
+    std::array<double, 6> k_values = {{kx, ky, kz, krx, kry, krz}};
+
+    for (int i = 0; i < 6; ++i) {
+        if (!is_active[i] || gap[i] <= gap_tolerance_) continue;
+
+        double k = k_values[i];
+        double g = gap[i];
+        double delta = deformation[i];
+
+        double f_gap = 0.0;
+        switch (behavior[i]) {
+            case SpringBehavior::TensionOnly:
+                // Gap force pulls nodes together: -k×gap
+                // F = k × (δ - gap) = k×δ - k×gap
+                // The k×δ is in the stiffness contribution
+                // The -k×gap is what we add to RHS
+                f_gap = -k * g;
+                break;
+
+            case SpringBehavior::CompressionOnly:
+                // Gap force pushes nodes apart: +k×gap
+                // F = k × (δ + gap) = k×δ + k×gap
+                // The k×δ is in the stiffness contribution
+                // The +k×gap is what we add to RHS
+                f_gap = k * g;
+                break;
+
+            case SpringBehavior::Linear:
+                // Bidirectional gap - determine based on current state
+                if (delta > g) {
+                    f_gap = -k * g;  // Tension
+                } else if (delta < -g) {
+                    f_gap = k * g;   // Compression
+                }
+                break;
+        }
+
+        // Apply to DOF indices
+        // Force on node_i: opposite sign
+        // Force on node_j: same sign as f_gap
+        F_gap(i) = -f_gap;      // Force on node_i
+        F_gap(i + 6) = f_gap;   // Force on node_j (opposite)
+    }
+
+    return F_gap;
+}
+
+Eigen::Matrix<double, 12, 12> SpringElement::current_stiffness_matrix() const {
+    Eigen::Matrix<double, 12, 12> K = Eigen::Matrix<double, 12, 12>::Zero();
+    std::array<double, 6> k_values = {{kx, ky, kz, krx, kry, krz}};
+
+    for (int i = 0; i < 6; ++i) {
+        if (!is_active[i]) continue;  // Skip inactive DOFs
+
+        double k = k_values[i];
+        if (std::abs(k) > 1e-20) {
+            K(i, i) = k;
+            K(i, i + 6) = -k;
+            K(i + 6, i) = -k;
+            K(i + 6, i + 6) = k;
+        }
+    }
+    return K;
+}
+
+void SpringElement::set_behavior(int dof, SpringBehavior b) {
+    if (dof >= 0 && dof < 6) {
+        behavior[dof] = b;
+    }
+}
+
+void SpringElement::set_all_behavior(SpringBehavior b) {
+    behavior.fill(b);
+}
+
+void SpringElement::set_gap(int dof, double g) {
+    if (dof >= 0 && dof < 6) {
+        gap[dof] = g;
+    }
+}
+
+void SpringElement::set_all_gaps(double g) {
+    gap.fill(g);
 }
 
 } // namespace grillex

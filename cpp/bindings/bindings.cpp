@@ -1577,6 +1577,20 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                "Only active for Variable/Environmental/Accidental load cases")
         .export_values();
 
+    // SpringBehavior enum (Phase 15)
+    py::enum_<grillex::SpringBehavior>(m, "SpringBehavior",
+        "Spring behavior type for nonlinear analysis.\n\n"
+        "- Linear: Always active (default)\n"
+        "- TensionOnly: Active only when elongated (δ > gap)\n"
+        "- CompressionOnly: Active only when compressed (δ < -gap)")
+        .value("Linear", grillex::SpringBehavior::Linear,
+               "Always active (default)")
+        .value("TensionOnly", grillex::SpringBehavior::TensionOnly,
+               "Active only when elongated (δ > gap)")
+        .value("CompressionOnly", grillex::SpringBehavior::CompressionOnly,
+               "Active only when compressed (δ < -gap)")
+        .export_values();
+
     // SpringElement class
     py::class_<grillex::SpringElement>(m, "SpringElement",
         "Spring element connecting two nodes with independent stiffness for each DOF.\n\n"
@@ -1621,6 +1635,56 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "    load_case_type: The LoadCaseType to check against\n\n"
              "Returns:\n"
              "    True if this spring should contribute to the load case")
+        // === Nonlinear spring properties and methods (Phase 15) ===
+        .def_readwrite("behavior", &grillex::SpringElement::behavior,
+             "Per-DOF behavior type array [6].\n\n"
+             "DOF indices: 0=X, 1=Y, 2=Z, 3=RX, 4=RY, 5=RZ")
+        .def_readwrite("gap", &grillex::SpringElement::gap,
+             "Per-DOF gap values array [6].\n\n"
+             "Units: [m] for translation (0-2), [rad] for rotation (3-5)")
+        .def_readwrite("is_active", &grillex::SpringElement::is_active,
+             "Per-DOF active state array [6].\n\n"
+             "Updated by update_state() during nonlinear iteration.")
+        .def_readonly("deformation", &grillex::SpringElement::deformation,
+             "Per-DOF deformation array [6]: δ = u_j - u_i.\n\n"
+             "Units: [m] for translation, [rad] for rotation.")
+        .def("update_state", &grillex::SpringElement::update_state,
+             py::arg("displacements"), py::arg("dof_handler"),
+             "Update spring state based on current displacements.\n\n"
+             "Computes deformation and updates is_active based on behavior and gap.")
+        .def("state_changed", &grillex::SpringElement::state_changed,
+             "Check if any DOF state changed in last update_state() call.")
+        .def("has_gap", &grillex::SpringElement::has_gap,
+             "Check if any DOF has a non-zero gap.")
+        .def("is_nonlinear", &grillex::SpringElement::is_nonlinear,
+             "Check if any DOF has nonlinear behavior (not Linear).")
+        .def("compute_forces", &grillex::SpringElement::compute_forces,
+             "Compute spring forces for each DOF [kN or kN·m].\n\n"
+             "Returns array of 6 force values.")
+        .def("compute_gap_forces", &grillex::SpringElement::compute_gap_forces,
+             "Compute gap closure forces for solver RHS (12x1 vector).\n\n"
+             "Returns force offset term for active gap springs.")
+        .def("current_stiffness_matrix", &grillex::SpringElement::current_stiffness_matrix,
+             "Get 12x12 stiffness matrix respecting current active state.\n\n"
+             "Inactive DOFs have zero contribution.")
+        .def("set_behavior", &grillex::SpringElement::set_behavior,
+             py::arg("dof"), py::arg("behavior"),
+             "Set behavior for a specific DOF (0-5).")
+        .def("set_all_behavior", &grillex::SpringElement::set_all_behavior,
+             py::arg("behavior"),
+             "Set behavior for all DOFs at once.")
+        .def("set_gap", &grillex::SpringElement::set_gap,
+             py::arg("dof"), py::arg("gap"),
+             "Set gap for a specific DOF (0-5).\n\n"
+             "Units: [m] for translation, [rad] for rotation.")
+        .def("set_all_gaps", &grillex::SpringElement::set_all_gaps,
+             py::arg("gap"),
+             "Set gap for all DOFs at once.")
+        .def("get_gap_tolerance", &grillex::SpringElement::get_gap_tolerance,
+             "Get the gap tolerance used for state determination [m].")
+        .def("set_gap_tolerance", &grillex::SpringElement::set_gap_tolerance,
+             py::arg("tolerance"),
+             "Set the gap tolerance used for state determination [m].")
         .def("__repr__", [](const grillex::SpringElement &s) {
             std::string cond_str;
             switch (s.loading_condition) {

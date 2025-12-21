@@ -95,6 +95,8 @@ from grillex._grillex_cpp import (
     PointMass,
     PlateElement,
     LoadingCondition,
+    # Phase 15: Nonlinear Springs
+    SpringBehavior,
     # Phase 11: Error Handling & Diagnostics
     ErrorCode,
     GrillexError,
@@ -123,6 +125,8 @@ __all__ = [
     'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine',
     # Phase 8: Additional Element Types
     'SpringElement', 'PointMass', 'PlateElement', 'LoadingCondition',
+    # Phase 15: Nonlinear Springs
+    'SpringBehavior',
     # Phase 11: Error Handling & Diagnostics
     'ErrorCode', 'GrillexError', 'WarningCode', 'WarningSeverity',
     'GrillexWarning', 'WarningList',
