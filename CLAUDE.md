@@ -130,6 +130,61 @@ When acceptance criteria cannot be completed due to missing dependencies or bein
 - **Phase 11 (Error Handling)**: Error detection, diagnostics
 - **Phase 12 (LLM Tooling)**: Documentation, type hints, tool schemas
 
+### 6. Update Documentation
+
+**IMPORTANT:** When implementing new features or modifying existing functionality, the documentation MUST be updated to reflect the changes.
+
+**Documentation Structure:**
+
+```
+docs/
+├── user/                    # User documentation
+│   ├── getting_started.rst  # Quick start guide
+│   ├── beam_basics.rst      # Beam element fundamentals
+│   ├── coordinate_systems.rst # Coordinate system reference
+│   ├── loads_and_boundary_conditions.rst
+│   ├── analysis_workflow.rst
+│   └── results_and_postprocessing.rst
+├── verification/            # Verification documentation
+│   ├── cantilever_beam.rst  # Analytical verification cases
+│   ├── simply_supported_beam.rst
+│   ├── continuous_beam.rst
+│   └── verification_summary.rst
+└── index.rst                # Main documentation index
+```
+
+**When to Update Documentation:**
+
+| Change Type | Documentation Action |
+|-------------|---------------------|
+| New API method | Add to user docs with doctest example |
+| Changed API signature | Update all affected examples |
+| New feature | Add user guide section + verification test |
+| Bug fix affecting behavior | Update affected examples |
+| New error type | Document in error reference |
+
+**Doctest Requirements:**
+
+All documentation examples MUST be doctests that run against the codebase:
+
+```rst
+.. doctest::
+
+    >>> from grillex.core import StructuralModel
+    >>> model = StructuralModel(name="Example")
+    >>> _ = model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> # Use _ = to suppress return value output
+```
+
+**Verification:**
+
+Run doctests to ensure documentation is aligned with code:
+
+```bash
+cd /path/to/grillex
+sphinx-build -b doctest docs docs/_build/doctest
+```
+
 ---
 
 ## LLM-Friendly Development Requirements
