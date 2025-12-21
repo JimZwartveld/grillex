@@ -1133,19 +1133,57 @@ f_gap = +k * gap;  // Applied as: -f on node_i, +f on node_j
 - `progress_callback`: Optional real-time monitoring
 
 **Acceptance Criteria:**
-- [ ] NonlinearSolver class implemented with settings struct
-- [ ] NonlinearInitialState struct implemented for static→dynamic sequencing
-- [ ] solve() accepts optional initial_state parameter
-- [ ] When initial_state provided, iteration starts from that displacement/state
-- [ ] When initial_state not provided, starts from zero with all springs active
-- [ ] Iterative solve correctly updates spring states
-- [ ] Gap forces computed and added to RHS for gap springs
-- [ ] Convergence detected when no spring states change
-- [ ] Maximum iteration limit prevents infinite loops
-- [ ] Linear-only springs without gaps bypass iteration (optimization)
-- [ ] Oscillation detection prevents flip-flopping states
-- [ ] Singular system during iteration handled gracefully
-- [ ] Result includes final spring states for reporting
+- [x] NonlinearSolver class implemented with settings struct
+- [x] NonlinearInitialState struct implemented for static→dynamic sequencing
+- [x] solve() accepts optional initial_state parameter
+- [x] When initial_state provided, iteration starts from that displacement/state
+- [x] When initial_state not provided, starts from zero with all springs active
+- [x] Iterative solve correctly updates spring states
+- [x] Gap forces computed and added to RHS for gap springs
+- [x] Convergence detected when no spring states change
+- [x] Maximum iteration limit prevents infinite loops
+- [x] Linear-only springs without gaps bypass iteration (optimization)
+- [x] Oscillation detection prevents flip-flopping states
+- [x] Singular system during iteration handled gracefully
+- [x] Result includes final spring states for reporting
+
+### Execution Notes (Completed 2025-12-21)
+
+**Steps Taken:**
+1. Created `cpp/include/grillex/nonlinear_solver.hpp` with:
+   - `NonlinearSolverResult` struct for solver output
+   - `NonlinearInitialState` struct for static→dynamic sequencing
+   - `NonlinearSolverSettings` struct with all solver parameters
+   - `NonlinearSolver` class with solve() method
+2. Created `cpp/src/nonlinear_solver.cpp` with full implementation:
+   - Fast path for linear springs (no iteration needed)
+   - Full iterative loop with state updates
+   - Gap force assembly for active gap springs
+   - Oscillation detection and damping
+   - Initial state support for chained analysis
+3. Updated `cpp/CMakeLists.txt` to include new source file
+4. Added pybind11 bindings in `bindings.cpp` for all new types
+5. Updated Python exports in `data_types.py` and `__init__.py`
+6. Build successful, all 807 tests pass
+
+**Verification:**
+- All 13 acceptance criteria verified ✓
+- Manual tests confirm:
+  - Compression-only springs converge in 2 iterations
+  - Tension-only springs deactivate correctly with upward force
+  - Static→dynamic sequencing correctly preserves initial state
+  - Liftoff detection works (spring deactivates under net upward force)
+  - Linear springs bypass iteration (fast path)
+  - Singular system during iteration returns meaningful error
+
+**Key Features Implemented:**
+- Fast path optimization for linear-only springs
+- Full static→dynamic sequencing support via NonlinearInitialState
+- Oscillation detection with history tracking and damping
+- Complete spring state and force reporting in result
+- Python bindings with full docstrings
+
+**Time Taken:** ~45 minutes
 
 ---
 

@@ -22,6 +22,7 @@
 #include "grillex/plate_element.hpp"
 #include "grillex/errors.hpp"
 #include "grillex/warnings.hpp"
+#include "grillex/nonlinear_solver.hpp"
 
 namespace py = pybind11;
 
@@ -2018,5 +2019,130 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         }, py::keep_alive<0, 1>())
         .def("__repr__", [](const grillex::WarningList &wl) {
             return "<WarningList: " + wl.summary() + ">";
+        });
+
+    // ========================================================================
+    // Phase 15: Nonlinear Solver
+    // ========================================================================
+
+    // NonlinearSolverResult struct
+    py::class_<grillex::NonlinearSolverResult>(m, "NonlinearSolverResult",
+        "Result from nonlinear spring solver.\n\n"
+        "Contains solution displacements, convergence status, iteration count,\n"
+        "and final spring states/forces for reporting.")
+        .def(py::init<>())
+        .def_readwrite("displacements", &grillex::NonlinearSolverResult::displacements,
+             "Solution displacement vector [m, rad]")
+        .def_readwrite("converged", &grillex::NonlinearSolverResult::converged,
+             "True if solver converged")
+        .def_readwrite("iterations", &grillex::NonlinearSolverResult::iterations,
+             "Number of iterations performed")
+        .def_readwrite("message", &grillex::NonlinearSolverResult::message,
+             "Descriptive message (convergence info or error)")
+        .def_readwrite("spring_states", &grillex::NonlinearSolverResult::spring_states,
+             "Final spring states: list of (spring_id, active_state[6])")
+        .def_readwrite("spring_forces", &grillex::NonlinearSolverResult::spring_forces,
+             "Final spring forces: list of (spring_id, forces[6]) [kN or kN·m]")
+        .def_readwrite("state_changes_per_iteration", &grillex::NonlinearSolverResult::state_changes_per_iteration,
+             "History of state changes per iteration (for diagnostics)")
+        .def("__repr__", [](const grillex::NonlinearSolverResult &r) {
+            return "<NonlinearSolverResult converged=" +
+                   std::string(r.converged ? "True" : "False") +
+                   " iterations=" + std::to_string(r.iterations) + ">";
+        });
+
+    // NonlinearInitialState struct
+    py::class_<grillex::NonlinearInitialState>(m, "NonlinearInitialState",
+        "Initial state for starting nonlinear iteration.\n\n"
+        "Used to start from a known state (e.g., static solution) rather than zero.\n"
+        "Essential for static→dynamic load sequencing where the static (gravity)\n"
+        "solution establishes the baseline contact pattern.")
+        .def(py::init<>())
+        .def_readwrite("displacement", &grillex::NonlinearInitialState::displacement,
+             "Initial displacement vector (empty = start from zero)")
+        .def_readwrite("spring_states", &grillex::NonlinearInitialState::spring_states,
+             "Initial spring states: list of (spring_id, active_states[6])")
+        .def("has_initial_state", &grillex::NonlinearInitialState::has_initial_state,
+             "Check if initial state is provided")
+        .def("__repr__", [](const grillex::NonlinearInitialState &s) {
+            return "<NonlinearInitialState has_state=" +
+                   std::string(s.has_initial_state() ? "True" : "False") + ">";
+        });
+
+    // NonlinearSolverSettings struct
+    py::class_<grillex::NonlinearSolverSettings>(m, "NonlinearSolverSettings",
+        "Settings for nonlinear spring solver.")
+        .def(py::init<>())
+        .def_readwrite("max_iterations", &grillex::NonlinearSolverSettings::max_iterations,
+             "Maximum iterations before giving up (default: 50)")
+        .def_readwrite("gap_tolerance", &grillex::NonlinearSolverSettings::gap_tolerance,
+             "Tolerance for spring activation threshold [m] (default: 1e-10)")
+        .def_readwrite("displacement_tolerance", &grillex::NonlinearSolverSettings::displacement_tolerance,
+             "Relative displacement tolerance for convergence (default: 1e-8)")
+        .def_readwrite("allow_all_springs_inactive", &grillex::NonlinearSolverSettings::allow_all_springs_inactive,
+             "Allow solution where all nonlinear springs are inactive (default: false)")
+        .def_readwrite("enable_oscillation_damping", &grillex::NonlinearSolverSettings::enable_oscillation_damping,
+             "Enable oscillation detection and damping (default: true)")
+        .def_readwrite("oscillation_history_size", &grillex::NonlinearSolverSettings::oscillation_history_size,
+             "Number of iterations to look back for oscillation detection (default: 4)")
+        .def_readwrite("oscillation_damping_factor", &grillex::NonlinearSolverSettings::oscillation_damping_factor,
+             "Damping factor when oscillation detected (default: 0.5)")
+        .def_readwrite("linear_method", &grillex::NonlinearSolverSettings::linear_method,
+             "Linear solver method to use (default: SimplicialLDLT)")
+        .def("__repr__", [](const grillex::NonlinearSolverSettings &s) {
+            return "<NonlinearSolverSettings max_iter=" +
+                   std::to_string(s.max_iterations) + ">";
+        });
+
+    // NonlinearSolver class
+    py::class_<grillex::NonlinearSolver>(m, "NonlinearSolver",
+        "Iterative solver for systems with nonlinear springs.\n\n"
+        "Handles tension-only, compression-only, and gap springs through\n"
+        "an iterative state-update algorithm. Each iteration:\n"
+        "1. Assembles stiffness from currently active springs\n"
+        "2. Computes gap closure forces for active gap springs\n"
+        "3. Solves the linear system\n"
+        "4. Updates spring states based on new displacements\n"
+        "5. Checks for convergence (no state changes)\n\n"
+        "For static→dynamic sequencing, use the initial_state parameter\n"
+        "to start from a previous static solution.")
+        .def(py::init<const grillex::NonlinearSolverSettings&>(),
+             py::arg("settings") = grillex::NonlinearSolverSettings(),
+             "Construct solver with settings")
+        .def("solve", [](grillex::NonlinearSolver& solver,
+                        const Eigen::SparseMatrix<double>& base_K,
+                        const Eigen::VectorXd& F,
+                        py::list springs_list,
+                        const grillex::DOFHandler& dof_handler,
+                        const grillex::NonlinearInitialState& initial_state) {
+            // Convert py::list to std::vector<SpringElement*>
+            std::vector<grillex::SpringElement*> springs;
+            for (auto& item : springs_list) {
+                springs.push_back(item.cast<grillex::SpringElement*>());
+            }
+            return solver.solve(base_K, F, springs, dof_handler, initial_state);
+        },
+             py::arg("base_K"),
+             py::arg("F"),
+             py::arg("springs"),
+             py::arg("dof_handler"),
+             py::arg("initial_state") = grillex::NonlinearInitialState(),
+             "Solve system with nonlinear springs.\n\n"
+             "Args:\n"
+             "    base_K: Base stiffness matrix (beams, plates - excludes springs)\n"
+             "    F: External force vector [kN]\n"
+             "    springs: List of spring elements (states will be updated)\n"
+             "    dof_handler: DOF handler for global DOF indexing\n"
+             "    initial_state: Optional initial state from previous solve\n\n"
+             "Returns:\n"
+             "    NonlinearSolverResult with displacements and convergence info")
+        .def("settings", &grillex::NonlinearSolver::settings,
+             "Get current settings")
+        .def("set_settings", &grillex::NonlinearSolver::set_settings,
+             py::arg("settings"),
+             "Update settings")
+        .def("__repr__", [](const grillex::NonlinearSolver &s) {
+            return "<NonlinearSolver max_iter=" +
+                   std::to_string(s.settings().max_iterations) + ">";
         });
 }

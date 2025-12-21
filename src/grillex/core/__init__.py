@@ -20,7 +20,8 @@ from .data_types import (
     # Phase 8: Additional Element Types
     SpringElement, PointMass, PlateElement, LoadingCondition,
     # Phase 15: Nonlinear Springs
-    SpringBehavior,
+    SpringBehavior, NonlinearSolverResult, NonlinearInitialState,
+    NonlinearSolverSettings, NonlinearSolver,
     # Phase 11: Error Handling & Diagnostics
     ErrorCode, GrillexError, WarningCode, WarningSeverity,
     GrillexWarning, WarningList,
@@ -56,7 +57,8 @@ __all__ = [
     # Phase 8: Additional Element Types
     'SpringElement', 'PointMass', 'PlateElement', 'LoadingCondition',
     # Phase 15: Nonlinear Springs
-    'SpringBehavior',
+    'SpringBehavior', 'NonlinearSolverResult', 'NonlinearInitialState',
+    'NonlinearSolverSettings', 'NonlinearSolver',
     # Phase 9: Cargo Modelling
     'Cargo', 'CargoConnection',
     # Phase 11: Error Handling & Diagnostics
