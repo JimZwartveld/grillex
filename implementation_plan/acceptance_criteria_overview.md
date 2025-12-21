@@ -23,7 +23,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 12 | LLM Tooling | 10 | 9 | 1 | 90% |
 | 13 | Validation Benchmarks | 12 | 12 | 0 | 100% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **242** | **205** | **37** | **85%** |
+| 15 | Nonlinear Springs | 79 | 0 | 79 | 0% |
+| **Total** | | **321** | **205** | **116** | **64%** |
 
 ---
 
@@ -526,6 +527,109 @@ This document provides a comprehensive overview of all acceptance criteria acros
 
 ---
 
+## Phase 15: Nonlinear Springs (Tension/Compression-Only and Gap Springs)
+
+### Task 15.1: Spring Element State Tracking
+- [ ] SpringBehavior enum added with Linear, TensionOnly, CompressionOnly values
+- [ ] Per-DOF behavior can be set independently
+- [ ] Per-DOF gap values can be set independently
+- [ ] State tracking correctly identifies when gap is closed
+- [ ] current_stiffness_matrix() returns zero contribution for inactive DOFs
+- [ ] compute_forces() correctly applies gap offset to force calculation
+- [ ] compute_gap_forces() returns correct gap closure forces for solver
+- [ ] state_changed() correctly detects state transitions
+- [ ] Gap tolerance prevents chattering near threshold
+- [ ] has_gap() and is_nonlinear() helper methods work correctly
+
+### Task 15.2: Iterative Nonlinear Solver
+- [ ] NonlinearSolver class implemented with settings struct
+- [ ] NonlinearInitialState struct implemented for static→dynamic sequencing
+- [ ] solve() accepts optional initial_state parameter
+- [ ] When initial_state provided, iteration starts from that displacement/state
+- [ ] When initial_state not provided, starts from zero with all springs active
+- [ ] Iterative solve correctly updates spring states
+- [ ] Gap forces computed and added to RHS for gap springs
+- [ ] Convergence detected when no spring states change
+- [ ] Maximum iteration limit prevents infinite loops
+- [ ] Linear-only springs without gaps bypass iteration (optimization)
+- [ ] Oscillation detection prevents flip-flopping states
+- [ ] Singular system during iteration handled gracefully
+- [ ] Result includes final spring states for reporting
+
+### Task 15.3: Model Integration for Nonlinear Analysis
+- [ ] has_nonlinear_springs() correctly identifies nonlinear springs in model
+- [ ] analyze_nonlinear() uses iterative solver for load cases
+- [ ] analyze_combination() solves combined loads directly (not superposition)
+- [ ] analyze_combination() implements static→dynamic sequencing:
+  - Permanent loads solved first to establish baseline contact pattern
+  - Full combination solved starting from static state (initial_state)
+  - Static solve failure returns meaningful error message
+- [ ] Linear models still use efficient linear solver
+- [ ] LoadCaseResult extended with iteration count and spring states
+- [ ] Reactions computed correctly with final spring stiffness
+
+### Task 15.4: Python API Updates
+- [ ] SpringBehavior enum exported to Python
+- [ ] NonlinearSolverSettings exposed with all fields
+- [ ] NonlinearSolverResult exposed with spring_states
+- [ ] SpringElement.behavior accessible per-DOF from Python
+- [ ] SpringElement.gap accessible per-DOF from Python
+- [ ] StructuralModel.add_spring() accepts behavior and gap parameters
+- [ ] set_gap() and set_all_gaps() methods work correctly
+- [ ] has_gap() and is_nonlinear() methods exposed
+- [ ] analyze_with_nonlinear_springs() method added
+- [ ] analyze_load_combination() method added
+- [ ] All new types have complete docstrings with units
+
+### Task 15.5: Results Reporting for Nonlinear Springs
+- [ ] LoadCaseResult includes iterations and solver_message
+- [ ] Spring states stored in results
+- [ ] Spring forces computed and stored
+- [ ] Python API can query individual spring states
+- [ ] Summary DataFrame shows all springs with states and forces
+- [ ] Units documented (kN for force, kN·m for moment)
+
+### Task 15.6: Convergence Enhancements
+- [ ] Oscillation detection implemented
+- [ ] Partial stiffness option for oscillating springs
+- [ ] Hysteresis band prevents rapid state changes
+- [ ] Line search damping available as option
+- [ ] Clear warning messages for convergence issues
+- [ ] Settings expose all convergence parameters
+
+### Task 15.7: Validation Tests
+- [ ] Tension-only spring tests pass
+- [ ] Compression-only spring tests pass
+- [ ] Load reversal iteration test demonstrates state changes
+- [ ] Multi-spring test shows partial liftoff
+- [ ] Load combination test proves superposition invalidity
+- [ ] Gap spring open/closed state tests pass
+- [ ] Gap spring force offset verified (F = k × (δ - gap))
+- [ ] Gap closure iteration test passes
+- [ ] Contact with clearance practical test passes
+- [ ] Hook with slack practical test passes
+- [ ] Analytical verification test passes
+- [ ] Static→dynamic sequencing test verifies Permanent loads solved first
+- [ ] Liftoff from static contact test passes
+- [ ] Initial state preserves spring states from static solve
+- [ ] Convergence reporting verified
+- [ ] Edge cases (near-zero deformation) handled
+
+### Task 15.8: Documentation and Examples
+- [ ] User guide section added to docs (including gap springs)
+- [ ] Technical reference documents algorithm and gap forces
+- [ ] At least 3 complete examples with code (bearing pads, gap contact, slack cables)
+- [ ] Troubleshooting section for common issues
+- [ ] All docstrings complete with units
+
+### Task 15.9: Performance Optimization
+- [ ] Sparse matrix updates avoid full reassembly
+- [ ] Linear models have no performance penalty
+- [ ] Iteration count logged for performance analysis
+- [ ] Benchmark shows acceptable performance for 100+ springs
+
+---
+
 ## Maintenance Notes
 
 ### Updating This Document
@@ -549,4 +653,5 @@ Each acceptance criterion should be verified by:
 - `grillex_requirements.md` - Full requirements specification
 - `implementation_plan_overview.md` - Phase overview
 - `implementation_plan_phase*.md` - Detailed phase implementation plans
+- `implementation_plan_phase15.md` - Nonlinear springs (tension/compression-only, gap springs)
 - `CLAUDE.md` - AI assistant guidelines
