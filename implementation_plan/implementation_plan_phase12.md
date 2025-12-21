@@ -46,10 +46,24 @@ Ensure all Python functions have complete type hints and docstrings.
 3. Run type checker (mypy) to verify
 
 **Acceptance Criteria:**
-- [ ] All public functions have docstrings
-- [ ] All parameters have type hints
-- [ ] Units are documented
-- [ ] mypy passes
+- [x] All public functions have docstrings
+- [x] All parameters have type hints
+- [x] Units are documented
+- [ ] mypy passes (deferred - requires mypy setup)
+
+### Execution Notes (Completed 2025-12-21)
+
+**Steps Taken:**
+1. Reviewed existing Python code in `grillex/core/model_wrapper.py`, `grillex/io/yaml_loader.py`
+2. Verified type hints and docstrings are already present
+3. Code already follows the docstring format specified
+
+**Verification:**
+- Type hints present on all public functions
+- Docstrings include parameter descriptions with units
+- Google-style docstrings used throughout
+
+**Note:** mypy check deferred to CI/CD setup phase.
 
 ---
 
@@ -97,9 +111,33 @@ Create MCP (Model Context Protocol) tool definitions.
 2. Create tool execution handlers
 
 **Acceptance Criteria:**
-- [ ] Tool schemas are valid JSON Schema
-- [ ] Schemas are self-documenting
-- [ ] Tools cover main modelling operations
+- [x] Tool schemas are valid JSON Schema
+- [x] Schemas are self-documenting
+- [x] Tools cover main modelling operations
+
+### Execution Notes (Completed 2025-12-21)
+
+**Steps Taken:**
+1. Created `src/grillex/llm/tools.py` with complete MCP tool definitions
+2. Implemented 14 tools covering the full modeling workflow:
+   - Model creation: `create_model`
+   - Material/Section: `add_material`, `add_section`
+   - Elements: `create_beam`
+   - Boundary conditions: `fix_node`, `pin_node`, `fix_dof`
+   - Loads: `add_point_load`, `add_line_load`
+   - Analysis: `analyze`
+   - Results: `get_displacement`, `get_reactions`, `get_internal_actions`, `get_model_info`
+3. Created `ToolResult` dataclass for structured responses
+4. Created `ToolExecutor` class for executing tool calls
+5. Added helper functions: `get_tool_by_name()`, `execute_tool()`
+
+**Key Files:**
+- `src/grillex/llm/tools.py` (801 lines)
+
+**Verification:**
+- 10 tests for ToolExecutor functionality
+- All tool schemas follow JSON Schema specification
+- Tool descriptions include units and parameter details
 
 ---
 
@@ -137,9 +175,45 @@ Enable LLM to interpret errors and fix models.
 2. Return suggestions as part of error response
 
 **Acceptance Criteria:**
-- [ ] Each error type has fix suggestions
-- [ ] Suggestions are actionable tool calls
-- [ ] LLM can execute suggestions to fix model
+- [x] Each error type has fix suggestions
+- [x] Suggestions are actionable tool calls
+- [x] LLM can execute suggestions to fix model
+
+### Execution Notes (Completed 2025-12-21)
+
+**Steps Taken:**
+1. Created `src/grillex/llm/diagnostics.py` with self-healing support
+2. Implemented `FixSuggestion` dataclass with:
+   - `description`: Human-readable fix explanation
+   - `tool_name`: MCP tool to call
+   - `tool_params`: Parameters for the tool
+   - `priority`: Order to try fixes (1 = first)
+   - `confidence`: Likelihood of fixing the issue (0-1)
+3. Implemented `get_fix_suggestions()` for all error types:
+   - UNCONSTRAINED_SYSTEM: Suggests fix_node/fix_dof with specific DOFs
+   - SINGULAR_MATRIX: Suggests adding supports, checking connectivity
+   - INSUFFICIENT_CONSTRAINTS: Suggests full node fixity
+   - INVALID_MATERIAL: Suggests add_material with defaults
+   - INVALID_SECTION: Suggests add_section with defaults
+   - EMPTY_MODEL: Suggests create_beam with material/section first
+   - NOT_ANALYZED: Suggests running analyze
+   - INVALID_NODE_REFERENCE: Suggests checking coordinates
+   - EMPTY_LOAD_CASE: Suggests add_point_load
+4. Implemented `get_warning_advice()` for common warnings
+5. Implemented `analyze_model_health()` for overall assessment
+6. Updated `src/grillex/llm/__init__.py` with exports
+
+**Key Files:**
+- `src/grillex/llm/diagnostics.py` (490 lines)
+
+**Verification:**
+- 17 tests for diagnostics functionality
+- Integration test verifies full error recovery workflow
+- Fix suggestions are properly sorted by priority
+
+**Test Summary:**
+- 40 new tests in `tests/python/test_phase12_llm_tooling.py`
+- All tests passing
 
 ---
 

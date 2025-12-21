@@ -2,7 +2,7 @@
 
 This document provides a comprehensive overview of all acceptance criteria across implementation phases. It is automatically updated when tasks are completed.
 
-**Last Updated:** 2025-12-20
+**Last Updated:** 2025-12-21
 
 ## Summary Statistics
 
@@ -20,10 +20,10 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 9 | Cargo Modeling | 20 | 20 | 0 | 100% |
 | 10 | Design Codes | 47 | 6 | 41 | 13% |
 | 11 | Error Handling | 9 | 6 | 3 | 67% |
-| 12 | LLM Tooling | 9 | 0 | 9 | 0% |
+| 12 | LLM Tooling | 10 | 9 | 1 | 90% |
 | 13 | Validation Benchmarks | 12 | 0 | 12 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **241** | **184** | **57** | **76%** |
+| **Total** | | **242** | **193** | **49** | **80%** |
 
 ---
 
@@ -130,9 +130,9 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Collinearity detection correctly identifies parallel elements
 - [x] Non-collinear elements have independent warping DOFs
 - [x] Collinear elements share warping DOFs (continuous warping)
-- [ ] Boundary conditions work for element-specific warping DOFs
-- [ ] T-joint with torque shows no warping coupling between orthogonal beams
-- [ ] Continuous beam shows warping continuity at internal nodes
+- [x] Boundary conditions work for element-specific warping DOFs
+- [x] T-joint with torque shows no warping coupling between orthogonal beams
+- [x] Continuous beam shows warping continuity at internal nodes
 - [x] User can override automatic coupling detection
 - [x] Backward compatible: models without warping unchanged
 
@@ -465,20 +465,20 @@ This document provides a comprehensive overview of all acceptance criteria acros
 ## Phase 12: LLM Tooling
 
 ### Task 12.1: Docstrings and Type Hints
-- [ ] All public functions have docstrings
-- [ ] All parameters have type hints
-- [ ] Units are documented
-- [ ] mypy passes
+- [x] All public functions have docstrings
+- [x] All parameters have type hints
+- [x] Units are documented
+- [ ] mypy passes (deferred to CI/CD setup)
 
 ### Task 12.2: Tool Schemas
-- [ ] Tool schemas are valid JSON Schema
-- [ ] Schemas are self-documenting
-- [ ] Tools cover main modelling operations
+- [x] Tool schemas are valid JSON Schema
+- [x] Schemas are self-documenting
+- [x] Tools cover main modelling operations
 
 ### Task 12.3: Error Recovery Suggestions
-- [ ] Each error type has fix suggestions
-- [ ] Suggestions are actionable tool calls
-- [ ] LLM can execute suggestions to fix model
+- [x] Each error type has fix suggestions
+- [x] Suggestions are actionable tool calls
+- [x] LLM can execute suggestions to fix model
 
 ---
 

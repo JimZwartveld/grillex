@@ -130,6 +130,215 @@ When acceptance criteria cannot be completed due to missing dependencies or bein
 - **Phase 11 (Error Handling)**: Error detection, diagnostics
 - **Phase 12 (LLM Tooling)**: Documentation, type hints, tool schemas
 
+### 6. Update Documentation
+
+**IMPORTANT:** When implementing new features or modifying existing functionality, the documentation MUST be updated to reflect the changes.
+
+**Documentation Structure:**
+
+```
+docs/
+├── user/                    # User documentation
+│   ├── getting_started.rst  # Quick start guide
+│   ├── beam_basics.rst      # Beam element fundamentals
+│   ├── coordinate_systems.rst # Coordinate system reference
+│   ├── loads_and_boundary_conditions.rst
+│   ├── analysis_workflow.rst
+│   └── results_and_postprocessing.rst
+├── verification/            # Verification documentation
+│   ├── cantilever_beam.rst  # Analytical verification cases
+│   ├── simply_supported_beam.rst
+│   ├── continuous_beam.rst
+│   └── verification_summary.rst
+└── index.rst                # Main documentation index
+```
+
+**When to Update Documentation:**
+
+| Change Type | Documentation Action |
+|-------------|---------------------|
+| New API method | Add to user docs with doctest example |
+| Changed API signature | Update all affected examples |
+| New feature | Add user guide section + verification test |
+| Bug fix affecting behavior | Update affected examples |
+| New error type | Document in error reference |
+
+**Doctest Requirements:**
+
+All documentation examples MUST be doctests that run against the codebase:
+
+```rst
+.. doctest::
+
+    >>> from grillex.core import StructuralModel
+    >>> model = StructuralModel(name="Example")
+    >>> _ = model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> # Use _ = to suppress return value output
+```
+
+**Verification:**
+
+Run doctests to ensure documentation is aligned with code:
+
+```bash
+cd /path/to/grillex
+sphinx-build -b doctest docs docs/_build/doctest
+```
+
+---
+
+## LLM-Friendly Development Requirements
+
+**IMPORTANT:** The following requirements apply to ALL tasks to ensure the codebase remains LLM/agent-friendly. Check these requirements for every implementation task.
+
+### 1. Type Hints and Docstrings (Always Required)
+
+All new Python functions MUST have:
+
+```python
+def add_beam(
+    self,
+    start_position: List[float],
+    end_position: List[float],
+    section: str,
+    material: str,
+    roll_angle: float = 0.0
+) -> "Beam":
+    """
+    Add a beam element to the model.
+
+    Args:
+        start_position: [x, y, z] coordinates of start point in meters.
+        end_position: [x, y, z] coordinates of end point in meters.
+        section: Name of section to use.
+        material: Name of material to use.
+        roll_angle: Rotation about beam axis in radians. Default 0.
+
+    Returns:
+        The created Beam object.
+
+    Raises:
+        ValueError: If section or material not found.
+    """
+```
+
+**Checklist:**
+- [ ] All parameters have type hints
+- [ ] Return type is specified
+- [ ] Docstring includes parameter descriptions with **units**
+- [ ] Exceptions are documented
+
+### 2. Structured Error Handling (For New Errors)
+
+When adding error conditions, use the structured error system:
+
+```python
+from grillex.core import GrillexError, ErrorCode, Severity
+
+# Raise structured errors
+raise GrillexError(
+    code=ErrorCode.INVALID_SECTION,
+    message="Section 'IPE999' not found in model",
+    severity=Severity.ERROR,
+    context={"section_name": "IPE999", "available": ["IPE300", "HEA200"]}
+)
+```
+
+**Checklist:**
+- [ ] Use appropriate ErrorCode from existing enum
+- [ ] If new error type needed, add to `ErrorCode` enum
+- [ ] Include helpful context dictionary
+- [ ] Message is human-readable AND machine-parseable
+
+### 3. MCP Tool Schema Updates (For New User-Facing Features)
+
+When adding new user-facing functionality, update the MCP tool schemas:
+
+**File:** `src/grillex/llm/tools.py`
+
+```python
+# Add new tool definition to TOOLS list
+{
+    "name": "new_feature",
+    "description": "Clear description of what this does and when to use it",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "param1": {
+                "type": "number",
+                "description": "Description with units (e.g., 'Force in kN')"
+            }
+        },
+        "required": ["param1"]
+    }
+}
+```
+
+**Checklist:**
+- [ ] Tool name is descriptive and follows snake_case
+- [ ] Description explains purpose AND typical use case
+- [ ] All parameters have descriptions with units
+- [ ] Required parameters are listed
+- [ ] Add handler in `ToolExecutor._execute_*` method
+
+### 4. Fix Suggestions for New Errors (For New Error Types)
+
+When adding new error types, add corresponding fix suggestions:
+
+**File:** `src/grillex/llm/diagnostics.py`
+
+```python
+# In get_fix_suggestions() function
+if error.code == ErrorCode.NEW_ERROR_TYPE:
+    return [
+        FixSuggestion(
+            description="Human-readable fix explanation",
+            tool_name="tool_to_call",
+            tool_params={"param": "value"},
+            priority=1,
+            confidence=0.8
+        )
+    ]
+```
+
+**Checklist:**
+- [ ] Each new error type has at least one fix suggestion
+- [ ] Suggestions are actionable (can be executed as tool calls)
+- [ ] Priority reflects which fix to try first
+- [ ] Confidence reflects likelihood of success
+
+### 5. LLM-Parseable Output (For New Result Types)
+
+When adding new result types or output formats:
+
+```python
+# Good: Structured, parseable
+{
+    "displacement": {"x": 0.001, "y": -0.005, "z": 0.0},
+    "units": "meters",
+    "node_id": 42
+}
+
+# Bad: Free-form text
+"Node 42 displaced by 1mm in X, -5mm in Y"
+```
+
+**Checklist:**
+- [ ] Results are returned as structured data (dict/dataclass)
+- [ ] Units are explicitly included
+- [ ] Numeric values are actual numbers, not strings
+- [ ] Consistent key naming across similar results
+
+### Quick Reference Table
+
+| When Adding... | Update These Files |
+|---------------|-------------------|
+| New Python function | Add type hints + docstring in source file |
+| New error condition | `ErrorCode` enum + `get_fix_suggestions()` |
+| New user feature | `tools.py` (schema + handler) |
+| New warning type | `get_warning_advice()` in `diagnostics.py` |
+| New result type | Ensure structured output with units |
+
 ---
 
 ## Project Overview
@@ -756,9 +965,21 @@ from .data_types import LoadCaseType  # Use the actual exported name
 
 ## Current Development Status
 
-The project is actively implementing **Phase 7: Internal Actions & Results**, which includes:
-- Task 7.0: Distributed load query methods (completed)
-- Task 7.1: Element end forces (completed)
-- Task 7.2: Internal action computation (in progress)
+**Overall Progress:** 193/242 acceptance criteria met (80%)
 
-See `implementation_plan/implementation_plan_phase07.md` for details.
+### Completed Phases:
+- Phase 0-9: 100% complete (core FEM, beams, loads, constraints, cargo)
+- Phase 11: Error Handling - 67% complete
+- Phase 12: LLM Tooling - 90% complete
+
+### In Progress:
+- **Phase 10: Design Codes** - 13% complete
+  - Basic EC3 cross-section checks implemented
+  - Extended EC3 (buckling, LTB, interaction) planned in Tasks 10.3-10.11
+  - See `implementation_plan/phase10_extension_plan.md` for details
+
+### Pending:
+- Phase 13: Validation Benchmarks (0%)
+- Phase 14: DevOps (0%)
+
+See `implementation_plan/acceptance_criteria_overview.md` for full status.
