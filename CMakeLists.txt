@@ -23,9 +23,18 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(pybind11)
 
-# Find Eigen (should be installed via system package manager)
-# Accept any version of Eigen3 (3.x or 5.x)
-find_package(Eigen3 REQUIRED NO_MODULE)
+# Try to find system Eigen first, otherwise fetch it
+find_package(Eigen3 QUIET NO_MODULE)
+if(NOT Eigen3_FOUND)
+    message(STATUS "Eigen3 not found, fetching from GitLab...")
+    FetchContent_Declare(
+        eigen
+        GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+        GIT_TAG 3.4.0
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(eigen)
+endif()
 
 # Add subdirectory for C++ sources
 add_subdirectory(cpp)

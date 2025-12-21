@@ -23,8 +23,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 12 | LLM Tooling | 10 | 9 | 1 | 90% |
 | 13 | Validation Benchmarks | 12 | 12 | 0 | 100% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| 15 | Nonlinear Springs | 79 | 0 | 79 | 0% |
-| **Total** | | **321** | **205** | **116** | **64%** |
+| 15 | Nonlinear Springs | 79 | 10 | 69 | 13% |
+| **Total** | | **321** | **215** | **106** | **67%** |
 
 ---
 
@@ -530,16 +530,16 @@ This document provides a comprehensive overview of all acceptance criteria acros
 ## Phase 15: Nonlinear Springs (Tension/Compression-Only and Gap Springs)
 
 ### Task 15.1: Spring Element State Tracking
-- [ ] SpringBehavior enum added with Linear, TensionOnly, CompressionOnly values
-- [ ] Per-DOF behavior can be set independently
-- [ ] Per-DOF gap values can be set independently
-- [ ] State tracking correctly identifies when gap is closed
-- [ ] current_stiffness_matrix() returns zero contribution for inactive DOFs
-- [ ] compute_forces() correctly applies gap offset to force calculation
-- [ ] compute_gap_forces() returns correct gap closure forces for solver
-- [ ] state_changed() correctly detects state transitions
-- [ ] Gap tolerance prevents chattering near threshold
-- [ ] has_gap() and is_nonlinear() helper methods work correctly
+- [x] SpringBehavior enum added with Linear, TensionOnly, CompressionOnly values
+- [x] Per-DOF behavior can be set independently
+- [x] Per-DOF gap values can be set independently
+- [x] State tracking correctly identifies when gap is closed
+- [x] current_stiffness_matrix() returns zero contribution for inactive DOFs
+- [x] compute_forces() correctly applies gap offset to force calculation
+- [x] compute_gap_forces() returns correct gap closure forces for solver
+- [x] state_changed() correctly detects state transitions
+- [x] Gap tolerance prevents chattering near threshold
+- [x] has_gap() and is_nonlinear() helper methods work correctly
 
 ### Task 15.2: Iterative Nonlinear Solver
 - [ ] NonlinearSolver class implemented with settings struct
