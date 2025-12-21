@@ -362,229 +362,591 @@ F_spring = k × (δ - gap)    not    F_spring = k × δ
 ```
 The `-k×gap` term (gap closure force) must be added to the RHS of the equation.
 
-**Steps:**
+---
 
-1. Create `cpp/include/grillex/nonlinear_solver.hpp`:
-   ```cpp
-   #pragma once
-   #include "grillex/solver.hpp"
-   #include "grillex/spring_element.hpp"
-   #include <vector>
+### Complete Header File: `cpp/include/grillex/nonlinear_solver.hpp`
 
-   namespace grillex {
+```cpp
+#pragma once
 
-   struct NonlinearSolverResult {
-       Eigen::VectorXd displacements;
-       bool converged = false;
-       int iterations = 0;
-       std::string message;
+#include "grillex/solver.hpp"
+#include "grillex/spring_element.hpp"
+#include "grillex/dof_handler.hpp"
+#include <Eigen/Sparse>
+#include <vector>
+#include <map>
+#include <string>
+#include <functional>
 
-       // Spring states at convergence
-       std::vector<std::pair<int, std::array<bool, 6>>> spring_states;
-   };
+namespace grillex {
 
-   struct NonlinearSolverSettings {
-       int max_iterations = 50;
-       double displacement_tolerance = 1e-6;  // Relative change in u
-       double gap_tolerance = 1e-10;          // Tolerance for zero deformation
-       bool allow_all_springs_inactive = false;  // Allow solution with no springs?
-       LinearSolver::Method linear_method = LinearSolver::Method::SimplicialLDLT;
-   };
+// Forward declarations
+class SpringElement;
+class DOFHandler;
 
-   class NonlinearSolver {
-   public:
-       explicit NonlinearSolver(const NonlinearSolverSettings& settings = {});
+/**
+ * @brief Result from nonlinear spring solver
+ */
+struct NonlinearSolverResult {
+    /// Solution displacement vector [m, rad]
+    Eigen::VectorXd displacements;
 
-       /**
-        * @brief Solve system with nonlinear springs
-        * @param base_K Stiffness matrix WITHOUT spring contributions
-        * @param F Force vector
-        * @param springs Vector of spring elements (will be modified for state)
-        * @param dof_handler DOF handler for DOF indexing
-        * @return Solver result with displacements and convergence info
-        */
-       NonlinearSolverResult solve(
-           const Eigen::SparseMatrix<double>& base_K,
-           const Eigen::VectorXd& F,
-           std::vector<SpringElement*>& springs,
-           const DOFHandler& dof_handler);
+    /// True if solver converged
+    bool converged = false;
 
-       const NonlinearSolverSettings& settings() const { return settings_; }
-       void set_settings(const NonlinearSolverSettings& s) { settings_ = s; }
+    /// Number of iterations performed
+    int iterations = 0;
 
-   private:
-       NonlinearSolverSettings settings_;
-       LinearSolver linear_solver_;
+    /// Descriptive message (convergence info or error)
+    std::string message;
 
-       Eigen::SparseMatrix<double> assemble_spring_stiffness(
-           const std::vector<SpringElement*>& springs,
-           const DOFHandler& dof_handler,
-           int total_dofs) const;
+    /// Final spring states: (spring_id, active_state[6])
+    std::vector<std::pair<int, std::array<bool, 6>>> spring_states;
 
-       Eigen::VectorXd assemble_gap_forces(
-           const std::vector<SpringElement*>& springs,
-           const DOFHandler& dof_handler,
-           int total_dofs) const;
+    /// Final spring forces: (spring_id, forces[6]) [kN or kN·m]
+    std::vector<std::pair<int, std::array<double, 6>>> spring_forces;
 
-       bool check_displacement_convergence(
-           const Eigen::VectorXd& u_old,
-           const Eigen::VectorXd& u_new) const;
-   };
+    /// History of state changes per iteration (for diagnostics)
+    std::vector<int> state_changes_per_iteration;
+};
 
-   } // namespace grillex
-   ```
+/**
+ * @brief Settings for nonlinear spring solver
+ */
+struct NonlinearSolverSettings {
+    /// Maximum iterations before giving up
+    int max_iterations = 50;
 
-2. Implement solver in `cpp/src/nonlinear_solver.cpp`:
-   ```cpp
-   NonlinearSolverResult NonlinearSolver::solve(
-       const Eigen::SparseMatrix<double>& base_K,
-       const Eigen::VectorXd& F,
-       std::vector<SpringElement*>& springs,
-       const DOFHandler& dof_handler)
-   {
-       NonlinearSolverResult result;
-       int n = base_K.rows();
+    /// Tolerance for spring activation threshold [m]
+    /// Prevents chattering when deformation is very close to gap
+    double gap_tolerance = 1e-10;
 
-       // Check if any springs are nonlinear
-       bool has_nonlinear = false;
-       for (auto* spring : springs) {
-           for (int i = 0; i < 6; ++i) {
-               if (spring->behavior[i] != SpringBehavior::Linear) {
-                   has_nonlinear = true;
-                   break;
-               }
-           }
-           if (has_nonlinear) break;
-       }
+    /// Relative displacement tolerance for convergence check
+    /// Used as secondary check: ||u_new - u_old|| / ||u_new|| < tol
+    double displacement_tolerance = 1e-8;
 
-       // Check if any springs have gaps
-       bool has_gaps = false;
-       for (auto* spring : springs) {
-           if (spring->has_gap()) {
-               has_gaps = true;
-               break;
-           }
-       }
+    /// Allow solution where all nonlinear springs are inactive?
+    /// If false, solver warns when this happens
+    bool allow_all_springs_inactive = false;
 
-       // If all springs are linear with no gaps, solve directly
-       if (!has_nonlinear && !has_gaps) {
-           auto K_springs = assemble_spring_stiffness(springs, dof_handler, n);
-           Eigen::SparseMatrix<double> K_total = base_K + K_springs;
-           result.displacements = linear_solver_.solve(K_total, F);
-           result.converged = !linear_solver_.is_singular();
-           result.iterations = 1;
-           result.message = result.converged ? "Linear solve (no nonlinear springs)"
-                                             : linear_solver_.get_error_message();
-           return result;
-       }
+    /// Enable oscillation detection and damping
+    bool enable_oscillation_damping = true;
 
-       // Initialize: all springs active
-       for (auto* spring : springs) {
-           spring->is_active.fill(true);
-       }
+    /// Number of iterations to look back for oscillation detection
+    int oscillation_history_size = 4;
 
-       Eigen::VectorXd u = Eigen::VectorXd::Zero(n);
+    /// Damping factor when oscillation detected (0 < alpha < 1)
+    /// u_damped = alpha * u_new + (1 - alpha) * u_old
+    double oscillation_damping_factor = 0.5;
 
-       for (int iter = 0; iter < settings_.max_iterations; ++iter) {
-           result.iterations = iter + 1;
+    /// Linear solver method to use
+    LinearSolver::Method linear_method = LinearSolver::Method::SimplicialLDLT;
 
-           // Assemble current stiffness from active springs
-           auto K_springs = assemble_spring_stiffness(springs, dof_handler, n);
-           Eigen::SparseMatrix<double> K_total = base_K + K_springs;
+    /// Optional callback for iteration progress monitoring
+    /// Parameters: (iteration, num_state_changes, displacement_norm)
+    std::function<void(int, int, double)> progress_callback = nullptr;
+};
 
-           // Compute gap forces for active gap springs
-           Eigen::VectorXd F_gap = assemble_gap_forces(springs, dof_handler, n);
-           Eigen::VectorXd F_total = F + F_gap;
+/**
+ * @brief Iterative solver for systems with nonlinear springs
+ *
+ * Handles tension-only, compression-only, and gap springs through
+ * an iterative state-update algorithm. Each iteration:
+ * 1. Assembles stiffness from currently active springs
+ * 2. Computes gap closure forces for active gap springs
+ * 3. Solves the linear system
+ * 4. Updates spring states based on new displacements
+ * 5. Checks for convergence (no state changes)
+ *
+ * Usage:
+ *   NonlinearSolver solver(settings);
+ *   auto result = solver.solve(base_K, F, springs, dof_handler);
+ *   if (result.converged) {
+ *       // Use result.displacements
+ *   }
+ */
+class NonlinearSolver {
+public:
+    /**
+     * @brief Construct solver with settings
+     * @param settings Solver configuration
+     */
+    explicit NonlinearSolver(const NonlinearSolverSettings& settings = {});
 
-           // Solve: K * u = F_external + F_gap
-           Eigen::VectorXd u_new = linear_solver_.solve(K_total, F_total);
+    /**
+     * @brief Solve system with nonlinear springs
+     *
+     * @param base_K Base stiffness matrix (beams, plates - excludes springs)
+     * @param F External force vector [kN]
+     * @param springs Vector of spring elements (states will be updated)
+     * @param dof_handler DOF handler for global DOF indexing
+     * @return Solver result with displacements and convergence info
+     *
+     * The springs vector is modified: after solve(), each spring's
+     * is_active and deformation arrays contain the final converged state.
+     */
+    NonlinearSolverResult solve(
+        const Eigen::SparseMatrix<double>& base_K,
+        const Eigen::VectorXd& F,
+        std::vector<SpringElement*>& springs,
+        const DOFHandler& dof_handler);
 
-           if (linear_solver_.is_singular()) {
-               result.converged = false;
-               result.message = "Singular system at iteration " +
-                               std::to_string(iter + 1);
-               return result;
-           }
+    /// Get current settings
+    const NonlinearSolverSettings& settings() const { return settings_; }
 
-           // Update spring states based on new displacements
-           bool any_changed = false;
-           for (auto* spring : springs) {
-               spring->update_state(u_new, dof_handler);
-               if (spring->state_changed()) {
-                   any_changed = true;
-               }
-           }
+    /// Update settings
+    void set_settings(const NonlinearSolverSettings& s) { settings_ = s; }
 
-           // Check convergence: no state changes
-           if (!any_changed) {
-               result.displacements = u_new;
-               result.converged = true;
-               result.message = "Converged after " +
-                               std::to_string(iter + 1) + " iterations";
+private:
+    NonlinearSolverSettings settings_;
+    LinearSolver linear_solver_;
 
-               // Store final spring states
-               for (auto* spring : springs) {
-                   result.spring_states.emplace_back(
-                       spring->id, spring->is_active);
-               }
-               return result;
-           }
+    /**
+     * @brief Assemble spring stiffness matrix from active springs
+     *
+     * Only includes contributions from springs where is_active[dof] == true.
+     * Uses sparse triplet assembly for efficiency.
+     */
+    Eigen::SparseMatrix<double> assemble_spring_stiffness(
+        const std::vector<SpringElement*>& springs,
+        const DOFHandler& dof_handler,
+        int total_dofs) const;
 
-           u = u_new;
-       }
+    /**
+     * @brief Assemble gap closure forces for active gap springs
+     *
+     * For each active spring with gap > 0, computes the force offset
+     * that accounts for the gap in the force-displacement relationship.
+     */
+    Eigen::VectorXd assemble_gap_forces(
+        const std::vector<SpringElement*>& springs,
+        const DOFHandler& dof_handler,
+        int total_dofs) const;
 
-       // Failed to converge
-       result.displacements = u;
-       result.converged = false;
-       result.message = "Failed to converge after " +
-                       std::to_string(settings_.max_iterations) + " iterations";
-       return result;
-   }
-   ```
+    /**
+     * @brief Check for oscillation in state history
+     *
+     * Detects if spring states are cycling between the same patterns,
+     * indicating the solver is not converging.
+     *
+     * @param history State snapshots from recent iterations
+     * @return true if oscillation detected
+     */
+    bool detect_oscillation(
+        const std::vector<std::vector<bool>>& history) const;
 
-3. Implement gap force assembly:
-   ```cpp
-   Eigen::VectorXd NonlinearSolver::assemble_gap_forces(
-       const std::vector<SpringElement*>& springs,
-       const DOFHandler& dof_handler,
-       int total_dofs) const
-   {
-       Eigen::VectorXd F_gap = Eigen::VectorXd::Zero(total_dofs);
+    /**
+     * @brief Encode current spring states as a flat boolean vector
+     */
+    std::vector<bool> encode_spring_states(
+        const std::vector<SpringElement*>& springs) const;
+};
 
-       for (const auto* spring : springs) {
-           if (!spring->has_gap()) continue;  // Skip springs without gaps
+} // namespace grillex
+```
 
-           // Get element gap forces (12x1 in element DOF order)
-           auto elem_gap_forces = spring->compute_gap_forces(dof_handler);
+---
 
-           // Get global DOF indices
-           auto dofs_i = dof_handler.get_node_dofs(spring->node_i->id);
-           auto dofs_j = dof_handler.get_node_dofs(spring->node_j->id);
+### Complete Implementation: `cpp/src/nonlinear_solver.cpp`
 
-           // Scatter to global force vector
-           for (int i = 0; i < 6; ++i) {
-               if (dofs_i[i] >= 0) {
-                   F_gap(dofs_i[i]) += elem_gap_forces(i);
-               }
-               if (dofs_j[i] >= 0) {
-                   F_gap(dofs_j[i]) += elem_gap_forces(i + 6);
-               }
-           }
-       }
+```cpp
+#include "grillex/nonlinear_solver.hpp"
+#include <cmath>
+#include <sstream>
+#include <algorithm>
+#include <set>
 
-       return F_gap;
-   }
-   ```
+namespace grillex {
 
-4. Add oscillation detection and damping:
-   ```cpp
-   // Track state history to detect oscillation
-   std::vector<std::vector<bool>> state_history;
+NonlinearSolver::NonlinearSolver(const NonlinearSolverSettings& settings)
+    : settings_(settings)
+    , linear_solver_(settings.linear_method)
+{}
 
-   // If same state pattern repeats, apply damping:
-   // - Use weighted average of solutions
-   // - Or use partial stiffness for transitioning springs
-   ```
+NonlinearSolverResult NonlinearSolver::solve(
+    const Eigen::SparseMatrix<double>& base_K,
+    const Eigen::VectorXd& F,
+    std::vector<SpringElement*>& springs,
+    const DOFHandler& dof_handler)
+{
+    NonlinearSolverResult result;
+    const int n = base_K.rows();
+
+    // =========================================================================
+    // Step 1: Check if we actually need nonlinear iteration
+    // =========================================================================
+    bool has_nonlinear = false;
+    bool has_gaps = false;
+
+    for (const auto* spring : springs) {
+        if (spring->is_nonlinear()) {
+            has_nonlinear = true;
+        }
+        if (spring->has_gap()) {
+            has_gaps = true;
+        }
+        if (has_nonlinear && has_gaps) break;
+    }
+
+    // Fast path: purely linear springs with no gaps
+    if (!has_nonlinear && !has_gaps) {
+        // All springs are always active, assemble once and solve
+        for (auto* spring : springs) {
+            spring->is_active.fill(true);
+            spring->deformation.fill(0.0);
+        }
+
+        Eigen::SparseMatrix<double> K_springs =
+            assemble_spring_stiffness(springs, dof_handler, n);
+        Eigen::SparseMatrix<double> K_total = base_K + K_springs;
+
+        result.displacements = linear_solver_.solve(K_total, F);
+        result.converged = !linear_solver_.is_singular();
+        result.iterations = 1;
+        result.message = result.converged
+            ? "Linear solve (no nonlinear springs)"
+            : "Linear solve failed: " + linear_solver_.get_error_message();
+
+        // Update spring deformations for reporting
+        if (result.converged) {
+            for (auto* spring : springs) {
+                spring->update_state(result.displacements, dof_handler);
+                result.spring_states.emplace_back(spring->id, spring->is_active);
+                result.spring_forces.emplace_back(spring->id, spring->compute_forces());
+            }
+        }
+        return result;
+    }
+
+    // =========================================================================
+    // Step 2: Initialize for iterative solve
+    // =========================================================================
+
+    // Start with all springs active (optimistic initial guess)
+    for (auto* spring : springs) {
+        spring->is_active.fill(true);
+        spring->deformation.fill(0.0);
+    }
+
+    Eigen::VectorXd u = Eigen::VectorXd::Zero(n);
+    Eigen::VectorXd u_prev = u;
+
+    // State history for oscillation detection
+    std::vector<std::vector<bool>> state_history;
+
+    // =========================================================================
+    // Step 3: Iteration loop
+    // =========================================================================
+    for (int iter = 0; iter < settings_.max_iterations; ++iter) {
+        result.iterations = iter + 1;
+
+        // ---------------------------------------------------------------------
+        // 3a. Assemble stiffness matrix with current active springs
+        // ---------------------------------------------------------------------
+        Eigen::SparseMatrix<double> K_springs =
+            assemble_spring_stiffness(springs, dof_handler, n);
+        Eigen::SparseMatrix<double> K_total = base_K + K_springs;
+
+        // ---------------------------------------------------------------------
+        // 3b. Compute gap forces for active gap springs
+        // ---------------------------------------------------------------------
+        Eigen::VectorXd F_gap = assemble_gap_forces(springs, dof_handler, n);
+        Eigen::VectorXd F_total = F + F_gap;
+
+        // ---------------------------------------------------------------------
+        // 3c. Solve linear system: K * u = F + F_gap
+        // ---------------------------------------------------------------------
+        Eigen::VectorXd u_new = linear_solver_.solve(K_total, F_total);
+
+        if (linear_solver_.is_singular()) {
+            result.converged = false;
+            result.displacements = u;
+            std::ostringstream oss;
+            oss << "Singular system at iteration " << (iter + 1)
+                << ": " << linear_solver_.get_error_message();
+            result.message = oss.str();
+
+            // Store current spring states for diagnostics
+            for (auto* spring : springs) {
+                result.spring_states.emplace_back(spring->id, spring->is_active);
+            }
+            return result;
+        }
+
+        // ---------------------------------------------------------------------
+        // 3d. Update spring states based on new displacements
+        // ---------------------------------------------------------------------
+        int num_state_changes = 0;
+        for (auto* spring : springs) {
+            spring->update_state(u_new, dof_handler);
+            if (spring->state_changed()) {
+                // Count how many DOFs changed
+                for (int d = 0; d < 6; ++d) {
+                    // We'd need to track previous state per-DOF to count precisely
+                    // For now, just count springs that changed
+                }
+                num_state_changes++;
+            }
+        }
+
+        result.state_changes_per_iteration.push_back(num_state_changes);
+
+        // Progress callback
+        if (settings_.progress_callback) {
+            double u_norm = u_new.norm();
+            settings_.progress_callback(iter + 1, num_state_changes, u_norm);
+        }
+
+        // ---------------------------------------------------------------------
+        // 3e. Check convergence: no state changes
+        // ---------------------------------------------------------------------
+        if (num_state_changes == 0) {
+            // Also check displacement convergence as secondary criterion
+            double du_norm = (u_new - u).norm();
+            double u_norm = u_new.norm();
+            bool displacement_converged =
+                (u_norm < 1e-15) || (du_norm / u_norm < settings_.displacement_tolerance);
+
+            if (displacement_converged) {
+                result.displacements = u_new;
+                result.converged = true;
+
+                std::ostringstream oss;
+                oss << "Converged after " << (iter + 1) << " iteration"
+                    << ((iter + 1) > 1 ? "s" : "");
+                result.message = oss.str();
+
+                // Store final spring states and forces
+                for (auto* spring : springs) {
+                    result.spring_states.emplace_back(spring->id, spring->is_active);
+                    result.spring_forces.emplace_back(spring->id, spring->compute_forces());
+                }
+
+                // Warning if all nonlinear springs are inactive
+                if (!settings_.allow_all_springs_inactive) {
+                    bool any_nonlinear_active = false;
+                    for (const auto* spring : springs) {
+                        if (!spring->is_nonlinear()) continue;
+                        for (int d = 0; d < 6; ++d) {
+                            if (spring->behavior[d] != SpringBehavior::Linear &&
+                                spring->is_active[d]) {
+                                any_nonlinear_active = true;
+                                break;
+                            }
+                        }
+                        if (any_nonlinear_active) break;
+                    }
+                    if (!any_nonlinear_active && has_nonlinear) {
+                        result.message += " (WARNING: all nonlinear springs inactive)";
+                    }
+                }
+
+                return result;
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // 3f. Oscillation detection and damping
+        // ---------------------------------------------------------------------
+        if (settings_.enable_oscillation_damping) {
+            state_history.push_back(encode_spring_states(springs));
+
+            // Keep history bounded
+            if (static_cast<int>(state_history.size()) > settings_.oscillation_history_size) {
+                state_history.erase(state_history.begin());
+            }
+
+            if (detect_oscillation(state_history)) {
+                // Apply damping: blend with previous solution
+                double alpha = settings_.oscillation_damping_factor;
+                u_new = alpha * u_new + (1.0 - alpha) * u_prev;
+
+                // Re-update spring states with damped displacement
+                for (auto* spring : springs) {
+                    spring->update_state(u_new, dof_handler);
+                }
+            }
+        }
+
+        u_prev = u;
+        u = u_new;
+    }
+
+    // =========================================================================
+    // Step 4: Failed to converge
+    // =========================================================================
+    result.displacements = u;
+    result.converged = false;
+
+    std::ostringstream oss;
+    oss << "Failed to converge after " << settings_.max_iterations << " iterations";
+
+    // Analyze why: still oscillating?
+    if (!result.state_changes_per_iteration.empty()) {
+        int last_changes = result.state_changes_per_iteration.back();
+        if (last_changes > 0) {
+            oss << " (still " << last_changes << " spring state changes)";
+        }
+    }
+
+    result.message = oss.str();
+
+    // Store final states anyway for diagnostics
+    for (auto* spring : springs) {
+        result.spring_states.emplace_back(spring->id, spring->is_active);
+        result.spring_forces.emplace_back(spring->id, spring->compute_forces());
+    }
+
+    return result;
+}
+
+Eigen::SparseMatrix<double> NonlinearSolver::assemble_spring_stiffness(
+    const std::vector<SpringElement*>& springs,
+    const DOFHandler& dof_handler,
+    int total_dofs) const
+{
+    std::vector<Eigen::Triplet<double>> triplets;
+    triplets.reserve(springs.size() * 24);  // Up to 12*2 entries per spring
+
+    for (const auto* spring : springs) {
+        // Get element stiffness (respects is_active flags)
+        Eigen::Matrix<double, 12, 12> K_elem = spring->current_stiffness_matrix();
+
+        // Build location array
+        std::array<int, 12> loc;
+        for (int d = 0; d < 6; ++d) {
+            loc[d] = dof_handler.get_global_dof(spring->node_i->id, d);
+            loc[d + 6] = dof_handler.get_global_dof(spring->node_j->id, d);
+        }
+
+        // Scatter to global
+        for (int i = 0; i < 12; ++i) {
+            if (loc[i] < 0) continue;
+            for (int j = 0; j < 12; ++j) {
+                if (loc[j] < 0) continue;
+                double val = K_elem(i, j);
+                if (std::abs(val) > 1e-20) {
+                    triplets.emplace_back(loc[i], loc[j], val);
+                }
+            }
+        }
+    }
+
+    Eigen::SparseMatrix<double> K(total_dofs, total_dofs);
+    K.setFromTriplets(triplets.begin(), triplets.end());
+    return K;
+}
+
+Eigen::VectorXd NonlinearSolver::assemble_gap_forces(
+    const std::vector<SpringElement*>& springs,
+    const DOFHandler& dof_handler,
+    int total_dofs) const
+{
+    Eigen::VectorXd F_gap = Eigen::VectorXd::Zero(total_dofs);
+
+    for (const auto* spring : springs) {
+        if (!spring->has_gap()) continue;
+
+        // Get element gap forces
+        Eigen::Matrix<double, 12, 1> f_elem = spring->compute_gap_forces(dof_handler);
+
+        // Build location array
+        std::array<int, 12> loc;
+        for (int d = 0; d < 6; ++d) {
+            loc[d] = dof_handler.get_global_dof(spring->node_i->id, d);
+            loc[d + 6] = dof_handler.get_global_dof(spring->node_j->id, d);
+        }
+
+        // Scatter to global
+        for (int i = 0; i < 12; ++i) {
+            if (loc[i] >= 0) {
+                F_gap(loc[i]) += f_elem(i);
+            }
+        }
+    }
+
+    return F_gap;
+}
+
+std::vector<bool> NonlinearSolver::encode_spring_states(
+    const std::vector<SpringElement*>& springs) const
+{
+    std::vector<bool> state;
+    state.reserve(springs.size() * 6);
+    for (const auto* spring : springs) {
+        for (int d = 0; d < 6; ++d) {
+            state.push_back(spring->is_active[d]);
+        }
+    }
+    return state;
+}
+
+bool NonlinearSolver::detect_oscillation(
+    const std::vector<std::vector<bool>>& history) const
+{
+    if (history.size() < 3) return false;
+
+    // Check if current state matches any previous state
+    const auto& current = history.back();
+
+    for (size_t i = 0; i < history.size() - 1; ++i) {
+        if (history[i] == current) {
+            // We've seen this state before - oscillation!
+            return true;
+        }
+    }
+
+    // Also check for 2-cycle: A -> B -> A -> B
+    if (history.size() >= 4) {
+        size_t n = history.size();
+        if (history[n-1] == history[n-3] && history[n-2] == history[n-4]) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+} // namespace grillex
+```
+
+---
+
+### Key Implementation Details
+
+**1. Two-Phase Approach:**
+- First check if iteration is needed (fast path for linear springs)
+- Only enter iteration loop if nonlinear behavior or gaps exist
+
+**2. Gap Force Computation:**
+The gap forces are computed by `SpringElement::compute_gap_forces()` which returns:
+```cpp
+// For tension gap spring (active when δ > gap):
+//   F = k × (δ - gap) = k×δ - k×gap
+//   The k×δ part is in the stiffness matrix
+//   The -k×gap part is the gap force (added to RHS)
+f_gap = -k * gap;  // Applied as: +f on node_i, -f on node_j
+
+// For compression gap spring (active when δ < -gap):
+//   F = k × (δ + gap) = k×δ + k×gap
+//   The k×δ part is in the stiffness matrix
+//   The +k×gap part is the gap force
+f_gap = +k * gap;  // Applied as: -f on node_i, +f on node_j
+```
+
+**3. Convergence Criteria:**
+- Primary: No spring state changes between iterations
+- Secondary: Displacement norm converged (for gap springs where force changes even without state changes)
+
+**4. Oscillation Detection:**
+- Track state history over last N iterations
+- Detect if same state pattern repeats (indicates cycling)
+- Apply damping: `u = α × u_new + (1-α) × u_old`
+
+**5. Diagnostics:**
+- `state_changes_per_iteration`: Track convergence progress
+- `spring_states` and `spring_forces`: Final state for post-processing
+- `progress_callback`: Optional real-time monitoring
 
 **Acceptance Criteria:**
 - [ ] NonlinearSolver class implemented with settings struct
