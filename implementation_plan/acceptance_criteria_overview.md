@@ -21,9 +21,9 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 10 | Design Codes | 47 | 6 | 41 | 13% |
 | 11 | Error Handling | 9 | 6 | 3 | 67% |
 | 12 | LLM Tooling | 10 | 9 | 1 | 90% |
-| 13 | Validation Benchmarks | 12 | 0 | 12 | 0% |
+| 13 | Validation Benchmarks | 12 | 2 | 10 | 17% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **242** | **193** | **49** | **80%** |
+| **Total** | | **242** | **195** | **47** | **81%** |
 
 ---
 
@@ -280,11 +280,11 @@ This document provides a comprehensive overview of all acceptance criteria acros
 ### Task 7.2b: Warping Results (Bimoments)
 - [x] Bimoment at warping-restrained end matches analytical solution for uniform torsion
 - [x] Warping-free end has B ≈ 0 (within numerical tolerance)
-- [ ] For two-span continuous beam under torsion, bimoment is continuous at support
+- [x] For two-span continuous beam under torsion, bimoment is continuous at support
 - [x] Total normal stress σ_total = σ_axial + σ_bending + σ_warping is computed correctly
 - [x] For section with Iw = 0 (closed sections), bimoment results are zero
 - [x] Sign convention consistent with standard references (Kollbrunner & Hajdin)
-- [ ] Comparison with analytical solution for cantilever I-beam under torsion
+- [x] Comparison with analytical solution for cantilever I-beam under torsion
 - [x] All 16 boundary condition combinations produce correct results
 
 ### Task 7.2c: Displacement/Rotation Lines
@@ -507,8 +507,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [ ] Unconstrained DOFs identified
 
 ### Task 13.6: 14-DOF Warping Element Validation
-- [ ] Cantilever I-beam bimoment matches analytical solution for uniform torsion
-- [ ] Two-span continuous beam shows bimoment continuity at internal support
+- [x] Cantilever I-beam bimoment matches analytical solution for uniform torsion
+- [x] Two-span continuous beam shows bimoment continuity at internal support
 
 ---
 

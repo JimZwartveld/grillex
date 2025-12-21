@@ -1388,5 +1388,281 @@ class TestVaryingElementCounts:
         assert len(x) == 10
 
 
+class TestContinuousBeamBimomentContinuity:
+    """
+    Task 7.2b: Verify bimoment is continuous at internal support for two-span beam.
+
+    For collinear elements sharing a warping DOF at an internal node, the bimoment
+    must be continuous (same value from both elements at the shared node).
+    """
+
+    def test_two_span_beam_bimoment_continuity(self):
+        """✓ For two-span continuous beam under torsion, bimoment is continuous at support"""
+        from grillex.core import (
+            NodeRegistry, Material, Section, BeamElement, BeamConfig,
+            DOFHandler, Assembler, BCHandler, LinearSolver
+        )
+
+        # Create two-span continuous beam
+        L = 6.0  # Each span length
+        registry = NodeRegistry()
+        node1 = registry.get_or_create_node(0.0, 0.0, 0.0)
+        node2 = registry.get_or_create_node(L, 0.0, 0.0)      # Internal support
+        node3 = registry.get_or_create_node(2*L, 0.0, 0.0)
+
+        node1.enable_warping_dof()
+        node2.enable_warping_dof()
+        node3.enable_warping_dof()
+
+        # IPE300 section with warping constant
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85e-6)
+        sec = Section(1, "IPE300", 0.00538, 8.36e-5, 6.04e-6, 2.01e-7)
+        sec.Iw = 1.26e-7  # Warping constant for IPE300 (m^6)
+
+        config = BeamConfig()
+        config.include_warping = True
+
+        elem1 = BeamElement(1, node1, node2, mat, sec, config)
+        elem2 = BeamElement(2, node2, node3, mat, sec, config)
+
+        # Number DOFs - collinear elements share warping DOF at node2
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs_with_elements(registry, [elem1, elem2])
+
+        # Verify shared warping DOF
+        warp_dof_node2 = dof_handler.get_warping_dof(elem1.id, node2.id)
+        assert warp_dof_node2 == dof_handler.get_warping_dof(elem2.id, node2.id), \
+            "Collinear beams must share warping DOF"
+
+        # Assemble system
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([elem1, elem2])
+        n_dofs = dof_handler.total_dofs()
+        F = np.zeros(n_dofs)
+
+        # Apply torque at internal support (node2)
+        rx_node2 = dof_handler.get_global_dof(node2.id, 3)  # RX
+        T = 10.0  # kNm torque
+        F[rx_node2] = T
+
+        # Fixed ends with warping restraint
+        bc = BCHandler()
+        bc.fix_node_with_warping(node1.id, elem1.id)
+        bc.fix_node_with_warping(node3.id, elem2.id)
+
+        # Apply BCs and solve
+        K_mod, F_mod = bc.apply_to_system(K, F, dof_handler)
+        solver = LinearSolver()
+        u = solver.solve(K_mod, F_mod)
+        assert not solver.is_singular()
+
+        # Use get_warping_internal_actions to compute bimoment at internal node
+        # Element 1: bimoment at x=L (node2)
+        warping_actions1 = elem1.get_warping_internal_actions(L, u, dof_handler)
+        B1_at_node2 = warping_actions1.B
+
+        # Element 2: bimoment at x=0 (node2)
+        warping_actions2 = elem2.get_warping_internal_actions(0.0, u, dof_handler)
+        B2_at_node2 = warping_actions2.B
+
+        # Bimoment must be continuous at internal support
+        # Allow some numerical tolerance
+        np.testing.assert_almost_equal(
+            B1_at_node2, B2_at_node2, decimal=3,
+            err_msg="Bimoment must be continuous at internal support"
+        )
+
+
+class TestCantileverIBeamAnalyticalComparison:
+    """
+    Task 7.2b: Compare cantilever I-beam bimoment with analytical solution.
+
+    Analytical solution for cantilever under end torque T with warping restrained
+    at fixed end (Vlasov theory):
+        k = sqrt(GJ / EIw)
+        B(x) = T/k * sinh(k*(L-x)) / cosh(k*L)
+
+    At fixed end (x=0): B(0) = T/k * tanh(kL)
+    At free end (x=L):  B(L) = 0
+    """
+
+    def test_cantilever_bimoment_analytical(self):
+        """✓ Comparison with analytical solution for cantilever I-beam under torsion"""
+        from grillex.core import (
+            NodeRegistry, Material, Section, BeamElement, BeamConfig,
+            DOFHandler, Assembler, BCHandler, LinearSolver
+        )
+
+        L = 3.0  # Beam length [m]
+        T = 10.0  # Applied torque [kNm]
+        n_elem = 10  # Use finer mesh for better accuracy
+
+        registry = NodeRegistry()
+        elem_len = L / n_elem
+        nodes = []
+        for i in range(n_elem + 1):
+            x = i * elem_len
+            node = registry.get_or_create_node(x, 0.0, 0.0)
+            node.enable_warping_dof()
+            nodes.append(node)
+
+        # IPE300 section
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85e-6)
+        sec = Section(1, "IPE300", 0.00538, 8.36e-5, 6.04e-6, 2.01e-7)
+        sec.Iw = 1.26e-7  # Warping constant [m^6]
+
+        config = BeamConfig()
+        config.include_warping = True
+
+        elements = []
+        for i in range(n_elem):
+            elem = BeamElement(i + 1, nodes[i], nodes[i + 1], mat, sec, config)
+            elements.append(elem)
+
+        # Number DOFs
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs_with_elements(registry, elements)
+
+        # Assemble
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness(elements)
+        n_dofs = dof_handler.total_dofs()
+        F = np.zeros(n_dofs)
+
+        # Apply torque at free end (last node)
+        rx_end = dof_handler.get_global_dof(nodes[-1].id, 3)  # RX
+        F[rx_end] = T
+
+        # Fixed end with warping restraint at node 0, free at other end
+        bc = BCHandler()
+        bc.fix_node_with_warping(nodes[0].id, elements[0].id)
+        # Free end: only pin for stability (translations fixed, rotation/warping free)
+        bc.pin_node(nodes[-1].id)
+
+        # Apply BCs and solve
+        K_mod, F_mod = bc.apply_to_system(K, F, dof_handler)
+        solver = LinearSolver()
+        u = solver.solve(K_mod, F_mod)
+        assert not solver.is_singular()
+
+        # Material properties
+        E = mat.E
+        G = mat.G
+        GJ = G * sec.J
+        EIw = E * sec.Iw
+
+        # Analytical solution parameters
+        k = np.sqrt(GJ / EIw)
+        kL = k * L
+
+        # Compute bimoment at fixed end (x=0) using first element
+        warping_actions_0 = elements[0].get_warping_internal_actions(0.0, u, dof_handler)
+        B_computed_0 = warping_actions_0.B
+
+        # Analytical bimoment at fixed end
+        # B(0) = T/k * tanh(kL)
+        # Note: sign convention may differ between FEM and analytical
+        B_analytical_0 = T / k * np.tanh(kL)
+
+        # Compare magnitudes - FEM and analytical may use different sign conventions
+        # Allow 10% tolerance for FEM approximation
+        error_percent = abs(abs(B_computed_0) - abs(B_analytical_0)) / abs(B_analytical_0) * 100
+        assert error_percent < 10.0, \
+            f"Bimoment magnitude at fixed end: computed={abs(B_computed_0):.6f}, " \
+            f"analytical={abs(B_analytical_0):.6f}, error={error_percent:.1f}%"
+
+        # Verify non-zero bimoment at fixed end (warping is restrained)
+        assert abs(B_computed_0) > 0.1 * abs(B_analytical_0), \
+            "Bimoment at fixed end should be non-zero when warping is restrained"
+
+        # Compute bimoment at free end (x=L) - should be ~0
+        warping_actions_L = elements[-1].get_warping_internal_actions(elem_len, u, dof_handler)
+        B_computed_L = warping_actions_L.B
+
+        # Analytical: B(L) = 0 (bimoment is zero at free end)
+        # At free end, bimoment magnitude should be much smaller than at fixed end
+        assert abs(B_computed_L) < 0.2 * abs(B_computed_0), \
+            f"Bimoment at free end should be nearly zero: B(L)={B_computed_L:.6f}"
+
+    def test_bimoment_distribution_along_beam(self):
+        """Verify bimoment distribution matches analytical along entire beam"""
+        from grillex.core import (
+            NodeRegistry, Material, Section, BeamElement, BeamConfig,
+            DOFHandler, Assembler, BCHandler, LinearSolver
+        )
+
+        L = 3.0
+        T = 10.0
+        n_elem = 10  # Use finer mesh for better accuracy
+
+        registry = NodeRegistry()
+        elem_len = L / n_elem
+        nodes = []
+        for i in range(n_elem + 1):
+            x = i * elem_len
+            node = registry.get_or_create_node(x, 0.0, 0.0)
+            node.enable_warping_dof()
+            nodes.append(node)
+
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85e-6)
+        sec = Section(1, "IPE300", 0.00538, 8.36e-5, 6.04e-6, 2.01e-7)
+        sec.Iw = 1.26e-7
+
+        config = BeamConfig()
+        config.include_warping = True
+
+        elements = []
+        for i in range(n_elem):
+            elem = BeamElement(i + 1, nodes[i], nodes[i + 1], mat, sec, config)
+            elements.append(elem)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs_with_elements(registry, elements)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness(elements)
+        n_dofs = dof_handler.total_dofs()
+        F = np.zeros(n_dofs)
+
+        rx_end = dof_handler.get_global_dof(nodes[-1].id, 3)
+        F[rx_end] = T
+
+        bc = BCHandler()
+        bc.fix_node_with_warping(nodes[0].id, elements[0].id)
+        bc.pin_node(nodes[-1].id)
+
+        K_mod, F_mod = bc.apply_to_system(K, F, dof_handler)
+        solver = LinearSolver()
+        u = solver.solve(K_mod, F_mod)
+
+        E = mat.E
+        G = mat.G
+        GJ = G * sec.J
+        EIw = E * sec.Iw
+        k = np.sqrt(GJ / EIw)
+
+        # Check bimoment at nodal locations along the beam
+        # Compare magnitudes to account for possible sign convention differences
+        max_error = 0.0
+
+        for i, elem in enumerate(elements):
+            # Check at start of element
+            x_global = i * elem_len
+            warping_actions = elem.get_warping_internal_actions(0.0, u, dof_handler)
+            B_computed = warping_actions.B
+
+            # Analytical: B(x) = T/k * sinh(k*(L-x)) / cosh(k*L)
+            B_analytical = T / k * np.sinh(k * (L - x_global)) / np.cosh(k * L)
+
+            if abs(B_analytical) > 1e-6:
+                # Compare magnitudes - FEM and analytical may use different sign conventions
+                error = abs(abs(B_computed) - abs(B_analytical)) / abs(B_analytical) * 100
+                max_error = max(max_error, error)
+
+        # Maximum error should be within 15% for FEM approximation
+        assert max_error < 15.0, \
+            f"Maximum bimoment error along beam: {max_error:.1f}%"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
