@@ -1,8 +1,41 @@
-# Phase 15: Nonlinear Springs (Tension/Compression-Only)
+# Phase 15: Nonlinear Springs (Tension/Compression-Only and Gap Springs)
 
 ## Overview
 
-This phase implements support for tension-only and compression-only spring elements, which requires an iterative nonlinear solver. This is a significant architectural addition because spring stiffness depends on the displacement state, creating a chicken-and-egg problem that requires iteration to resolve.
+This phase implements support for tension-only, compression-only, and gap spring elements, which requires an iterative nonlinear solver. This is a significant architectural addition because spring stiffness depends on the displacement state, creating a chicken-and-egg problem that requires iteration to resolve.
+
+### Spring Types Covered
+
+| Type | Behavior | Use Case |
+|------|----------|----------|
+| **Tension-Only** | Active only when elongated (δ > 0) | Cables, tie-downs, seafastening |
+| **Compression-Only** | Active only when compressed (δ < 0) | Bearing pads, contact surfaces |
+| **Tension Gap** | Active when elongation exceeds gap (δ > gap) | Hooks with slack, loose bolts |
+| **Compression Gap** | Active when compression exceeds gap (δ < -gap) | Contact with clearance, bumpers |
+
+### Force-Displacement Relationships
+
+```
+Tension-Only (gap=0):        Compression-Only (gap=0):
+
+    F ↑      ╱                  F ↑
+      │    ╱                      │
+      │  ╱                        │
+──────┼╱─────→ δ            ──────┼──────→ δ
+      │                         ╱ │
+      │                       ╱   │
+                            ╱     ↓
+
+Tension Gap:                 Compression Gap:
+
+    F ↑        ╱                F ↑
+      │      ╱                    │
+      │    ╱                      │
+──────┼──•╱──→ δ            ──────┼──────→ δ
+      │  ↑gap                   ╲ │↑gap
+      │                       ╲  •│
+                            ╲    ↓
+```
 
 ### Why This Is Nonlinear
 
@@ -11,12 +44,37 @@ In a linear system, the stiffness matrix K is constant:
 K * u = F  →  u = K⁻¹ * F
 ```
 
-With tension/compression-only springs, K depends on whether each spring is in tension or compression:
+With nonlinear springs, K depends on whether each spring is active:
 ```
-K(u) * u = F  →  Requires iteration
+K(u) * u = F + F_gap(u)  →  Requires iteration
 ```
 
 The spring state (active/inactive) is unknown until we solve, but the solution depends on which springs are active.
+
+### Gap Springs Add Additional Complexity
+
+Gap springs introduce **gap closure forces** (F_gap). When a gap spring activates:
+- The stiffness k is added to K (same as tension/compression-only)
+- An additional force term accounts for the gap offset
+
+**Force calculation for active gap spring:**
+```
+F = k × (δ - gap)      for tension gap (δ > gap)
+F = k × (δ + gap)      for compression gap (δ < -gap)
+```
+
+This can be rewritten as:
+```
+F = k × δ - k × gap    (tension)
+F = k × δ + k × gap    (compression)
+```
+
+The `±k×gap` term is the **gap closure force** that must be added to the right-hand side of the equation. This makes the system:
+```
+K(u) × u = F_external + F_gap(u)
+```
+
+Where F_gap contains contributions from all active gap springs.
 
 ### Load Combination Implications
 
@@ -42,47 +100,68 @@ With nonlinear springs, this approach is **invalid** because:
 **Difficulty:** Medium
 
 **Description:**
-Extend SpringElement to support tension-only and compression-only behavior with state tracking.
+Extend SpringElement to support tension-only, compression-only, and gap spring behavior with state tracking.
 
 **Steps:**
 
 1. Add spring behavior enum to `spring_element.hpp`:
    ```cpp
    enum class SpringBehavior {
-       Linear = 0,       // Always active (default, current behavior)
-       TensionOnly = 1,  // Active only when elongated (Δu > 0)
-       CompressionOnly = 2  // Active only when compressed (Δu < 0)
+       Linear = 0,         // Always active (default, current behavior)
+       TensionOnly = 1,    // Active only when elongated (δ > gap)
+       CompressionOnly = 2 // Active only when compressed (δ < -gap)
    };
    ```
 
-2. Add state tracking to SpringElement:
+2. Add state tracking and gap values to SpringElement:
    ```cpp
    class SpringElement {
    public:
        // Existing members...
+       int id;
+       Node* node_i;
+       Node* node_j;
+       double kx, ky, kz, krx, kry, krz;
+       LoadingCondition loading_condition;
 
-       // Per-DOF behavior (allows mixed, e.g., tension-only in Z, linear in X)
+       // === NEW: Nonlinear behavior ===
+
+       // Per-DOF behavior (allows mixed, e.g., compression-only in Z, linear in X)
        std::array<SpringBehavior, 6> behavior = {
            SpringBehavior::Linear, SpringBehavior::Linear,
            SpringBehavior::Linear, SpringBehavior::Linear,
            SpringBehavior::Linear, SpringBehavior::Linear
        };
 
+       // Per-DOF gap values [m for translation, rad for rotation]
+       // Gap must be overcome before spring activates
+       std::array<double, 6> gap = {0, 0, 0, 0, 0, 0};
+
        // State tracking (updated during iteration)
        std::array<bool, 6> is_active = {true, true, true, true, true, true};
 
-       // Elongation/compression for each DOF (u_j - u_i)
+       // Current deformation for each DOF: δ = u_j - u_i
        std::array<double, 6> deformation = {0, 0, 0, 0, 0, 0};
 
        // Methods
        void update_state(const Eigen::VectorXd& displacements,
                         const DOFHandler& dof_handler);
-       bool state_changed() const;  // Did state change in last update?
+       bool state_changed() const;
+       bool has_gap() const;  // Any DOF has non-zero gap?
+       bool is_nonlinear() const;  // Any DOF is non-Linear behavior?
+
        Eigen::Matrix<double, 12, 12> current_stiffness_matrix() const;
+       std::array<double, 6> compute_forces() const;
+       Eigen::Matrix<double, 12, 1> compute_gap_forces(
+           const DOFHandler& dof_handler) const;
+
+   private:
+       bool state_changed_ = false;
+       double gap_tolerance_ = 1e-10;  // Prevent chattering
    };
    ```
 
-3. Implement state update logic:
+3. Implement state update logic with gap support:
    ```cpp
    void SpringElement::update_state(const Eigen::VectorXd& u,
                                     const DOFHandler& dof_handler) {
@@ -93,21 +172,30 @@ Extend SpringElement to support tension-only and compression-only behavior with 
        auto dofs_j = dof_handler.get_node_dofs(node_j->id);
 
        for (int i = 0; i < 6; ++i) {
-           // Compute deformation: u_j - u_i
+           // Compute deformation: δ = u_j - u_i
            double u_i = (dofs_i[i] >= 0) ? u(dofs_i[i]) : 0.0;
            double u_j = (dofs_j[i] >= 0) ? u(dofs_j[i]) : 0.0;
            deformation[i] = u_j - u_i;
 
-           // Update active state based on behavior
+           double g = gap[i];
+           double delta = deformation[i];
+
+           // Update active state based on behavior and gap
            switch (behavior[i]) {
                case SpringBehavior::Linear:
-                   is_active[i] = true;
+                   // Linear with gap: active when |δ| > gap (rare but supported)
+                   is_active[i] = (g <= gap_tolerance_) ||
+                                  (std::abs(delta) > g - gap_tolerance_);
                    break;
+
                case SpringBehavior::TensionOnly:
-                   is_active[i] = (deformation[i] > -gap_tolerance_);
+                   // Active when elongation exceeds gap: δ > gap
+                   is_active[i] = (delta > g - gap_tolerance_);
                    break;
+
                case SpringBehavior::CompressionOnly:
-                   is_active[i] = (deformation[i] < gap_tolerance_);
+                   // Active when compression exceeds gap: δ < -gap
+                   is_active[i] = (delta < -g + gap_tolerance_);
                    break;
            }
        }
@@ -116,7 +204,100 @@ Extend SpringElement to support tension-only and compression-only behavior with 
    }
    ```
 
-4. Implement current stiffness matrix (respects active state):
+4. Implement force calculation with gap offset:
+   ```cpp
+   std::array<double, 6> SpringElement::compute_forces() const {
+       std::array<double, 6> forces = {0, 0, 0, 0, 0, 0};
+       std::array<double, 6> k_values = {kx, ky, kz, krx, kry, krz};
+
+       for (int i = 0; i < 6; ++i) {
+           if (!is_active[i]) {
+               forces[i] = 0.0;
+               continue;
+           }
+
+           double k = k_values[i];
+           double delta = deformation[i];
+           double g = gap[i];
+
+           switch (behavior[i]) {
+               case SpringBehavior::Linear:
+                   if (g <= gap_tolerance_) {
+                       forces[i] = k * delta;  // No gap
+                   } else if (delta > g) {
+                       forces[i] = k * (delta - g);  // Tension beyond gap
+                   } else if (delta < -g) {
+                       forces[i] = k * (delta + g);  // Compression beyond gap
+                   } else {
+                       forces[i] = 0.0;  // Within gap
+                   }
+                   break;
+
+               case SpringBehavior::TensionOnly:
+                   // F = k × (δ - gap)
+                   forces[i] = k * (delta - g);
+                   break;
+
+               case SpringBehavior::CompressionOnly:
+                   // F = k × (δ + gap), where δ is negative
+                   forces[i] = k * (delta + g);
+                   break;
+           }
+       }
+       return forces;
+   }
+   ```
+
+5. Implement gap force vector for solver:
+   ```cpp
+   Eigen::Matrix<double, 12, 1> SpringElement::compute_gap_forces(
+       const DOFHandler& dof_handler) const
+   {
+       // Returns the gap closure forces to add to F vector
+       // F_gap = ±k×gap for active gap springs
+
+       Eigen::Matrix<double, 12, 1> F_gap = Eigen::Matrix<double, 12, 1>::Zero();
+       std::array<double, 6> k_values = {kx, ky, kz, krx, kry, krz};
+
+       for (int i = 0; i < 6; ++i) {
+           if (!is_active[i] || gap[i] <= gap_tolerance_) continue;
+
+           double k = k_values[i];
+           double g = gap[i];
+           double delta = deformation[i];
+
+           double f_gap = 0.0;
+           switch (behavior[i]) {
+               case SpringBehavior::TensionOnly:
+                   // Gap force pulls nodes together: -k×gap at node_i, +k×gap at node_j
+                   f_gap = -k * g;  // Force direction for tension gap
+                   break;
+
+               case SpringBehavior::CompressionOnly:
+                   // Gap force pushes nodes apart: +k×gap at node_i, -k×gap at node_j
+                   f_gap = k * g;  // Force direction for compression gap
+                   break;
+
+               case SpringBehavior::Linear:
+                   // Bidirectional gap - determine based on current state
+                   if (delta > g) {
+                       f_gap = -k * g;  // Tension
+                   } else if (delta < -g) {
+                       f_gap = k * g;   // Compression
+                   }
+                   break;
+           }
+
+           // Apply to DOF indices
+           F_gap(i) = -f_gap;      // Force on node_i
+           F_gap(i + 6) = f_gap;   // Force on node_j (opposite)
+       }
+
+       return F_gap;
+   }
+   ```
+
+6. Implement stiffness matrix (unchanged from no-gap version):
    ```cpp
    Eigen::Matrix<double, 12, 12> SpringElement::current_stiffness_matrix() const {
        Eigen::Matrix<double, 12, 12> K = Eigen::Matrix<double, 12, 12>::Zero();
@@ -140,10 +321,14 @@ Extend SpringElement to support tension-only and compression-only behavior with 
 **Acceptance Criteria:**
 - [ ] SpringBehavior enum added with Linear, TensionOnly, CompressionOnly values
 - [ ] Per-DOF behavior can be set independently
-- [ ] State tracking correctly identifies tension vs compression
+- [ ] Per-DOF gap values can be set independently
+- [ ] State tracking correctly identifies when gap is closed
 - [ ] current_stiffness_matrix() returns zero contribution for inactive DOFs
+- [ ] compute_forces() correctly applies gap offset to force calculation
+- [ ] compute_gap_forces() returns correct gap closure forces for solver
 - [ ] state_changed() correctly detects state transitions
-- [ ] Gap tolerance prevents chattering near zero deformation
+- [ ] Gap tolerance prevents chattering near threshold
+- [ ] has_gap() and is_nonlinear() helper methods work correctly
 
 ---
 
@@ -156,18 +341,26 @@ Extend SpringElement to support tension-only and compression-only behavior with 
 **Description:**
 Implement an iterative solver that handles spring state changes until convergence.
 
-**Algorithm: Modified Newton-Raphson with State Update**
+**Algorithm: Modified Newton-Raphson with State Update and Gap Forces**
 
 ```
 1. Initialize: Assume all springs active, solve linear system
 2. Loop:
    a. Update spring states based on current displacement
-   b. If no state changed → CONVERGED, exit
-   c. Reassemble stiffness matrix with new states
-   d. Solve: K_new * u_new = F
-   e. If iteration > max_iterations → FAILED, exit
-   f. Go to step 2a
+   b. If no state changed AND displacement converged → CONVERGED, exit
+   c. Reassemble stiffness matrix K with active spring states
+   d. Compute gap forces F_gap for active gap springs
+   e. Solve: K * u_new = F_external + F_gap
+   f. If iteration > max_iterations → FAILED, exit
+   g. Go to step 2a
 ```
+
+**Note on Gap Forces:**
+Gap springs require an additional force term because the spring force is:
+```
+F_spring = k × (δ - gap)    not    F_spring = k × δ
+```
+The `-k×gap` term (gap closure force) must be added to the RHS of the equation.
 
 **Steps:**
 
@@ -228,6 +421,11 @@ Implement an iterative solver that handles spring state changes until convergenc
            const DOFHandler& dof_handler,
            int total_dofs) const;
 
+       Eigen::VectorXd assemble_gap_forces(
+           const std::vector<SpringElement*>& springs,
+           const DOFHandler& dof_handler,
+           int total_dofs) const;
+
        bool check_displacement_convergence(
            const Eigen::VectorXd& u_old,
            const Eigen::VectorXd& u_new) const;
@@ -259,8 +457,17 @@ Implement an iterative solver that handles spring state changes until convergenc
            if (has_nonlinear) break;
        }
 
-       // If all springs are linear, solve directly
-       if (!has_nonlinear) {
+       // Check if any springs have gaps
+       bool has_gaps = false;
+       for (auto* spring : springs) {
+           if (spring->has_gap()) {
+               has_gaps = true;
+               break;
+           }
+       }
+
+       // If all springs are linear with no gaps, solve directly
+       if (!has_nonlinear && !has_gaps) {
            auto K_springs = assemble_spring_stiffness(springs, dof_handler, n);
            Eigen::SparseMatrix<double> K_total = base_K + K_springs;
            result.displacements = linear_solver_.solve(K_total, F);
@@ -281,12 +488,16 @@ Implement an iterative solver that handles spring state changes until convergenc
        for (int iter = 0; iter < settings_.max_iterations; ++iter) {
            result.iterations = iter + 1;
 
-           // Assemble current stiffness
+           // Assemble current stiffness from active springs
            auto K_springs = assemble_spring_stiffness(springs, dof_handler, n);
            Eigen::SparseMatrix<double> K_total = base_K + K_springs;
 
-           // Solve
-           Eigen::VectorXd u_new = linear_solver_.solve(K_total, F);
+           // Compute gap forces for active gap springs
+           Eigen::VectorXd F_gap = assemble_gap_forces(springs, dof_handler, n);
+           Eigen::VectorXd F_total = F + F_gap;
+
+           // Solve: K * u = F_external + F_gap
+           Eigen::VectorXd u_new = linear_solver_.solve(K_total, F_total);
 
            if (linear_solver_.is_singular()) {
                result.converged = false;
@@ -295,7 +506,7 @@ Implement an iterative solver that handles spring state changes until convergenc
                return result;
            }
 
-           // Update spring states
+           // Update spring states based on new displacements
            bool any_changed = false;
            for (auto* spring : springs) {
                spring->update_state(u_new, dof_handler);
@@ -331,7 +542,41 @@ Implement an iterative solver that handles spring state changes until convergenc
    }
    ```
 
-3. Add oscillation detection and damping:
+3. Implement gap force assembly:
+   ```cpp
+   Eigen::VectorXd NonlinearSolver::assemble_gap_forces(
+       const std::vector<SpringElement*>& springs,
+       const DOFHandler& dof_handler,
+       int total_dofs) const
+   {
+       Eigen::VectorXd F_gap = Eigen::VectorXd::Zero(total_dofs);
+
+       for (const auto* spring : springs) {
+           if (!spring->has_gap()) continue;  // Skip springs without gaps
+
+           // Get element gap forces (12x1 in element DOF order)
+           auto elem_gap_forces = spring->compute_gap_forces(dof_handler);
+
+           // Get global DOF indices
+           auto dofs_i = dof_handler.get_node_dofs(spring->node_i->id);
+           auto dofs_j = dof_handler.get_node_dofs(spring->node_j->id);
+
+           // Scatter to global force vector
+           for (int i = 0; i < 6; ++i) {
+               if (dofs_i[i] >= 0) {
+                   F_gap(dofs_i[i]) += elem_gap_forces(i);
+               }
+               if (dofs_j[i] >= 0) {
+                   F_gap(dofs_j[i]) += elem_gap_forces(i + 6);
+               }
+           }
+       }
+
+       return F_gap;
+   }
+   ```
+
+4. Add oscillation detection and damping:
    ```cpp
    // Track state history to detect oscillation
    std::vector<std::vector<bool>> state_history;
@@ -344,9 +589,10 @@ Implement an iterative solver that handles spring state changes until convergenc
 **Acceptance Criteria:**
 - [ ] NonlinearSolver class implemented with settings struct
 - [ ] Iterative solve correctly updates spring states
+- [ ] Gap forces computed and added to RHS for gap springs
 - [ ] Convergence detected when no spring states change
 - [ ] Maximum iteration limit prevents infinite loops
-- [ ] Linear-only springs bypass iteration (optimization)
+- [ ] Linear-only springs without gaps bypass iteration (optimization)
 - [ ] Oscillation detection prevents flip-flopping states
 - [ ] Singular system during iteration handled gracefully
 - [ ] Result includes final spring states for reporting
@@ -525,6 +771,7 @@ Expose nonlinear spring functionality through Python API.
    py::class_<grillex::SpringElement>(...)
        // Existing...
        .def_readwrite("behavior", &grillex::SpringElement::behavior)
+       .def_readwrite("gap", &grillex::SpringElement::gap)
        .def_readonly("is_active", &grillex::SpringElement::is_active)
        .def_readonly("deformation", &grillex::SpringElement::deformation)
        .def("set_behavior", [](SpringElement& s, int dof, SpringBehavior b) {
@@ -532,7 +779,16 @@ Expose nonlinear spring functionality through Python API.
        }, py::arg("dof"), py::arg("behavior"))
        .def("set_all_behavior", [](SpringElement& s, SpringBehavior b) {
            s.behavior.fill(b);
-       }, py::arg("behavior"));
+       }, py::arg("behavior"))
+       .def("set_gap", [](SpringElement& s, int dof, double g) {
+           s.gap[dof] = g;
+       }, py::arg("dof"), py::arg("gap"))
+       .def("set_all_gaps", [](SpringElement& s, double g) {
+           s.gap.fill(g);
+       }, py::arg("gap"))
+       .def("has_gap", &grillex::SpringElement::has_gap)
+       .def("is_nonlinear", &grillex::SpringElement::is_nonlinear)
+       .def("compute_forces", &grillex::SpringElement::compute_forces);
    ```
 
 2. Update Python wrapper in `model_wrapper.py`:
@@ -549,6 +805,8 @@ Expose nonlinear spring functionality through Python API.
        krz: float = 0.0,
        behavior: SpringBehavior = SpringBehavior.Linear,
        behavior_per_dof: Optional[Dict[int, SpringBehavior]] = None,
+       gap: float = 0.0,
+       gap_per_dof: Optional[Dict[int, float]] = None,
    ) -> SpringElement:
        """
        Add a spring element between two nodes.
@@ -561,12 +819,16 @@ Expose nonlinear spring functionality through Python API.
            behavior: Default behavior for all DOFs.
            behavior_per_dof: Optional per-DOF behavior override.
                Keys are DOF indices (0=X, 1=Y, 2=Z, 3=RX, 4=RY, 5=RZ).
+           gap: Default gap for all DOFs [m for translation, rad for rotation].
+               Spring only activates after deformation exceeds this gap.
+           gap_per_dof: Optional per-DOF gap override.
+               Keys are DOF indices (0=X, 1=Y, 2=Z, 3=RX, 4=RY, 5=RZ).
 
        Returns:
            The created SpringElement.
 
        Example:
-           # Tension-only vertical spring (bearing pad)
+           # Compression-only vertical spring (bearing pad)
            spring = model.add_spring(
                cargo_node, deck_node,
                kz=10000.0,  # 10 MN/m vertical stiffness
@@ -579,6 +841,22 @@ Expose nonlinear spring functionality through Python API.
                kx=1000.0, ky=1000.0, kz=5000.0,
                behavior=SpringBehavior.Linear,
                behavior_per_dof={2: SpringBehavior.CompressionOnly}
+           )
+
+           # Compression gap spring (contact with 10mm clearance)
+           spring = model.add_spring(
+               node1, node2,
+               kz=50000.0,  # High contact stiffness
+               behavior=SpringBehavior.CompressionOnly,
+               gap=0.010  # 10mm gap before contact
+           )
+
+           # Tension gap spring (hook with 5mm slack)
+           spring = model.add_spring(
+               cargo_node, deck_node,
+               kz=20000.0,
+               behavior=SpringBehavior.TensionOnly,
+               gap=0.005  # 5mm slack before spring engages
            )
        """
        # Implementation...
@@ -627,7 +905,10 @@ Expose nonlinear spring functionality through Python API.
 - [ ] NonlinearSolverSettings exposed with all fields
 - [ ] NonlinearSolverResult exposed with spring_states
 - [ ] SpringElement.behavior accessible per-DOF from Python
-- [ ] StructuralModel.add_spring() accepts behavior parameter
+- [ ] SpringElement.gap accessible per-DOF from Python
+- [ ] StructuralModel.add_spring() accepts behavior and gap parameters
+- [ ] set_gap() and set_all_gaps() methods work correctly
+- [ ] has_gap() and is_nonlinear() methods exposed
 - [ ] analyze_with_nonlinear_springs() method added
 - [ ] analyze_load_combination() method added
 - [ ] All new types have complete docstrings with units
@@ -834,12 +1115,62 @@ Create comprehensive tests for nonlinear spring behavior.
        """Solver stops after max iterations if not converged."""
    ```
 
+7. **Gap spring tests**:
+   ```python
+   def test_compression_gap_open():
+       """Compression gap spring with gap not closed remains inactive."""
+       # Small compression < gap → no spring force
+
+   def test_compression_gap_closed():
+       """Compression gap spring activates when gap closes."""
+       # Compression > gap → spring active with offset force
+
+   def test_compression_gap_force():
+       """Verify spring force uses gap offset: F = k × (δ + gap)."""
+       # Force should be proportional to excess compression beyond gap
+
+   def test_tension_gap_slack():
+       """Tension gap spring with slack remains inactive."""
+       # Elongation < gap → spring loose, no force
+
+   def test_tension_gap_engaged():
+       """Tension gap spring engages when slack taken up."""
+       # Elongation > gap → spring pulls with offset force
+
+   def test_gap_spring_iteration():
+       """Gap spring state changes during iteration as gap closes."""
+       # Initial guess may not close gap, iteration should converge
+
+   def test_contact_with_clearance():
+       """Practical case: cargo landing on deck with 5mm air gap."""
+       # Cargo drops under gravity, gap closes, contact force develops
+
+   def test_hook_with_slack():
+       """Practical case: lifting with slack in cables."""
+       # Upward acceleration takes up slack, then transmits force
+   ```
+
+8. **Analytical verification**:
+   ```python
+   def test_gap_spring_analytical():
+       """Verify gap spring matches analytical solution."""
+       # Simple system: spring with gap under known load
+       # Analytical: if F > k*gap, then δ = F/k, else δ = F_free
+       # Compare computed vs analytical displacement
+   ```
+
 **Acceptance Criteria:**
 - [ ] Tension-only spring tests pass
 - [ ] Compression-only spring tests pass
 - [ ] Load reversal iteration test demonstrates state changes
 - [ ] Multi-spring test shows partial liftoff
 - [ ] Load combination test proves superposition invalidity
+- [ ] Gap spring open/closed state tests pass
+- [ ] Gap spring force offset verified (F = k × (δ - gap))
+- [ ] Gap closure iteration test passes
+- [ ] Contact with clearance practical test passes
+- [ ] Hook with slack practical test passes
+- [ ] Analytical verification test passes
 - [ ] Convergence reporting verified
 - [ ] Edge cases (near-zero deformation) handled
 
@@ -860,17 +1191,19 @@ Document nonlinear spring usage with practical examples.
    - When to use tension/compression-only springs
    - Setting up bearing pads (compression-only)
    - Setting up tie-downs/seafastening (tension-only)
+   - Understanding gap springs (contact with clearance)
    - Understanding iteration and convergence
 
 2. **Technical Reference**
-   - Algorithm description
+   - Algorithm description (including gap forces)
+   - Force-displacement relationships for each spring type
    - Solver settings and their effects
    - Convergence criteria explained
    - Troubleshooting non-convergence
 
 3. **Examples**:
    ```python
-   # Example: Cargo on Bearing Pads
+   # Example 1: Cargo on Bearing Pads
    """
    Model a cargo item resting on four bearing pads.
    Under overturning moment, one or more pads may lift off.
@@ -897,10 +1230,75 @@ Document nonlinear spring usage with practical examples.
            print(f"Spring {spring.id} lifted off!")
    ```
 
+   ```python
+   # Example 2: Contact with Clearance (Gap Spring)
+   """
+   Model cargo lowering onto deck with initial air gap.
+   The 10mm gap must close before contact forces develop.
+   """
+   model = StructuralModel("Gap Contact Example")
+
+   # ... create structure ...
+
+   # Add gap springs representing contact with 10mm clearance
+   for pad_location in pad_locations:
+       model.add_spring(
+           cargo_node, deck_node,
+           kz=50000.0,  # High contact stiffness [kN/m]
+           behavior=SpringBehavior.CompressionOnly,
+           gap=0.010  # 10mm air gap [m]
+       )
+
+   # Analyze - solver will iterate to find which gaps close
+   results = model.analyze_with_nonlinear_springs()
+
+   # Check gap closure and contact forces
+   for spring in model.springs:
+       forces = model.get_spring_force(spring.id)
+       if forces['kz'] != 0:
+           print(f"Spring {spring.id}: contact force = {forces['kz']:.1f} kN")
+       else:
+           print(f"Spring {spring.id}: gap still open")
+   ```
+
+   ```python
+   # Example 3: Lifting with Slack Cables
+   """
+   Cargo suspended by cables with initial slack.
+   Under upward acceleration, slack is taken up before load transfer.
+   """
+   model = StructuralModel("Slack Cable Example")
+
+   # ... create cargo and crane structure ...
+
+   # Add tension gap springs representing cables with slack
+   for cable_point in cable_attachment_points:
+       model.add_spring(
+           cargo_node, crane_node,
+           kz=100000.0,  # Cable axial stiffness [kN/m]
+           behavior=SpringBehavior.TensionOnly,
+           gap=0.020  # 20mm cable slack [m]
+       )
+
+   # Add upward acceleration (crane lifting)
+   load_case.add_acceleration([0, 0, 1.5 * 9.81])  # 1.5g upward
+
+   # Analyze
+   results = model.analyze_with_nonlinear_springs()
+
+   # Check which cables are taut
+   for spring in model.springs:
+       state = model.get_spring_state(spring.id)
+       if state['kz']:
+           print(f"Cable {spring.id} is taut")
+       else:
+           print(f"Cable {spring.id} still has slack")
+   ```
+
 **Acceptance Criteria:**
-- [ ] User guide section added to docs
-- [ ] Technical reference documents algorithm
-- [ ] At least 2 complete examples with code
+- [ ] User guide section added to docs (including gap springs)
+- [ ] Technical reference documents algorithm and gap forces
+- [ ] At least 3 complete examples with code (bearing pads, gap contact, slack cables)
 - [ ] Troubleshooting section for common issues
 - [ ] All docstrings complete with units
 
@@ -992,12 +1390,16 @@ Task 15.9 (Performance) - Can run in parallel with 15.7-15.8
 
 ## Key Design Decisions
 
-1. **Per-DOF behavior**: Springs can have different behavior per DOF (e.g., compression-only in Z, linear in X/Y)
+1. **Per-DOF behavior and gap**: Springs can have different behavior AND gap per DOF (e.g., compression-only with 10mm gap in Z, linear in X/Y)
 
-2. **State-based iteration**: Uses spring state changes as convergence criterion rather than displacement residuals
+2. **Gap forces on RHS**: Gap springs contribute additional "gap closure forces" to the load vector, not just stiffness changes
 
-3. **Load combinations require direct solve**: Cannot use superposition with nonlinear springs
+3. **State-based iteration**: Uses spring state changes as convergence criterion rather than displacement residuals
 
-4. **Gap tolerance**: Small tolerance prevents chattering near zero deformation
+4. **Load combinations require direct solve**: Cannot use superposition with nonlinear springs
 
-5. **Existing linear path preserved**: Models without nonlinear springs use efficient linear solver
+5. **Gap tolerance**: Small tolerance prevents chattering near gap threshold
+
+6. **Existing linear path preserved**: Models without nonlinear springs or gaps use efficient linear solver
+
+7. **Force offset for gaps**: Spring force is proportional to excess deformation beyond gap: F = k × (δ - gap)
