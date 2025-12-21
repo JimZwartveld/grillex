@@ -23,8 +23,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 12 | LLM Tooling | 10 | 9 | 1 | 90% |
 | 13 | Validation Benchmarks | 12 | 12 | 0 | 100% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| 15 | Nonlinear Springs | 79 | 30 | 49 | 38% |
-| **Total** | | **321** | **235** | **86** | **73%** |
+| 15 | Nonlinear Springs | 79 | 41 | 38 | 52% |
+| **Total** | | **321** | **246** | **75** | **77%** |
 
 ---
 
@@ -569,17 +569,17 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Reactions computed correctly with final spring stiffness
 
 ### Task 15.4: Python API Updates
-- [ ] SpringBehavior enum exported to Python
-- [ ] NonlinearSolverSettings exposed with all fields
-- [ ] NonlinearSolverResult exposed with spring_states
-- [ ] SpringElement.behavior accessible per-DOF from Python
-- [ ] SpringElement.gap accessible per-DOF from Python
-- [ ] StructuralModel.add_spring() accepts behavior and gap parameters
-- [ ] set_gap() and set_all_gaps() methods work correctly
-- [ ] has_gap() and is_nonlinear() methods exposed
-- [ ] analyze_with_nonlinear_springs() method added
-- [ ] analyze_load_combination() method added
-- [ ] All new types have complete docstrings with units
+- [x] SpringBehavior enum exported to Python
+- [x] NonlinearSolverSettings exposed with all fields
+- [x] NonlinearSolverResult exposed with spring_states
+- [x] SpringElement.behavior accessible per-DOF from Python
+- [x] SpringElement.gap accessible per-DOF from Python
+- [x] StructuralModel.add_spring() accepts behavior and gap parameters
+- [x] set_gap() and set_all_gaps() methods work correctly
+- [x] has_gap() and is_nonlinear() methods exposed
+- [x] analyze_with_nonlinear_springs() method added
+- [x] analyze_load_combination() method added
+- [x] All new types have complete docstrings with units
 
 ### Task 15.5: Results Reporting for Nonlinear Springs
 - [ ] LoadCaseResult includes iterations and solver_message

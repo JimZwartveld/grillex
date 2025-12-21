@@ -1584,17 +1584,60 @@ Expose nonlinear spring functionality through Python API.
    ```
 
 **Acceptance Criteria:**
-- [ ] SpringBehavior enum exported to Python
-- [ ] NonlinearSolverSettings exposed with all fields
-- [ ] NonlinearSolverResult exposed with spring_states
-- [ ] SpringElement.behavior accessible per-DOF from Python
-- [ ] SpringElement.gap accessible per-DOF from Python
-- [ ] StructuralModel.add_spring() accepts behavior and gap parameters
-- [ ] set_gap() and set_all_gaps() methods work correctly
-- [ ] has_gap() and is_nonlinear() methods exposed
-- [ ] analyze_with_nonlinear_springs() method added
-- [ ] analyze_load_combination() method added
-- [ ] All new types have complete docstrings with units
+- [x] SpringBehavior enum exported to Python
+- [x] NonlinearSolverSettings exposed with all fields
+- [x] NonlinearSolverResult exposed with spring_states
+- [x] SpringElement.behavior accessible per-DOF from Python
+- [x] SpringElement.gap accessible per-DOF from Python
+- [x] StructuralModel.add_spring() accepts behavior and gap parameters
+- [x] set_gap() and set_all_gaps() methods work correctly
+- [x] has_gap() and is_nonlinear() methods exposed
+- [x] analyze_with_nonlinear_springs() method added
+- [x] analyze_load_combination() method added
+- [x] All new types have complete docstrings with units
+
+### Execution Notes (Completed 2025-12-21)
+
+**Steps Taken:**
+1. Updated imports in `model_wrapper.py` to include:
+   - SpringElement, SpringBehavior, NonlinearSolverSettings
+   - NonlinearSolverResult, LoadCombination, LoadCombinationResult
+2. Implemented `add_spring()` method in StructuralModel with:
+   - kx, ky, kz, krx, kry, krz stiffness parameters
+   - behavior parameter for default behavior (Linear/TensionOnly/CompressionOnly)
+   - behavior_per_dof for per-DOF behavior override
+   - gap parameter for default gap
+   - gap_per_dof for per-DOF gap override
+3. Added `has_nonlinear_springs()` convenience method
+4. Implemented `analyze_with_nonlinear_springs()` method that:
+   - Applies optional settings to model
+   - Calls _cpp_model.analyze_nonlinear()
+   - Returns dictionary of results
+5. Implemented `analyze_load_combination()` method that:
+   - Accepts combination and optional settings
+   - Calls _cpp_model.analyze_combination()
+   - Returns LoadCombinationResult
+6. Added `get_nonlinear_settings()` convenience method
+7. All new methods have comprehensive docstrings with units
+
+**Verification:**
+- All 11 acceptance criteria verified ✓
+- Manual tests confirm:
+  - add_spring() correctly creates springs with behavior and gap
+  - analyze_with_nonlinear_springs() returns results dict
+  - analyze_load_combination() returns correct result with static→dynamic sequencing
+  - Displacement matches analytical: u = F/k = -0.0195 m
+- All 793 tests pass
+
+**Key Features:**
+- Pythonic API for nonlinear spring analysis
+- Support for compression-only springs (bearing pads)
+- Support for tension-only springs (cables/hooks)
+- Support for gap springs (contact with clearance)
+- Per-DOF behavior and gap configuration
+- Complete docstrings with units and examples
+
+**Time Taken:** ~30 minutes
 
 ---
 
