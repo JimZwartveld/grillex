@@ -38,6 +38,12 @@ This module provides Python-friendly access to the C++ core data structures:
 - PointMass: Point mass element with inertia tensor
 - PlateElement: 4-node Mindlin plate element (MITC4)
 - LoadingCondition: Enum for spring loading conditions (All, Static, Dynamic)
+- ErrorCode: Enum for machine-readable error codes
+- GrillexError: Error information with context (DOFs, elements, nodes)
+- WarningCode: Enum for warning codes
+- WarningSeverity: Enum for warning severity levels (Low, Medium, High)
+- GrillexWarning: Warning information with severity and context
+- WarningList: Container for collecting warnings during model validation
 """
 
 from grillex._grillex_cpp import (
@@ -89,6 +95,13 @@ from grillex._grillex_cpp import (
     PointMass,
     PlateElement,
     LoadingCondition,
+    # Phase 11: Error Handling & Diagnostics
+    ErrorCode,
+    GrillexError,
+    WarningCode,
+    WarningSeverity,
+    GrillexWarning,
+    WarningList,
 )
 
 __all__ = [
@@ -110,4 +123,7 @@ __all__ = [
     'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine',
     # Phase 8: Additional Element Types
     'SpringElement', 'PointMass', 'PlateElement', 'LoadingCondition',
+    # Phase 11: Error Handling & Diagnostics
+    'ErrorCode', 'GrillexError', 'WarningCode', 'WarningSeverity',
+    'GrillexWarning', 'WarningList',
 ]

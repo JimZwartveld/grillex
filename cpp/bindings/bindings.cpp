@@ -20,6 +20,8 @@
 #include "grillex/spring_element.hpp"
 #include "grillex/point_mass.hpp"
 #include "grillex/plate_element.hpp"
+#include "grillex/errors.hpp"
+#include "grillex/warnings.hpp"
 
 namespace py = pybind11;
 
@@ -1706,5 +1708,233 @@ PYBIND11_MODULE(_grillex_cpp, m) {
             return "<PlateElement id=" + std::to_string(p.id) +
                    " thickness=" + std::to_string(p.thickness) +
                    " area=" + std::to_string(p.area()) + ">";
+        });
+
+    // ========================================================================
+    // Phase 11: Error Handling & Diagnostics
+    // ========================================================================
+
+    // ErrorCode enum
+    py::enum_<grillex::ErrorCode>(m, "ErrorCode",
+        "Error codes for Grillex analysis failures")
+        .value("OK", grillex::ErrorCode::OK, "No error")
+        .value("UNCONSTRAINED_SYSTEM", grillex::ErrorCode::UNCONSTRAINED_SYSTEM,
+               "System has unconstrained DOFs (rigid body modes)")
+        .value("SINGULAR_MATRIX", grillex::ErrorCode::SINGULAR_MATRIX,
+               "Stiffness matrix is singular")
+        .value("INSUFFICIENT_CONSTRAINTS", grillex::ErrorCode::INSUFFICIENT_CONSTRAINTS,
+               "Insufficient boundary conditions")
+        .value("REDUNDANT_CONSTRAINTS", grillex::ErrorCode::REDUNDANT_CONSTRAINTS,
+               "Redundant or conflicting constraints")
+        .value("INVALID_ELEMENT", grillex::ErrorCode::INVALID_ELEMENT,
+               "Invalid element definition")
+        .value("INVALID_MATERIAL", grillex::ErrorCode::INVALID_MATERIAL,
+               "Invalid or missing material")
+        .value("INVALID_SECTION", grillex::ErrorCode::INVALID_SECTION,
+               "Invalid or missing section")
+        .value("INVALID_NODE_REFERENCE", grillex::ErrorCode::INVALID_NODE_REFERENCE,
+               "Element references non-existent node")
+        .value("INVALID_PROPERTY", grillex::ErrorCode::INVALID_PROPERTY,
+               "Invalid property value")
+        .value("INVALID_ELEMENT_STIFFNESS", grillex::ErrorCode::INVALID_ELEMENT_STIFFNESS,
+               "Element stiffness matrix is invalid")
+        .value("INVALID_LOAD_NODE", grillex::ErrorCode::INVALID_LOAD_NODE,
+               "Load references non-existent node")
+        .value("INVALID_LOAD_ELEMENT", grillex::ErrorCode::INVALID_LOAD_ELEMENT,
+               "Load references non-existent element")
+        .value("EMPTY_LOAD_CASE", grillex::ErrorCode::EMPTY_LOAD_CASE,
+               "Load case has no loads")
+        .value("INVALID_LOAD_COMBINATION", grillex::ErrorCode::INVALID_LOAD_COMBINATION,
+               "Load combination references invalid load case")
+        .value("EMPTY_MODEL", grillex::ErrorCode::EMPTY_MODEL,
+               "Model has no elements")
+        .value("NO_NODES", grillex::ErrorCode::NO_NODES,
+               "Model has no nodes")
+        .value("DISCONNECTED_MODEL", grillex::ErrorCode::DISCONNECTED_MODEL,
+               "Model has disconnected parts")
+        .value("NOT_ANALYZED", grillex::ErrorCode::NOT_ANALYZED,
+               "Analysis not performed before querying results")
+        .value("SOLVER_CONVERGENCE_FAILED", grillex::ErrorCode::SOLVER_CONVERGENCE_FAILED,
+               "Solver failed to converge")
+        .value("NUMERICAL_OVERFLOW", grillex::ErrorCode::NUMERICAL_OVERFLOW,
+               "Numerical overflow during computation")
+        .value("OUT_OF_MEMORY", grillex::ErrorCode::OUT_OF_MEMORY,
+               "Out of memory")
+        .value("UNKNOWN_ERROR", grillex::ErrorCode::UNKNOWN_ERROR,
+               "Unknown error")
+        .export_values();
+
+    // GrillexError class
+    py::class_<grillex::GrillexError>(m, "GrillexError",
+        "Structured error information with machine-readable code and diagnostics")
+        .def(py::init<>(), "Create OK (no error) status")
+        .def(py::init<grillex::ErrorCode, const std::string&>(),
+             py::arg("code"), py::arg("message"),
+             "Create error with code and message")
+        .def_readwrite("code", &grillex::GrillexError::code, "Error code")
+        .def_readwrite("message", &grillex::GrillexError::message, "Error message")
+        .def_readwrite("involved_dofs", &grillex::GrillexError::involved_dofs,
+                      "Global DOF indices involved in the error")
+        .def_readwrite("involved_elements", &grillex::GrillexError::involved_elements,
+                      "Element IDs involved in the error")
+        .def_readwrite("involved_nodes", &grillex::GrillexError::involved_nodes,
+                      "Node IDs involved in the error")
+        .def_readwrite("details", &grillex::GrillexError::details,
+                      "Additional diagnostic details (key-value pairs)")
+        .def_readwrite("suggestion", &grillex::GrillexError::suggestion,
+                      "Suggested fix for the error")
+        .def("is_ok", &grillex::GrillexError::is_ok, "Check if no error")
+        .def("is_error", &grillex::GrillexError::is_error, "Check if error occurred")
+        .def("code_string", &grillex::GrillexError::code_string,
+             "Get string representation of error code")
+        .def("to_string", &grillex::GrillexError::to_string,
+             "Get formatted error string")
+        .def_static("unconstrained", &grillex::GrillexError::unconstrained,
+                   py::arg("dofs"), py::arg("nodes") = std::vector<int>{},
+                   "Create unconstrained system error")
+        .def_static("singular", &grillex::GrillexError::singular,
+                   py::arg("details") = "",
+                   "Create singular matrix error")
+        .def_static("invalid_element", &grillex::GrillexError::invalid_element,
+                   py::arg("element_id"), py::arg("reason"),
+                   "Create invalid element error")
+        .def_static("invalid_node", &grillex::GrillexError::invalid_node,
+                   py::arg("node_id"), py::arg("context") = "",
+                   "Create invalid node reference error")
+        .def_static("empty_model", &grillex::GrillexError::empty_model,
+                   "Create empty model error")
+        .def_static("not_analyzed", &grillex::GrillexError::not_analyzed,
+                   "Create not analyzed error")
+        .def("__repr__", [](const grillex::GrillexError &e) {
+            if (e.is_ok()) return std::string("<GrillexError OK>");
+            return "<GrillexError " + e.code_string() + ": " + e.message + ">";
+        })
+        .def("__str__", &grillex::GrillexError::to_string)
+        .def("__bool__", [](const grillex::GrillexError &e) {
+            return e.is_error();  // True if error, False if OK
+        });
+
+    // WarningCode enum
+    py::enum_<grillex::WarningCode>(m, "WarningCode",
+        "Warning codes for questionable model configurations")
+        .value("EXTREME_ASPECT_RATIO", grillex::WarningCode::EXTREME_ASPECT_RATIO,
+               "Beam has extreme aspect ratio")
+        .value("SMALL_ELEMENT", grillex::WarningCode::SMALL_ELEMENT,
+               "Very short element")
+        .value("LARGE_ELEMENT", grillex::WarningCode::LARGE_ELEMENT,
+               "Very long element")
+        .value("NON_COLLINEAR_WARPING", grillex::WarningCode::NON_COLLINEAR_WARPING,
+               "Non-collinear beams share warping DOF")
+        .value("STIFFNESS_CONTRAST", grillex::WarningCode::STIFFNESS_CONTRAST,
+               "Large stiffness contrast between elements")
+        .value("NEAR_SINGULARITY", grillex::WarningCode::NEAR_SINGULARITY,
+               "Matrix is poorly conditioned")
+        .value("VERY_STIFF_SPRING", grillex::WarningCode::VERY_STIFF_SPRING,
+               "Very stiff spring may cause numerical issues")
+        .value("VERY_SOFT_SPRING", grillex::WarningCode::VERY_SOFT_SPRING,
+               "Very soft spring may not provide restraint")
+        .value("NEAR_ZERO_PROPERTY", grillex::WarningCode::NEAR_ZERO_PROPERTY,
+               "Near-zero property value")
+        .value("POSSIBLE_UNIT_ERROR", grillex::WarningCode::POSSIBLE_UNIT_ERROR,
+               "Property may be in wrong units")
+        .value("INCONSISTENT_SECTION", grillex::WarningCode::INCONSISTENT_SECTION,
+               "Section properties are inconsistent")
+        .value("LARGE_LOAD", grillex::WarningCode::LARGE_LOAD,
+               "Very large load magnitude")
+        .value("LOAD_AT_FREE_NODE", grillex::WarningCode::LOAD_AT_FREE_NODE,
+               "Load applied at unsupported node")
+        .value("ACCELERATION_WITHOUT_MASS", grillex::WarningCode::ACCELERATION_WITHOUT_MASS,
+               "Acceleration load may need point mass")
+        .value("LARGE_DISPLACEMENT", grillex::WarningCode::LARGE_DISPLACEMENT,
+               "Large displacement - linear analysis may be invalid")
+        .value("HIGH_STRESS", grillex::WarningCode::HIGH_STRESS,
+               "High stress detected")
+        .value("SOLVER_REFINEMENT", grillex::WarningCode::SOLVER_REFINEMENT,
+               "Solver used iterative refinement")
+        .export_values();
+
+    // WarningSeverity enum
+    py::enum_<grillex::WarningSeverity>(m, "WarningSeverity",
+        "Warning severity levels")
+        .value("Low", grillex::WarningSeverity::Low, "Minor issue")
+        .value("Medium", grillex::WarningSeverity::Medium, "Review recommended")
+        .value("High", grillex::WarningSeverity::High, "Likely modeling error")
+        .export_values();
+
+    // GrillexWarning class
+    py::class_<grillex::GrillexWarning>(m, "GrillexWarning",
+        "Structured warning information for questionable models")
+        .def(py::init<grillex::WarningCode, grillex::WarningSeverity, const std::string&>(),
+             py::arg("code"), py::arg("severity"), py::arg("message"),
+             "Create warning with code, severity, and message")
+        .def_readwrite("code", &grillex::GrillexWarning::code, "Warning code")
+        .def_readwrite("severity", &grillex::GrillexWarning::severity, "Severity level")
+        .def_readwrite("message", &grillex::GrillexWarning::message, "Warning message")
+        .def_readwrite("involved_elements", &grillex::GrillexWarning::involved_elements,
+                      "Element IDs involved")
+        .def_readwrite("involved_nodes", &grillex::GrillexWarning::involved_nodes,
+                      "Node IDs involved")
+        .def_readwrite("details", &grillex::GrillexWarning::details,
+                      "Additional details (key-value pairs)")
+        .def_readwrite("suggestion", &grillex::GrillexWarning::suggestion,
+                      "Suggested fix")
+        .def("code_string", &grillex::GrillexWarning::code_string,
+             "Get string representation of warning code")
+        .def("severity_string", &grillex::GrillexWarning::severity_string,
+             "Get string representation of severity")
+        .def("to_string", &grillex::GrillexWarning::to_string,
+             "Get formatted warning string")
+        .def_static("extreme_aspect_ratio", &grillex::GrillexWarning::extreme_aspect_ratio,
+                   py::arg("element_id"), py::arg("ratio"),
+                   "Create extreme aspect ratio warning")
+        .def_static("small_element", &grillex::GrillexWarning::small_element,
+                   py::arg("element_id"), py::arg("length"),
+                   "Create small element warning")
+        .def_static("stiffness_contrast", &grillex::GrillexWarning::stiffness_contrast,
+                   py::arg("elem1"), py::arg("elem2"), py::arg("ratio"),
+                   "Create stiffness contrast warning")
+        .def_static("near_singularity", &grillex::GrillexWarning::near_singularity,
+                   py::arg("condition_number"),
+                   "Create near singularity warning")
+        .def_static("large_displacement", &grillex::GrillexWarning::large_displacement,
+                   py::arg("node_id"), py::arg("displacement"), py::arg("ratio"),
+                   "Create large displacement warning")
+        .def_static("near_zero_property", &grillex::GrillexWarning::near_zero_property,
+                   py::arg("element_id"), py::arg("property_name"), py::arg("value"),
+                   "Create near-zero property warning")
+        .def("__repr__", [](const grillex::GrillexWarning &w) {
+            return "<GrillexWarning [" + w.severity_string() + "] " +
+                   w.code_string() + ": " + w.message + ">";
+        })
+        .def("__str__", &grillex::GrillexWarning::to_string);
+
+    // WarningList class
+    py::class_<grillex::WarningList>(m, "WarningList",
+        "Collection of warnings from model validation")
+        .def(py::init<>(), "Create empty warning list")
+        .def_readwrite("warnings", &grillex::WarningList::warnings,
+                      "List of warnings")
+        .def("add", py::overload_cast<const grillex::GrillexWarning&>(
+                 &grillex::WarningList::add),
+             py::arg("warning"), "Add a warning to the list")
+        .def("has_warnings", &grillex::WarningList::has_warnings,
+             "Check if any warnings exist")
+        .def("count", &grillex::WarningList::count,
+             "Get total warning count")
+        .def("count_by_severity", &grillex::WarningList::count_by_severity,
+             py::arg("severity"), "Get count of warnings by severity")
+        .def("get_by_min_severity", &grillex::WarningList::get_by_min_severity,
+             py::arg("min_severity"),
+             "Get warnings with given severity or higher")
+        .def("clear", &grillex::WarningList::clear, "Clear all warnings")
+        .def("summary", &grillex::WarningList::summary,
+             "Get formatted summary string")
+        .def("__len__", &grillex::WarningList::count)
+        .def("__bool__", &grillex::WarningList::has_warnings)
+        .def("__iter__", [](const grillex::WarningList &wl) {
+            return py::make_iterator(wl.warnings.begin(), wl.warnings.end());
+        }, py::keep_alive<0, 1>())
+        .def("__repr__", [](const grillex::WarningList &wl) {
+            return "<WarningList: " + wl.summary() + ">";
         });
 }

@@ -19,6 +19,9 @@ from .data_types import (
     ReleaseCombo4DOF, ReleaseCombo2DOF, ReleaseComboWarping, DisplacementLine,
     # Phase 8: Additional Element Types
     SpringElement, PointMass, PlateElement, LoadingCondition,
+    # Phase 11: Error Handling & Diagnostics
+    ErrorCode, GrillexError, WarningCode, WarningSeverity,
+    GrillexWarning, WarningList,
 )
 
 from .model_wrapper import (
@@ -52,5 +55,8 @@ __all__ = [
     'SpringElement', 'PointMass', 'PlateElement', 'LoadingCondition',
     # Phase 9: Cargo Modelling
     'Cargo', 'CargoConnection',
+    # Phase 11: Error Handling & Diagnostics
+    'ErrorCode', 'GrillexError', 'WarningCode', 'WarningSeverity',
+    'GrillexWarning', 'WarningList',
     'Beam', 'StructuralModel'
 ]
