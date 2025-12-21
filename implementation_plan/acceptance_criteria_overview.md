@@ -18,12 +18,12 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 7 | Internal Actions & Results | 35 | 35 | 0 | 100% |
 | 8 | Additional Element Types | 9 | 9 | 0 | 100% |
 | 9 | Cargo Modeling | 20 | 20 | 0 | 100% |
-| 10 | Design Codes | 6 | 6 | 0 | 100% |
+| 10 | Design Codes | 47 | 6 | 41 | 13% |
 | 11 | Error Handling | 9 | 6 | 3 | 67% |
 | 12 | LLM Tooling | 9 | 0 | 9 | 0% |
 | 13 | Validation Benchmarks | 12 | 0 | 12 | 0% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **200** | **184** | **16** | **92%** |
+| **Total** | | **241** | **184** | **57** | **76%** |
 
 ---
 
@@ -381,6 +381,65 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] At least basic checks are implemented
 - [x] Utilization is computed correctly
 - [x] Governing check is identified
+
+### Task 10.3: BeamDesignSettings Class
+- [ ] BeamDesignSettings stores all buckling parameters
+- [ ] Effective length computation works with factors and absolute lengths
+- [ ] Moment gradient factors can be specified or computed
+- [ ] Settings can be attached to Beam elements
+
+### Task 10.4: EC3BeamSettings Class
+- [ ] EC3BeamSettings stores all EC3-specific parameters
+- [ ] Buckling curves can be specified or auto-selected
+- [ ] Section class can override automatic classification
+- [ ] Imperfection factors computed correctly
+
+### Task 10.5: Section Classification (EC3 Table 5.2)
+- [ ] Flange classification correct for I-sections
+- [ ] Web classification correct for pure bending
+- [ ] Web classification correct for combined N+M
+- [ ] Section class = max(flange_class, web_class)
+- [ ] Returns Class 4 when limits exceeded
+- [ ] Epsilon factor computed correctly from fy
+
+### Task 10.6: Flexural Buckling Check (EC3 6.3.1)
+- [ ] Slenderness computed correctly for y and z axes
+- [ ] Chi reduction factor matches tabulated values (within 1%)
+- [ ] Buckling curves a0, a, b, c, d all work correctly
+- [ ] Check performs for both axes, reports governing
+- [ ] Class 4 effective area supported
+
+### Task 10.7: Lateral-Torsional Buckling Check (EC3 6.3.2)
+- [ ] Mcr computed correctly for I-sections
+- [ ] C1 factors work for standard moment diagrams
+- [ ] χLT matches EC3 tables (within 1%)
+- [ ] Both general and rolled section methods available
+- [ ] Short beams (λ̄LT ≤ 0.4) skip LTB check (χLT = 1.0)
+
+### Task 10.8: Member Buckling Interaction (EC3 6.3.3)
+- [ ] Both interaction equations (y-y and z-z) checked
+- [ ] Interaction factors kyy, kyz, kzy, kzz computed correctly
+- [ ] Cm factors for different moment diagrams
+- [ ] ΔM shift moments for Class 4 sections
+- [ ] Reports governing interaction equation
+
+### Task 10.9: Additional Cross-Section Checks
+- [ ] Torsion stress computed correctly
+- [ ] Shear-moment interaction reduces capacity when V > 0.5Vpl
+- [ ] Combined N+V+M interaction implemented
+- [ ] Warping stresses included for open sections
+
+### Task 10.10: Integrate Settings with Beam and Model
+- [ ] Settings can be attached to individual beams
+- [ ] Default settings can be set at model level
+- [ ] EC3 checks use beam settings when available
+- [ ] Falls back to defaults when no settings specified
+
+### Task 10.11: Comprehensive Tests for Extended EC3
+- [ ] At least 50 new tests for extended EC3
+- [ ] Buckling reduction factors within 1% of tabulated values
+- [ ] All edge cases handled (λ̄ < 0.2, λ̄ > 3.0, etc.)
+- [ ] Tests cover all buckling curves
 
 ---
 
