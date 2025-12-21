@@ -23,8 +23,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 12 | LLM Tooling | 10 | 9 | 1 | 90% |
 | 13 | Validation Benchmarks | 12 | 12 | 0 | 100% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| 15 | Nonlinear Springs | 79 | 23 | 56 | 29% |
-| **Total** | | **321** | **228** | **93** | **71%** |
+| 15 | Nonlinear Springs | 79 | 30 | 49 | 38% |
+| **Total** | | **321** | **235** | **86** | **73%** |
 
 ---
 
@@ -557,16 +557,16 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Result includes final spring states for reporting
 
 ### Task 15.3: Model Integration for Nonlinear Analysis
-- [ ] has_nonlinear_springs() correctly identifies nonlinear springs in model
-- [ ] analyze_nonlinear() uses iterative solver for load cases
-- [ ] analyze_combination() solves combined loads directly (not superposition)
-- [ ] analyze_combination() implements static→dynamic sequencing:
+- [x] has_nonlinear_springs() correctly identifies nonlinear springs in model
+- [x] analyze_nonlinear() uses iterative solver for load cases
+- [x] analyze_combination() solves combined loads directly (not superposition)
+- [x] analyze_combination() implements static→dynamic sequencing:
   - Permanent loads solved first to establish baseline contact pattern
   - Full combination solved starting from static state (initial_state)
   - Static solve failure returns meaningful error message
-- [ ] Linear models still use efficient linear solver
-- [ ] LoadCaseResult extended with iteration count and spring states
-- [ ] Reactions computed correctly with final spring stiffness
+- [x] Linear models still use efficient linear solver
+- [x] LoadCaseResult extended with iteration count and spring states
+- [x] Reactions computed correctly with final spring stiffness
 
 ### Task 15.4: Python API Updates
 - [ ] SpringBehavior enum exported to Python

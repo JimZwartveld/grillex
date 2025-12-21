@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <array>
 #include <memory>
 #include <cmath>
 #include <map>
@@ -14,6 +15,7 @@ namespace grillex {
 // Forward declarations
 class Model;
 class DOFHandler;
+class LoadCombination;
 
 /**
  * @brief Distributed load representation for Phase 7 internal actions
@@ -199,6 +201,7 @@ private:
  * @brief Results for a single load case analysis
  *
  * Stores the computed displacements and reactions for a specific load case.
+ * Extended for nonlinear analysis with spring states and iteration info.
  */
 struct LoadCaseResult {
     LoadCase* load_case;                   ///< Associated load case (non-owning pointer)
@@ -207,9 +210,40 @@ struct LoadCaseResult {
     bool success;                          ///< Analysis succeeded
     std::string error_message;             ///< Error message if failed
 
-    LoadCaseResult() : load_case(nullptr), success(false) {}
+    // === Nonlinear analysis extensions ===
+    int iterations = 1;                    ///< Number of solver iterations (1 for linear)
+    std::string solver_message;            ///< Solver convergence message
+
+    /// Spring states at convergence: (spring_id, active_states[6])
+    std::vector<std::pair<int, std::array<bool, 6>>> spring_states;
+
+    /// Spring forces at convergence: (spring_id, forces[6]) [kN or kN·m]
+    std::vector<std::pair<int, std::array<double, 6>>> spring_forces;
+
+    LoadCaseResult() : load_case(nullptr), success(false), iterations(1) {}
     LoadCaseResult(LoadCase* lc)
-        : load_case(lc), success(false) {}
+        : load_case(lc), success(false), iterations(1) {}
+};
+
+/**
+ * @brief Results for a load combination analysis
+ *
+ * Used by analyze_combination() for direct nonlinear combination solving.
+ * Required because nonlinear springs invalidate superposition.
+ */
+struct LoadCombinationResult {
+    LoadCombination* combination = nullptr;  ///< Associated combination (non-owning)
+    Eigen::VectorXd displacements;           ///< Combined displacement vector
+    Eigen::VectorXd reactions;               ///< Reaction forces at constraints
+    bool converged = false;                  ///< Analysis converged successfully
+    int iterations = 0;                      ///< Total iterations for solve
+    std::string message;                     ///< Solver message
+
+    /// Spring states at convergence: (spring_id, active_states[6])
+    std::vector<std::pair<int, std::array<bool, 6>>> spring_states;
+
+    /// Spring forces at convergence: (spring_id, forces[6]) [kN or kN·m]
+    std::vector<std::pair<int, std::array<double, 6>>> spring_forces;
 };
 
 /**

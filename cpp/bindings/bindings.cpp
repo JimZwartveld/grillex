@@ -882,7 +882,8 @@ PYBIND11_MODULE(_grillex_cpp, m) {
 
     // LoadCaseResult struct
     py::class_<grillex::LoadCaseResult>(m, "LoadCaseResult",
-        "Results for a single load case analysis")
+        "Results for a single load case analysis.\n\n"
+        "Extended for nonlinear analysis with spring states and iteration info.")
         .def_readonly("load_case", &grillex::LoadCaseResult::load_case,
                      "Associated load case")
         .def_readonly("displacements", &grillex::LoadCaseResult::displacements,
@@ -893,8 +894,41 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                      "Analysis succeeded")
         .def_readonly("error_message", &grillex::LoadCaseResult::error_message,
                      "Error message if failed")
+        .def_readonly("iterations", &grillex::LoadCaseResult::iterations,
+                     "Number of solver iterations (1 for linear)")
+        .def_readonly("solver_message", &grillex::LoadCaseResult::solver_message,
+                     "Solver convergence message")
+        .def_readonly("spring_states", &grillex::LoadCaseResult::spring_states,
+                     "Spring states at convergence: [(spring_id, active_states[6])]")
+        .def_readonly("spring_forces", &grillex::LoadCaseResult::spring_forces,
+                     "Spring forces at convergence: [(spring_id, forces[6])] [kN or kN*m]")
         .def("__repr__", [](const grillex::LoadCaseResult &res) {
-            return "<LoadCaseResult success=" + std::string(res.success ? "True" : "False") + ">";
+            return "<LoadCaseResult success=" + std::string(res.success ? "True" : "False") +
+                   " iterations=" + std::to_string(res.iterations) + ">";
+        });
+
+    // LoadCombinationResult struct
+    py::class_<grillex::LoadCombinationResult>(m, "LoadCombinationResult",
+        "Results for a load combination analysis.\n\n"
+        "Used by analyze_combination() for direct nonlinear combination solving.\n"
+        "Required because nonlinear springs invalidate superposition.")
+        .def_readonly("displacements", &grillex::LoadCombinationResult::displacements,
+                     "Combined displacement vector")
+        .def_readonly("reactions", &grillex::LoadCombinationResult::reactions,
+                     "Reaction forces at constraints")
+        .def_readonly("converged", &grillex::LoadCombinationResult::converged,
+                     "Analysis converged successfully")
+        .def_readonly("iterations", &grillex::LoadCombinationResult::iterations,
+                     "Total iterations for solve")
+        .def_readonly("message", &grillex::LoadCombinationResult::message,
+                     "Solver message")
+        .def_readonly("spring_states", &grillex::LoadCombinationResult::spring_states,
+                     "Spring states at convergence: [(spring_id, active_states[6])]")
+        .def_readonly("spring_forces", &grillex::LoadCombinationResult::spring_forces,
+                     "Spring forces at convergence: [(spring_id, forces[6])] [kN or kN*m]")
+        .def("__repr__", [](const grillex::LoadCombinationResult &res) {
+            return "<LoadCombinationResult converged=" + std::string(res.converged ? "True" : "False") +
+                   " iterations=" + std::to_string(res.iterations) + ">";
         });
 
     // LoadCombinationTerm struct
@@ -976,6 +1010,35 @@ PYBIND11_MODULE(_grillex_cpp, m) {
             return "<LoadCombination '" + combo.name() +
                    "' id=" + std::to_string(combo.id()) +
                    " terms=" + std::to_string(combo.size()) + ">";
+        });
+
+    // ========================================================================
+    // Phase 15: NonlinearSolverSettings (needed before Model for default args)
+    // ========================================================================
+
+    // NonlinearSolverSettings struct - MUST be bound before Model
+    py::class_<grillex::NonlinearSolverSettings>(m, "NonlinearSolverSettings",
+        "Settings for nonlinear spring solver.")
+        .def(py::init<>())
+        .def_readwrite("max_iterations", &grillex::NonlinearSolverSettings::max_iterations,
+             "Maximum iterations before giving up (default: 50)")
+        .def_readwrite("gap_tolerance", &grillex::NonlinearSolverSettings::gap_tolerance,
+             "Tolerance for spring activation threshold [m] (default: 1e-10)")
+        .def_readwrite("displacement_tolerance", &grillex::NonlinearSolverSettings::displacement_tolerance,
+             "Relative displacement tolerance for convergence (default: 1e-8)")
+        .def_readwrite("allow_all_springs_inactive", &grillex::NonlinearSolverSettings::allow_all_springs_inactive,
+             "Allow solution where all nonlinear springs are inactive (default: false)")
+        .def_readwrite("enable_oscillation_damping", &grillex::NonlinearSolverSettings::enable_oscillation_damping,
+             "Enable oscillation detection and damping (default: true)")
+        .def_readwrite("oscillation_history_size", &grillex::NonlinearSolverSettings::oscillation_history_size,
+             "Number of iterations to look back for oscillation detection (default: 4)")
+        .def_readwrite("oscillation_damping_factor", &grillex::NonlinearSolverSettings::oscillation_damping_factor,
+             "Damping factor when oscillation detected (default: 0.5)")
+        .def_readwrite("linear_method", &grillex::NonlinearSolverSettings::linear_method,
+             "Linear solver method to use (default: SimplicialLDLT)")
+        .def("__repr__", [](const grillex::NonlinearSolverSettings &s) {
+            return "<NonlinearSolverSettings max_iter=" +
+                   std::to_string(s.max_iterations) + ">";
         });
 
     // ========================================================================
@@ -1159,7 +1222,27 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              py::return_value_policy::reference_internal,
              "Get all load case results (for use with LoadCombination)")
         .def("analyze", &grillex::Model::analyze,
-             "Run analysis for all load cases")
+             "Run analysis for all load cases (linear solver)")
+        .def("has_nonlinear_springs", &grillex::Model::has_nonlinear_springs,
+             "Check if model has nonlinear (tension/compression-only) springs")
+        .def("analyze_nonlinear", &grillex::Model::analyze_nonlinear,
+             "Run nonlinear analysis for all load cases.\n\n"
+             "Uses iterative solver for tension/compression-only springs.\n"
+             "If no nonlinear springs exist, falls back to efficient linear analysis.")
+        .def("analyze_combination", &grillex::Model::analyze_combination,
+             py::arg("combo"),
+             py::arg("settings") = grillex::NonlinearSolverSettings{},
+             "Analyze a specific load combination with nonlinear spring support.\n\n"
+             "IMPORTANT: With nonlinear springs, load combinations cannot use\n"
+             "superposition (summing individual results). Each combination must\n"
+             "be solved directly as a single nonlinear problem.\n\n"
+             "Static->Dynamic Sequencing: This method first solves the 'static base'\n"
+             "(Permanent loads only) to establish the baseline contact pattern,\n"
+             "then solves the full combination starting from the static state.")
+        .def("nonlinear_settings",
+             py::overload_cast<>(&grillex::Model::nonlinear_settings),
+             py::return_value_policy::reference_internal,
+             "Get nonlinear solver settings (can be modified)")
         .def("is_analyzed", &grillex::Model::is_analyzed,
              "Check if model has been analyzed successfully")
         .def("get_displacements", &grillex::Model::get_displacements,
@@ -2069,30 +2152,8 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                    std::string(s.has_initial_state() ? "True" : "False") + ">";
         });
 
-    // NonlinearSolverSettings struct
-    py::class_<grillex::NonlinearSolverSettings>(m, "NonlinearSolverSettings",
-        "Settings for nonlinear spring solver.")
-        .def(py::init<>())
-        .def_readwrite("max_iterations", &grillex::NonlinearSolverSettings::max_iterations,
-             "Maximum iterations before giving up (default: 50)")
-        .def_readwrite("gap_tolerance", &grillex::NonlinearSolverSettings::gap_tolerance,
-             "Tolerance for spring activation threshold [m] (default: 1e-10)")
-        .def_readwrite("displacement_tolerance", &grillex::NonlinearSolverSettings::displacement_tolerance,
-             "Relative displacement tolerance for convergence (default: 1e-8)")
-        .def_readwrite("allow_all_springs_inactive", &grillex::NonlinearSolverSettings::allow_all_springs_inactive,
-             "Allow solution where all nonlinear springs are inactive (default: false)")
-        .def_readwrite("enable_oscillation_damping", &grillex::NonlinearSolverSettings::enable_oscillation_damping,
-             "Enable oscillation detection and damping (default: true)")
-        .def_readwrite("oscillation_history_size", &grillex::NonlinearSolverSettings::oscillation_history_size,
-             "Number of iterations to look back for oscillation detection (default: 4)")
-        .def_readwrite("oscillation_damping_factor", &grillex::NonlinearSolverSettings::oscillation_damping_factor,
-             "Damping factor when oscillation detected (default: 0.5)")
-        .def_readwrite("linear_method", &grillex::NonlinearSolverSettings::linear_method,
-             "Linear solver method to use (default: SimplicialLDLT)")
-        .def("__repr__", [](const grillex::NonlinearSolverSettings &s) {
-            return "<NonlinearSolverSettings max_iter=" +
-                   std::to_string(s.max_iterations) + ">";
-        });
+    // NOTE: NonlinearSolverSettings is bound earlier (before Model) to support
+    // default argument in Model.analyze_combination()
 
     // NonlinearSolver class
     py::class_<grillex::NonlinearSolver>(m, "NonlinearSolver",
