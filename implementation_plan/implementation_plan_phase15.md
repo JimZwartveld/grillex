@@ -91,6 +91,74 @@ With nonlinear springs, this approach is **invalid** because:
 
 **Solution**: Each load combination must be solved as a separate nonlinear analysis, not as post-processed linear superposition.
 
+### Static → Dynamic Load Sequencing
+
+**Physical Reality**: In cargo/offshore operations, loads are applied in a specific sequence:
+
+1. **Static phase**: Cargo is set down onto deck under gravity (Permanent loads)
+   - Gaps close as cargo settles
+   - Contact pattern is established
+   - This is the "baseline" equilibrium state
+
+2. **Dynamic phase**: Environmental/operational loads are applied (Variable, Environmental, Accidental)
+   - Applied ON TOP of the settled static state
+   - Springs may activate (new contact) or deactivate (liftoff) relative to static state
+   - The static state is the starting point, not zero displacement
+
+**Why This Matters**:
+
+```
+Example: Cargo on bearing pads with 5mm air gap
+
+WRONG approach (solve combined from u=0):
+┌─────────────────────────────────────────────────────────┐
+│ Combined: Gravity + Roll Moment                         │
+│ Starting from: u=0, all springs initially active        │
+│ Problem: May find non-physical equilibrium or diverge   │
+└─────────────────────────────────────────────────────────┘
+
+CORRECT approach (static first, then add dynamic):
+┌─────────────────────────────────────────────────────────┐
+│ Step 1: Solve static (gravity only)                     │
+│ → Gaps close, cargo settles, contact established        │
+│ → u_static, spring_states_static                        │
+├─────────────────────────────────────────────────────────┤
+│ Step 2: Solve combined, starting FROM static state      │
+│ → Initial guess: u_static, spring_states_static         │
+│ → Add dynamic loads                                     │
+│ → Iterate from this physical starting point             │
+│ → Some pads may lift off (state changes)                │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Algorithm for Load Combination Analysis**:
+
+```
+1. Identify the "static base" combination:
+   - All Permanent load cases with their factors
+   - This represents the set-down/gravity state
+
+2. Solve static base combination:
+   - Start from u=0, all springs initially active
+   - Iterate until converged
+   - Store: u_static, spring_states_static
+
+3. For each full load combination (static + dynamic):
+   - Initialize from: u_static, spring_states_static
+   - Add dynamic load contributions (Variable, Environmental, Accidental)
+   - Iterate until converged
+   - This may result in:
+     - Springs that were active becoming inactive (liftoff)
+     - Springs that were inactive becoming active (new contact)
+     - But starting from physical baseline
+```
+
+**Implementation Requirement**: The NonlinearSolver must accept an optional initial state:
+- `initial_displacement`: Starting displacement vector (from static solve)
+- `initial_spring_states`: Starting spring active/inactive states
+
+This ensures the dynamic analysis starts from the physically correct baseline.
+
 ---
 
 ## Task 15.1: Spring Element State Tracking
@@ -411,6 +479,27 @@ struct NonlinearSolverResult {
 };
 
 /**
+ * @brief Initial state for starting nonlinear iteration
+ *
+ * Used to start from a known state (e.g., static solution) rather than zero.
+ * This is essential for static→dynamic load sequencing where the static
+ * (gravity) solution establishes the baseline contact pattern.
+ */
+struct NonlinearInitialState {
+    /// Initial displacement vector (empty = start from zero)
+    Eigen::VectorXd displacement;
+
+    /// Initial spring states: (spring_id, active_states[6])
+    /// If empty, all springs start as active
+    std::vector<std::pair<int, std::array<bool, 6>>> spring_states;
+
+    /// Check if initial state is provided
+    bool has_initial_state() const {
+        return displacement.size() > 0;
+    }
+};
+
+/**
  * @brief Settings for nonlinear spring solver
  */
 struct NonlinearSolverSettings {
@@ -458,12 +547,20 @@ struct NonlinearSolverSettings {
  * 4. Updates spring states based on new displacements
  * 5. Checks for convergence (no state changes)
  *
- * Usage:
- *   NonlinearSolver solver(settings);
- *   auto result = solver.solve(base_K, F, springs, dof_handler);
- *   if (result.converged) {
- *       // Use result.displacements
- *   }
+ * **Static→Dynamic Sequencing**:
+ * For proper cargo analysis, solve static loads first, then use that
+ * solution as the initial state for dynamic combinations:
+ *
+ *   // Step 1: Solve static (gravity) to get baseline
+ *   auto static_result = solver.solve(base_K, F_static, springs, dof_handler);
+ *
+ *   // Step 2: Create initial state from static solution
+ *   NonlinearInitialState init;
+ *   init.displacement = static_result.displacements;
+ *   init.spring_states = static_result.spring_states;
+ *
+ *   // Step 3: Solve combined (static + dynamic) starting from static state
+ *   auto combined_result = solver.solve(base_K, F_combined, springs, dof_handler, init);
  */
 class NonlinearSolver {
 public:
@@ -480,16 +577,25 @@ public:
      * @param F External force vector [kN]
      * @param springs Vector of spring elements (states will be updated)
      * @param dof_handler DOF handler for global DOF indexing
+     * @param initial_state Optional initial state from previous solve (e.g., static)
      * @return Solver result with displacements and convergence info
      *
      * The springs vector is modified: after solve(), each spring's
      * is_active and deformation arrays contain the final converged state.
+     *
+     * **Initial State for Static→Dynamic Sequencing**:
+     * When analyzing dynamic load combinations, provide the static solution
+     * as initial_state. This ensures:
+     * - Iteration starts from physically correct baseline (cargo settled)
+     * - Gap springs that closed under static load start as active
+     * - Springs that were inactive stay inactive unless dynamic loads change them
      */
     NonlinearSolverResult solve(
         const Eigen::SparseMatrix<double>& base_K,
         const Eigen::VectorXd& F,
         std::vector<SpringElement*>& springs,
-        const DOFHandler& dof_handler);
+        const DOFHandler& dof_handler,
+        const NonlinearInitialState& initial_state = {});
 
     /// Get current settings
     const NonlinearSolverSettings& settings() const { return settings_; }
@@ -567,7 +673,8 @@ NonlinearSolverResult NonlinearSolver::solve(
     const Eigen::SparseMatrix<double>& base_K,
     const Eigen::VectorXd& F,
     std::vector<SpringElement*>& springs,
-    const DOFHandler& dof_handler)
+    const DOFHandler& dof_handler,
+    const NonlinearInitialState& initial_state)
 {
     NonlinearSolverResult result;
     const int n = base_K.rows();
@@ -622,14 +729,54 @@ NonlinearSolverResult NonlinearSolver::solve(
     // Step 2: Initialize for iterative solve
     // =========================================================================
 
-    // Start with all springs active (optimistic initial guess)
-    for (auto* spring : springs) {
-        spring->is_active.fill(true);
-        spring->deformation.fill(0.0);
-    }
+    Eigen::VectorXd u;
+    Eigen::VectorXd u_prev;
 
-    Eigen::VectorXd u = Eigen::VectorXd::Zero(n);
-    Eigen::VectorXd u_prev = u;
+    if (initial_state.has_initial_state()) {
+        // Starting from provided initial state (e.g., static solution)
+        // This is essential for static→dynamic sequencing where the static
+        // (gravity) solution establishes the baseline contact pattern
+
+        u = initial_state.displacement;
+        u_prev = u;
+
+        // Apply initial spring states from previous solve
+        if (!initial_state.spring_states.empty()) {
+            // Create a map for quick lookup
+            std::map<int, std::array<bool, 6>> state_map;
+            for (const auto& [spring_id, states] : initial_state.spring_states) {
+                state_map[spring_id] = states;
+            }
+
+            // Apply states to springs
+            for (auto* spring : springs) {
+                auto it = state_map.find(spring->id);
+                if (it != state_map.end()) {
+                    spring->is_active = it->second;
+                } else {
+                    // Spring not in initial state - start as active
+                    spring->is_active.fill(true);
+                }
+                // Update deformations from displacement
+                spring->update_state(u, dof_handler);
+            }
+        } else {
+            // No spring states provided - update from initial displacement
+            for (auto* spring : springs) {
+                spring->update_state(u, dof_handler);
+            }
+        }
+    } else {
+        // No initial state - start from zero with all springs active
+        // (optimistic initial guess)
+        u = Eigen::VectorXd::Zero(n);
+        u_prev = u;
+
+        for (auto* spring : springs) {
+            spring->is_active.fill(true);
+            spring->deformation.fill(0.0);
+        }
+    }
 
     // State history for oscillation detection
     std::vector<std::vector<bool>> state_history;
@@ -950,6 +1097,10 @@ f_gap = +k * gap;  // Applied as: -f on node_i, +f on node_j
 
 **Acceptance Criteria:**
 - [ ] NonlinearSolver class implemented with settings struct
+- [ ] NonlinearInitialState struct implemented for static→dynamic sequencing
+- [ ] solve() accepts optional initial_state parameter
+- [ ] When initial_state provided, iteration starts from that displacement/state
+- [ ] When initial_state not provided, starts from zero with all springs active
 - [ ] Iterative solve correctly updates spring states
 - [ ] Gap forces computed and added to RHS for gap springs
 - [ ] Convergence detected when no spring states change
@@ -1048,7 +1199,7 @@ Integrate nonlinear solver into Model class, handling load cases and combination
    }
    ```
 
-3. Implement `analyze_combination()`:
+3. Implement `analyze_combination()` with static→dynamic sequencing:
    ```cpp
    LoadCombinationResult Model::analyze_combination(
        const LoadCombination& combo,
@@ -1056,19 +1207,63 @@ Integrate nonlinear solver into Model class, handling load cases and combination
    {
        // Cannot use superposition with nonlinear springs
        // Must solve the combined load directly
+       //
+       // IMPORTANT: Static→Dynamic Sequencing
+       // For proper physical behavior, we:
+       // 1. First solve the "static base" (Permanent loads only)
+       // 2. Then solve the full combination starting from static state
+       // This ensures gaps close under gravity before dynamic loads are applied
 
        auto base_K = assemble_base_stiffness();
+       NonlinearSolver solver(settings);
+
+       // =====================================================================
+       // Step 1: Identify and solve static base (Permanent loads only)
+       // =====================================================================
+       Eigen::VectorXd F_static = Eigen::VectorXd::Zero(dof_handler_.total_dofs());
+       bool has_permanent = false;
+
+       for (const auto& term : combo.get_terms()) {
+           if (term.load_case->type() == LoadCaseType::Permanent) {
+               auto F_case = assemble_force_vector(*term.load_case);
+               F_case = apply_accelerations(F_case, *term.load_case);
+               F_static += term.factor * F_case;
+               has_permanent = true;
+           }
+       }
+
+       NonlinearInitialState initial_state;
+
+       if (has_permanent && has_nonlinear_springs()) {
+           // Solve static base to establish baseline contact pattern
+           auto static_result = solver.solve(base_K, F_static, springs_, dof_handler_);
+
+           if (!static_result.converged) {
+               // Static solve failed - return error
+               LoadCombinationResult combo_result;
+               combo_result.converged = false;
+               combo_result.message = "Static base solve failed: " + static_result.message;
+               return combo_result;
+           }
+
+           // Use static solution as starting point for full combination
+           initial_state.displacement = static_result.displacements;
+           initial_state.spring_states = static_result.spring_states;
+       }
+
+       // =====================================================================
+       // Step 2: Solve full combination starting from static state
+       // =====================================================================
        Eigen::VectorXd F_combined = Eigen::VectorXd::Zero(dof_handler_.total_dofs());
 
-       // Combine force vectors with factors
+       // Combine ALL force vectors (including Permanent again, for full load)
        for (const auto& term : combo.get_terms()) {
            auto F_case = assemble_force_vector(*term.load_case);
            F_case = apply_accelerations(F_case, *term.load_case);
            F_combined += term.factor * F_case;
        }
 
-       NonlinearSolver solver(settings);
-       auto result = solver.solve(base_K, F_combined, springs_, dof_handler_);
+       auto result = solver.solve(base_K, F_combined, springs_, dof_handler_, initial_state);
 
        LoadCombinationResult combo_result;
        combo_result.displacements = result.displacements;
@@ -1084,6 +1279,10 @@ Integrate nonlinear solver into Model class, handling load cases and combination
 - [ ] has_nonlinear_springs() correctly identifies nonlinear springs in model
 - [ ] analyze_nonlinear() uses iterative solver for load cases
 - [ ] analyze_combination() solves combined loads directly (not superposition)
+- [ ] analyze_combination() implements static→dynamic sequencing:
+  - Permanent loads solved first to establish baseline contact pattern
+  - Full combination solved starting from static state (initial_state)
+  - Static solve failure returns meaningful error message
 - [ ] Linear models still use efficient linear solver
 - [ ] LoadCaseResult extended with iteration count and spring states
 - [ ] Reactions computed correctly with final spring stiffness
@@ -1521,6 +1720,39 @@ Create comprehensive tests for nonlinear spring behavior.
        # Compare computed vs analytical displacement
    ```
 
+9. **Static→Dynamic sequencing tests**:
+   ```python
+   def test_static_dynamic_sequencing():
+       """Verify static loads establish baseline before dynamic loads applied."""
+       # Cargo on gap springs with initial clearance
+       # Step 1: Static (gravity) should close gaps, establish contact
+       # Step 2: Dynamic (roll moment) applied FROM static state
+       # Verify contact pattern differs from solving combined from u=0
+
+   def test_static_baseline_used_for_combination():
+       """Verify combination solver uses static solution as initial state."""
+       # Create combination with Permanent + Variable load cases
+       # Permanent load should be solved first
+       # Combined result should start from Permanent solution
+
+   def test_liftoff_from_static_contact():
+       """Test spring liftoff when dynamic load reverses static contact."""
+       # Cargo settled under gravity (all pads in contact)
+       # Apply roll moment that lifts one side
+       # Verify correct pads lift off starting from settled state
+
+   def test_no_permanent_loads():
+       """Test behavior when combination has no Permanent loads."""
+       # Only Variable/Environmental loads in combination
+       # Should solve from u=0 (no static baseline)
+
+   def test_initial_state_carries_spring_states():
+       """Verify spring states from static solve are preserved."""
+       # Static solve with some springs inactive
+       # Dynamic solve should start with those states
+       # Compare iterations vs solving from all-active initial guess
+   ```
+
 **Acceptance Criteria:**
 - [ ] Tension-only spring tests pass
 - [ ] Compression-only spring tests pass
@@ -1533,6 +1765,9 @@ Create comprehensive tests for nonlinear spring behavior.
 - [ ] Contact with clearance practical test passes
 - [ ] Hook with slack practical test passes
 - [ ] Analytical verification test passes
+- [ ] Static→dynamic sequencing test verifies Permanent loads solved first
+- [ ] Liftoff from static contact test passes
+- [ ] Initial state preserves spring states from static solve
 - [ ] Convergence reporting verified
 - [ ] Edge cases (near-zero deformation) handled
 
@@ -1760,8 +1995,19 @@ Task 15.9 (Performance) - Can run in parallel with 15.7-15.8
 
 4. **Load combinations require direct solve**: Cannot use superposition with nonlinear springs
 
-5. **Gap tolerance**: Small tolerance prevents chattering near gap threshold
+5. **Static→Dynamic load sequencing**: For load combinations:
+   - Permanent (gravity) loads solved first to establish baseline contact pattern
+   - Full combination solved starting from static state via `initial_state` parameter
+   - This ensures physically correct behavior where cargo settles before dynamic loads are applied
+   - Essential for gap springs where gaps must close under gravity before dynamic analysis
 
-6. **Existing linear path preserved**: Models without nonlinear springs or gaps use efficient linear solver
+6. **Gap tolerance**: Small tolerance prevents chattering near gap threshold
 
-7. **Force offset for gaps**: Spring force is proportional to excess deformation beyond gap: F = k × (δ - gap)
+7. **Existing linear path preserved**: Models without nonlinear springs or gaps use efficient linear solver
+
+8. **Force offset for gaps**: Spring force is proportional to excess deformation beyond gap: F = k × (δ - gap)
+
+9. **Initial state support**: Solver accepts optional `NonlinearInitialState` with:
+   - Initial displacement vector
+   - Initial spring active/inactive states
+   - Enables chaining of analysis phases (static → dynamic)
