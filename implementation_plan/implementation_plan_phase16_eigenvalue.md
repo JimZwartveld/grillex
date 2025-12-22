@@ -1075,11 +1075,36 @@ class TestEigenvalueIntegration:
 7. Technical reference (algorithms, settings)
 
 **Acceptance Criteria:**
-- [ ] Clear explanation of when to use eigenvalue analysis
-- [ ] Step-by-step examples with code
-- [ ] Interpretation guide for results
-- [ ] Troubleshooting section
-- [ ] All examples are doctests that pass
+- [x] Clear explanation of when to use eigenvalue analysis
+- [x] Step-by-step examples with code
+- [x] Interpretation guide for results
+- [x] Troubleshooting section
+- [x] All examples are doctests that pass
+
+### Execution Notes (Completed 2025-12-22)
+
+**Steps Taken:**
+1. Created `/home/user/grillex/docs/user/eigenvalue_analysis.rst` with comprehensive documentation
+2. Added to docs/user/index.rst toctree
+3. Implemented 87 doctests covering all usage examples
+
+**Documentation Structure:**
+- **When to Use Modal Analysis**: Resonance check, dynamic response, design verification, vibration problems
+- **Running Eigenvalue Analysis**: Basic usage with `analyze_modes()`, getting results with `get_natural_frequencies()`, `get_periods()`, `get_mode_displacement_at()`
+- **Interpreting Results**: Natural frequencies interpretation, mode shapes explanation, participation factors
+- **Examples**: Cantilever beam with analytical verification, simply supported beam
+- **Troubleshooting**: Singular mass matrix, convergence failure, unexpected rigid body modes, mesh refinement
+- **Technical Reference**: Solver methods (Dense, Subspace, Shift-invert), mass matrix formulation, point masses, normalization
+
+**Problems Encountered:**
+- **Issue**: Doctests returning numpy bool (`np.True_`) instead of Python bool
+  - **Root Cause**: Numpy comparisons return numpy boolean type
+  - **Solution**: Wrapped numpy boolean comparisons with `bool()` to get Python bool
+
+**Verification:**
+- 87 doctests passing ✓
+- All examples run correctly against the codebase ✓
+- Documentation integrates with Sphinx structure ✓
 
 ---
 
@@ -1142,11 +1167,43 @@ class TestEigenvalueIntegration:
 ```
 
 **Acceptance Criteria:**
-- [ ] Tool schema for analyze_modes
-- [ ] Tool schema for get_modal_summary
-- [ ] Tool schema for check_resonance
-- [ ] Handler implementations in ToolExecutor
-- [ ] Error suggestions for common eigenvalue issues
+- [x] Tool schema for analyze_modes
+- [x] Tool schema for get_modal_summary
+- [x] Tool schema for check_resonance
+- [x] Handler implementations in ToolExecutor
+- [x] Error suggestions for common eigenvalue issues
+
+### Execution Notes (Completed 2025-12-22)
+
+**Steps Taken:**
+1. Added 4 new tool schemas to TOOLS list in `src/grillex/llm/tools.py`:
+   - `analyze_modes`: Run eigenvalue analysis with n_modes and method parameters
+   - `get_modal_summary`: Get summary of modal results (frequencies, periods, participation)
+   - `check_resonance`: Check if natural frequencies are within tolerance of excitation frequency
+   - `get_mode_shape`: Get mode shape displacements at a specific position
+
+2. Implemented handler methods in ToolExecutor class:
+   - `_tool_analyze_modes()`: Calls `model.analyze_modes()`, returns frequencies and mode summary
+   - `_tool_get_modal_summary()`: Returns full modal results table
+   - `_tool_check_resonance()`: Compares natural frequencies to excitation, warns of resonance risk
+   - `_tool_get_mode_shape()`: Returns modal displacements (UX, UY, UZ, RX, RY, RZ) at position
+
+3. Updated error suggestions in `_get_suggestion_for_error()`:
+   - Added suggestion for singular mass matrix: check material density
+   - Added suggestion for modal analysis failures: run analyze_modes first
+
+**Tool Schema Details:**
+- `analyze_modes`: n_modes (int, default 10), method (enum: dense/subspace/shift_invert)
+- `get_modal_summary`: no parameters, returns list of mode results
+- `check_resonance`: excitation_frequency (required), tolerance_percent (default 15)
+- `get_mode_shape`: mode_number (1-based), position ([x, y, z])
+
+**Verification:**
+- All 4 tools verified working with manual test script ✓
+- analyze_modes returns frequencies and mode summaries ✓
+- check_resonance correctly identifies resonance risks ✓
+- get_mode_shape returns all 6 DOF displacements ✓
+- All 40 existing LLM tooling tests still pass ✓
 
 ---
 

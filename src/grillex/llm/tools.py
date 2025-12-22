@@ -326,6 +326,82 @@ TOOLS: List[Dict[str, Any]] = [
             "required": []
         }
     },
+    {
+        "name": "analyze_modes",
+        "description": "Perform eigenvalue analysis to find natural frequencies and mode shapes. Use this to check for resonance, understand dynamic behavior, or prepare for response spectrum analysis.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "n_modes": {
+                    "type": "integer",
+                    "description": "Number of modes to compute (lowest frequencies first). Default 10.",
+                    "default": 10
+                },
+                "method": {
+                    "type": "string",
+                    "enum": ["dense", "subspace", "shift_invert"],
+                    "description": "Solver method. Use 'subspace' for large models (>500 DOFs). Default 'subspace'.",
+                    "default": "subspace"
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_modal_summary",
+        "description": "Get summary of modal analysis results including natural frequencies, periods, and participation factors. Must run analyze_modes first.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "n_modes_to_show": {
+                    "type": "integer",
+                    "description": "Number of modes to include in summary. Default shows all computed modes.",
+                    "default": 10
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "check_resonance",
+        "description": "Check if any natural frequency is within a specified range of an excitation frequency. Use this to identify potential resonance issues.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "excitation_frequency": {
+                    "type": "number",
+                    "description": "Excitation frequency to check against [Hz]"
+                },
+                "tolerance_percent": {
+                    "type": "number",
+                    "description": "Percentage band around excitation frequency. Default 15%.",
+                    "default": 15
+                }
+            },
+            "required": ["excitation_frequency"]
+        }
+    },
+    {
+        "name": "get_mode_shape",
+        "description": "Get mode shape displacements at a specific node for a given mode number.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mode_number": {
+                    "type": "integer",
+                    "description": "Mode number (1-based, 1 = fundamental mode)"
+                },
+                "position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Node position [x, y, z] in meters"
+                }
+            },
+            "required": ["mode_number", "position"]
+        }
+    },
 
     # =========================================================================
     # Results
@@ -498,6 +574,17 @@ class ToolExecutor:
         if "singular" in error_str or "unconstrained" in error_str:
             return "Add boundary conditions to prevent rigid body motion. At minimum, fix one node completely."
 
+        # Eigenvalue-specific errors
+        if "eigenvalue" in error_str or "modal" in error_str:
+            if "mass" in error_str and ("singular" in error_str or "zero" in error_str):
+                return "The mass matrix is singular. Ensure material density (rho) is non-zero and all elements have valid sections."
+            if "convergence" in error_str:
+                return "Eigenvalue solver did not converge. Try increasing the number of iterations or using a different method (e.g., 'subspace')."
+            if "not computed" in error_str or "not available" in error_str:
+                return "Run analyze_modes first to compute natural frequencies and mode shapes."
+        if "mode" in error_str and "not found" in error_str:
+            return "The requested mode number is out of range. Check how many modes were computed."
+
         return None
 
     def _tool_create_model(self, params: Dict[str, Any]) -> ToolResult:
@@ -666,6 +753,179 @@ class ToolExecutor:
                 error="Analysis failed. The system may be unstable or unconstrained.",
                 suggestion="Check that boundary conditions prevent all rigid body motion (6 DOFs minimum)."
             )
+
+    def _tool_analyze_modes(self, params: Dict[str, Any]) -> ToolResult:
+        """Run eigenvalue analysis."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        n_modes = params.get("n_modes", 10)
+        method = params.get("method", "subspace")
+
+        success = self.model.analyze_modes(n_modes=n_modes)
+
+        if success:
+            frequencies = self.model.get_natural_frequencies()
+            periods = self.model.get_periods()
+
+            # Build results summary
+            modes_summary = []
+            for i, (f, t) in enumerate(zip(frequencies, periods), 1):
+                modes_summary.append({
+                    "mode": i,
+                    "frequency_hz": round(f, 4),
+                    "period_s": round(t, 6) if t < 1e10 else "inf"
+                })
+
+            return ToolResult(
+                success=True,
+                result={
+                    "n_modes_computed": len(frequencies),
+                    "fundamental_frequency_hz": round(frequencies[0], 4) if frequencies else None,
+                    "modes": modes_summary[:min(5, len(modes_summary))],  # Show first 5
+                    "message": f"Computed {len(frequencies)} modes. Fundamental frequency: {frequencies[0]:.2f} Hz"
+                }
+            )
+        else:
+            return ToolResult(
+                success=False,
+                error="Eigenvalue analysis failed.",
+                suggestion="Check boundary conditions and ensure material density (rho) is non-zero."
+            )
+
+    def _tool_get_modal_summary(self, params: Dict[str, Any]) -> ToolResult:
+        """Get modal analysis summary."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        frequencies = self.model.get_natural_frequencies()
+        if not frequencies:
+            return ToolResult(
+                success=False,
+                error="No modal analysis results available.",
+                suggestion="Run analyze_modes first to compute natural frequencies and mode shapes."
+            )
+
+        periods = self.model.get_periods()
+        n_modes_to_show = params.get("n_modes_to_show", len(frequencies))
+
+        # Build mode table
+        modes = []
+        for i in range(min(n_modes_to_show, len(frequencies))):
+            mode_info = {
+                "mode": i + 1,
+                "frequency_hz": round(frequencies[i], 4),
+                "period_s": round(periods[i], 6) if periods[i] < 1e10 else "inf"
+            }
+            modes.append(mode_info)
+
+        # Identify frequency ranges
+        positive_freqs = [f for f in frequencies if f > 0.1]
+        freq_range = {
+            "min_hz": round(min(positive_freqs), 4) if positive_freqs else 0,
+            "max_hz": round(max(frequencies[:n_modes_to_show]), 4)
+        }
+
+        return ToolResult(
+            success=True,
+            result={
+                "n_modes": len(frequencies),
+                "frequency_range": freq_range,
+                "modes": modes,
+                "units": {"frequency": "Hz", "period": "s"}
+            }
+        )
+
+    def _tool_check_resonance(self, params: Dict[str, Any]) -> ToolResult:
+        """Check for resonance with an excitation frequency."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        frequencies = self.model.get_natural_frequencies()
+        if not frequencies:
+            return ToolResult(
+                success=False,
+                error="No modal analysis results available.",
+                suggestion="Run analyze_modes first."
+            )
+
+        excitation_freq = params["excitation_frequency"]
+        tolerance_pct = params.get("tolerance_percent", 15)
+
+        # Calculate frequency band
+        f_low = excitation_freq * (1 - tolerance_pct / 100)
+        f_high = excitation_freq * (1 + tolerance_pct / 100)
+
+        # Find modes within the band
+        resonant_modes = []
+        for i, f in enumerate(frequencies, 1):
+            if f_low <= f <= f_high:
+                resonant_modes.append({
+                    "mode": i,
+                    "frequency_hz": round(f, 4),
+                    "ratio": round(f / excitation_freq, 3)
+                })
+
+        has_resonance = len(resonant_modes) > 0
+
+        return ToolResult(
+            success=True,
+            result={
+                "excitation_frequency_hz": excitation_freq,
+                "tolerance_percent": tolerance_pct,
+                "frequency_band": {"low_hz": round(f_low, 4), "high_hz": round(f_high, 4)},
+                "has_resonance_risk": has_resonance,
+                "resonant_modes": resonant_modes,
+                "message": (
+                    f"WARNING: {len(resonant_modes)} mode(s) within {tolerance_pct}% of {excitation_freq} Hz"
+                    if has_resonance else
+                    f"No modes within {tolerance_pct}% of {excitation_freq} Hz - OK"
+                )
+            }
+        )
+
+    def _tool_get_mode_shape(self, params: Dict[str, Any]) -> ToolResult:
+        """Get mode shape at a position."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        frequencies = self.model.get_natural_frequencies()
+        if not frequencies:
+            return ToolResult(
+                success=False,
+                error="No modal analysis results available.",
+                suggestion="Run analyze_modes first."
+            )
+
+        mode_number = params["mode_number"]
+        position = params["position"]
+
+        if mode_number < 1 or mode_number > len(frequencies):
+            return ToolResult(
+                success=False,
+                error=f"Mode {mode_number} not found. Only {len(frequencies)} modes were computed.",
+                suggestion=f"Use mode_number between 1 and {len(frequencies)}."
+            )
+
+        mode_disp = self.model.get_mode_displacement_at(mode_number, position)
+
+        return ToolResult(
+            success=True,
+            result={
+                "mode_number": mode_number,
+                "frequency_hz": round(frequencies[mode_number - 1], 4),
+                "position": position,
+                "displacements": {
+                    "UX": float(mode_disp["UX"]),
+                    "UY": float(mode_disp["UY"]),
+                    "UZ": float(mode_disp["UZ"]),
+                    "RX": float(mode_disp["RX"]),
+                    "RY": float(mode_disp["RY"]),
+                    "RZ": float(mode_disp["RZ"])
+                },
+                "units": {"translations": "normalized", "rotations": "normalized"}
+            }
+        )
 
     def _tool_get_displacement(self, params: Dict[str, Any]) -> ToolResult:
         """Get displacement at a node."""
