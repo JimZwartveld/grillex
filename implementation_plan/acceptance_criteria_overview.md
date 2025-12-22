@@ -2,7 +2,7 @@
 
 This document provides a comprehensive overview of all acceptance criteria across implementation phases. It is automatically updated when tasks are completed.
 
-**Last Updated:** 2025-12-22
+**Last Updated:** 2025-12-22 (Tasks 16.1-16.6 completed)
 
 ## Summary Statistics
 
@@ -24,7 +24,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 13 | Validation Benchmarks | 12 | 12 | 0 | 100% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
 | 15 | Nonlinear Springs | 79 | 79 | 0 | 100% |
-| **Total** | | **321** | **284** | **37** | **88%** |
+| 16 | Eigenvalue Analysis | 78 | 32 | 46 | 41% |
+| **Total** | | **399** | **316** | **83** | **79%** |
 
 ---
 
@@ -627,6 +628,116 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Linear models have no performance penalty
 - [x] Iteration count logged for performance analysis
 - [x] Benchmark shows acceptable performance for 100+ springs
+
+---
+
+## Phase 16: Eigenvalue Analysis (Modal/Dynamic)
+
+### Task 16.1: Eigenvalue Solver Settings and Results (C++)
+- [x] EigensolverSettings struct with all configuration options
+- [x] ModeResult struct with eigenvalue, frequency, period, mode shape
+- [x] ModeResult includes participation factors for X, Y, Z
+- [x] ModeResult includes effective modal mass (absolute and percentage)
+- [x] EigensolverResult contains vector of ModeResult plus summary data
+- [x] Cumulative mass participation tracked for code compliance checking
+
+### Task 16.2: Boundary Condition Reduction for Eigenvalue Analysis
+- [x] Fixed DOFs are eliminated (not penalized)
+- [x] Reduced matrices are symmetric and sparse
+- [x] DOF mapping correctly tracks free vs fixed DOFs
+- [x] Mode shapes expand correctly with zeros at fixed DOFs
+- [x] Prescribed non-zero displacements handled (set to zero for eigenmodes)
+
+### Task 16.3: Dense Eigenvalue Solver
+- [x] Correctly solves K × φ = λ × M × φ
+- [x] Eigenvalues sorted in ascending order (lowest frequency first)
+- [x] Returns only first n_modes requested
+- [x] Handles case where n_modes > n_dofs gracefully
+- [x] Reports error for non-positive-definite M matrix
+
+### Task 16.4: Subspace Iteration Solver
+- [x] Converges to correct eigenvalues for well-conditioned problems
+- [x] Uses existing LinearSolver infrastructure where possible
+- [x] Handles shift parameter correctly (σ = 0 finds lowest modes)
+- [x] Oversample subspace (p > n_modes) for robust convergence
+- [x] Detects and reports non-convergence
+- [x] Performance acceptable for 1000+ DOF systems
+
+### Task 16.5: Mass Matrix Assembly Enhancement
+- [x] Point mass 6×6 matrices assembled at correct global DOFs
+- [x] Beam element mass matrices assembled (existing functionality preserved)
+- [ ] Plate element mass matrices assembled (if implemented)
+- [x] Mixed assembly (beams + point masses) works correctly
+- [x] Total mass equals sum of element masses (verified by trace)
+- [x] Backward compatible: existing assemble_mass(beams) still works
+
+### Task 16.6: Participation Factors and Effective Modal Mass
+- [x] Participation factors computed for X, Y, Z translations
+- [x] Effective modal mass computed correctly
+- [x] Percentages sum to ≤100% across all modes
+- [x] Cumulative mass tracked (for code compliance: need ≥90%)
+- [ ] Rotational participation factors computed (RX, RY, RZ) - optional
+- [x] Results match hand calculations for simple cases
+
+### Task 16.7: Model Integration
+- [ ] `analyze_eigenvalues()` returns true on success
+- [ ] Results accessible via `get_eigenvalue_result()`
+- [ ] Convenience methods work correctly
+- [ ] Error handling for singular/ill-conditioned systems
+- [ ] Works with warping DOFs (14-DOF elements)
+- [ ] Works with mixed element types (beams + point masses)
+
+### Task 16.8: Python Bindings
+- [ ] All C++ types exported to Python
+- [ ] EigensolverSettings can be configured from Python
+- [ ] Mode results accessible with all fields
+- [ ] Mode shapes returned as numpy arrays
+- [ ] Type hints added to `_grillex_cpp.pyi`
+
+### Task 16.9: Python API Wrapper
+- [ ] `analyze_modes()` provides clean high-level interface
+- [ ] Results accessible via multiple convenience methods
+- [ ] DataFrame output for easy visualization and export
+- [ ] Mode displacement queries work at arbitrary positions
+- [ ] Docstrings complete with units and examples
+- [ ] Type hints for all public methods
+
+### Task 16.10: Validation Tests - Analytical Benchmarks
+- [ ] Simply supported beam: frequency within 1% of analytical
+- [ ] Cantilever beam: frequency within 1% of analytical
+- [ ] SDOF system: exact match (within numerical tolerance)
+- [ ] Mode shapes match analytical forms
+- [ ] Rigid body modes detected (ω < threshold)
+- [ ] Higher modes follow correct frequency ratios
+
+### Task 16.11: Validation Tests - Participation Factors
+- [ ] Participation factors correctly identify dominant directions
+- [ ] Effective modal mass sums to ≤100%
+- [ ] Point masses properly included in calculations
+- [ ] Cumulative mass tracking works correctly
+- [ ] Participation sign convention consistent
+
+### Task 16.12: Integration Tests
+- [ ] Works with complex multi-element models
+- [ ] Mixed element types handled correctly
+- [ ] Warping DOFs included in analysis
+- [ ] Performance acceptable for large models
+- [ ] YAML workflow works end-to-end
+- [ ] Mode shapes continuous across element boundaries
+
+### Task 16.13: Documentation
+- [ ] Clear explanation of when to use eigenvalue analysis
+- [ ] Step-by-step examples with code
+- [ ] Interpretation guide for results
+- [ ] Troubleshooting section
+- [ ] All examples are doctests that pass
+
+### Task 16.14: LLM Tool Schema
+- [ ] Tool schema for analyze_modes
+- [ ] Tool schema for get_modal_summary
+- [ ] Tool schema for check_resonance
+- [ ] Handler implementations in ToolExecutor
+- [ ] Error suggestions for common eigenvalue issues
 
 ---
 

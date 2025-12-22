@@ -4,6 +4,7 @@
 #include <vector>
 #include "grillex/dof_handler.hpp"
 #include "grillex/beam_element.hpp"
+#include "grillex/point_mass.hpp"
 
 namespace grillex {
 
@@ -46,6 +47,36 @@ public:
      */
     Eigen::SparseMatrix<double> assemble_mass(
         const std::vector<BeamElement*>& elements) const;
+
+    /**
+     * @brief Assemble global mass matrix including point masses
+     * @param beam_elements Vector of beam elements
+     * @param point_masses Vector of point mass elements
+     * @return Sparse global mass matrix (total_dofs × total_dofs)
+     *
+     * Assembles mass contributions from both beam elements and point masses.
+     * Point mass matrices (6×6) are assembled at the node's global DOFs.
+     *
+     * The assembled matrix is:
+     * - Sparse (only non-zero entries stored)
+     * - Symmetric (M_ij = M_ji)
+     * - Positive semi-definite
+     */
+    Eigen::SparseMatrix<double> assemble_mass(
+        const std::vector<BeamElement*>& beam_elements,
+        const std::vector<PointMass*>& point_masses) const;
+
+    /**
+     * @brief Compute total translational mass from point masses and beam elements
+     * @param beam_elements Vector of beam elements
+     * @param point_masses Vector of point mass elements
+     * @return Total mass [mT] (sum of all translational masses)
+     *
+     * Useful for computing effective modal mass percentages.
+     */
+    double compute_total_mass(
+        const std::vector<BeamElement*>& beam_elements,
+        const std::vector<PointMass*>& point_masses) const;
 
     /**
      * @brief Get the DOF handler used by this assembler

@@ -25,6 +25,9 @@ from .data_types import (
     # Phase 11: Error Handling & Diagnostics
     ErrorCode, GrillexError, WarningCode, WarningSeverity,
     GrillexWarning, WarningList,
+    # Phase 16: Eigenvalue Analysis
+    EigensolverMethod, EigensolverSettings, ModeResult,
+    EigensolverResult, EigenvalueSolver,
 )
 
 from .model_wrapper import (
@@ -64,5 +67,8 @@ __all__ = [
     # Phase 11: Error Handling & Diagnostics
     'ErrorCode', 'GrillexError', 'WarningCode', 'WarningSeverity',
     'GrillexWarning', 'WarningList',
+    # Phase 16: Eigenvalue Analysis
+    'EigensolverMethod', 'EigensolverSettings', 'ModeResult',
+    'EigensolverResult', 'EigenvalueSolver',
     'Beam', 'StructuralModel'
 ]

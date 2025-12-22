@@ -57,6 +57,11 @@ from grillex._grillex_cpp import (
     LoadCombination,
     LoadCombinationResult,
     LoadCaseResult,
+    # Phase 16: Eigenvalue Analysis
+    EigensolverMethod,
+    EigensolverSettings,
+    EigensolverResult,
+    ModeResult,
 )
 
 from .cargo import Cargo, CargoConnection
@@ -1287,6 +1292,207 @@ class StructuralModel:
             NonlinearSolverSettings object (can be modified).
         """
         return self._cpp_model.nonlinear_settings()
+
+    # ===== Eigenvalue (Modal) Analysis =====
+
+    def analyze_modes(
+        self,
+        n_modes: int = 10,
+        method: EigensolverMethod = EigensolverMethod.Dense,
+        tolerance: float = 1e-8,
+        max_iterations: int = 100,
+        compute_participation: bool = True,
+        mass_normalize: bool = True
+    ) -> bool:
+        """Run eigenvalue analysis to compute natural frequencies and mode shapes.
+
+        Solves the generalized eigenvalue problem:
+            K × φ = ω² × M × φ
+
+        Where:
+        - K: Global stiffness matrix
+        - M: Global mass matrix (from beam elements and point masses)
+        - ω: Natural circular frequency [rad/s]
+        - φ: Mode shape (eigenvector)
+
+        Args:
+            n_modes: Number of modes to compute (default: 10)
+            method: Solver method (Dense, SubspaceIteration, ShiftInvert)
+            tolerance: Convergence tolerance for iterative solvers
+            max_iterations: Maximum iterations for iterative solvers
+            compute_participation: Whether to compute participation factors
+            mass_normalize: Whether to mass-normalize mode shapes
+
+        Returns:
+            True if analysis converged successfully
+
+        Example:
+            # Compute first 5 natural frequencies
+            if model.analyze_modes(n_modes=5):
+                frequencies = model.get_natural_frequencies()
+                print(f"First frequency: {frequencies[0]:.2f} Hz")
+
+                # Get mode shape for first mode
+                mode1 = model.get_mode_shape(1)
+        """
+        settings = EigensolverSettings()
+        settings.n_modes = n_modes
+        settings.method = method
+        settings.tolerance = tolerance
+        settings.max_iterations = max_iterations
+        settings.compute_participation = compute_participation
+        settings.mass_normalize = mass_normalize
+
+        return self._cpp_model.analyze_eigenvalues(settings)
+
+    def has_modal_results(self) -> bool:
+        """Check if eigenvalue analysis results are available.
+
+        Returns:
+            True if analyze_modes() has been called successfully
+        """
+        return self._cpp_model.has_eigenvalue_results()
+
+    def get_natural_frequencies(self) -> List[float]:
+        """Get natural frequencies from eigenvalue analysis.
+
+        Returns:
+            List of natural frequencies [Hz], sorted ascending
+
+        Raises:
+            RuntimeError: If no eigenvalue results available
+        """
+        return self._cpp_model.get_natural_frequencies()
+
+    def get_periods(self) -> List[float]:
+        """Get natural periods from eigenvalue analysis.
+
+        Returns:
+            List of natural periods [s]
+
+        Raises:
+            RuntimeError: If no eigenvalue results available
+        """
+        return self._cpp_model.get_periods()
+
+    def get_mode_shape(self, mode_number: int) -> np.ndarray:
+        """Get mode shape for a specific mode.
+
+        Args:
+            mode_number: Mode number (1-based: 1 = first mode)
+
+        Returns:
+            Mode shape as numpy array (size = total_dofs)
+            Values at constrained DOFs are zero.
+
+        Raises:
+            RuntimeError: If no eigenvalue results or mode not found
+        """
+        return np.array(self._cpp_model.get_mode_shape(mode_number))
+
+    def get_eigenvalue_result(self) -> EigensolverResult:
+        """Get full eigenvalue analysis results.
+
+        Returns:
+            EigensolverResult containing all modes, frequencies, and participation factors
+
+        Raises:
+            RuntimeError: If no eigenvalue results available
+        """
+        return self._cpp_model.get_eigenvalue_result()
+
+    def get_mode_displacement_at(
+        self,
+        mode_number: int,
+        position: List[float]
+    ) -> Dict[str, float]:
+        """Get mode shape displacement components at a specific node.
+
+        Args:
+            mode_number: Mode number (1-based)
+            position: [x, y, z] coordinates of the node
+
+        Returns:
+            Dictionary with displacement components:
+            {'UX': value, 'UY': value, 'UZ': value,
+             'RX': value, 'RY': value, 'RZ': value}
+
+        Raises:
+            ValueError: If no node found at position
+            RuntimeError: If no eigenvalue results available
+        """
+        node = self.find_node_at(position)
+        if node is None:
+            raise ValueError(f"No node found at position {position}")
+
+        mode_shape = self.get_mode_shape(mode_number)
+        dof_handler = self._cpp_model.get_dof_handler()
+
+        result = {}
+        dof_names = ['UX', 'UY', 'UZ', 'RX', 'RY', 'RZ']
+        for i, dof in enumerate([DOFIndex.UX, DOFIndex.UY, DOFIndex.UZ,
+                                  DOFIndex.RX, DOFIndex.RY, DOFIndex.RZ]):
+            global_dof = dof_handler.get_global_dof(node.id, dof)
+            if global_dof >= 0 and global_dof < len(mode_shape):
+                result[dof_names[i]] = mode_shape[global_dof]
+            else:
+                result[dof_names[i]] = 0.0
+
+        return result
+
+    def get_modal_summary(self) -> "pd.DataFrame":
+        """Get summary of all computed modes as a DataFrame.
+
+        Returns:
+            DataFrame with columns:
+            - mode: Mode number
+            - frequency_hz: Natural frequency [Hz]
+            - period_s: Natural period [s]
+            - eff_mass_x_pct: Effective modal mass X [%]
+            - eff_mass_y_pct: Effective modal mass Y [%]
+            - eff_mass_z_pct: Effective modal mass Z [%]
+            - cumulative_x_pct: Cumulative mass X [%]
+            - cumulative_y_pct: Cumulative mass Y [%]
+            - cumulative_z_pct: Cumulative mass Z [%]
+
+        Raises:
+            ImportError: If pandas is not installed
+            RuntimeError: If no eigenvalue results available
+
+        Example:
+            df = model.get_modal_summary()
+            print(df.to_string())
+        """
+        try:
+            import pandas as pd
+        except ImportError:
+            raise ImportError("pandas is required for get_modal_summary()")
+
+        result = self.get_eigenvalue_result()
+
+        rows = []
+        cumulative_x = 0.0
+        cumulative_y = 0.0
+        cumulative_z = 0.0
+
+        for mode in result.modes:
+            cumulative_x += mode.effective_mass_pct_x
+            cumulative_y += mode.effective_mass_pct_y
+            cumulative_z += mode.effective_mass_pct_z
+
+            rows.append({
+                'mode': mode.mode_number,
+                'frequency_hz': mode.frequency_hz,
+                'period_s': mode.period_s,
+                'eff_mass_x_pct': mode.effective_mass_pct_x,
+                'eff_mass_y_pct': mode.effective_mass_pct_y,
+                'eff_mass_z_pct': mode.effective_mass_pct_z,
+                'cumulative_x_pct': cumulative_x,
+                'cumulative_y_pct': cumulative_y,
+                'cumulative_z_pct': cumulative_z,
+            })
+
+        return pd.DataFrame(rows)
 
     # ===== Spring Results Access =====
 

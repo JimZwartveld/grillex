@@ -109,6 +109,12 @@ from grillex._grillex_cpp import (
     WarningSeverity,
     GrillexWarning,
     WarningList,
+    # Phase 16: Eigenvalue Analysis
+    EigensolverMethod,
+    EigensolverSettings,
+    ModeResult,
+    EigensolverResult,
+    EigenvalueSolver,
 )
 
 __all__ = [
@@ -136,4 +142,7 @@ __all__ = [
     # Phase 11: Error Handling & Diagnostics
     'ErrorCode', 'GrillexError', 'WarningCode', 'WarningSeverity',
     'GrillexWarning', 'WarningList',
+    # Phase 16: Eigenvalue Analysis
+    'EigensolverMethod', 'EigensolverSettings', 'ModeResult',
+    'EigensolverResult', 'EigenvalueSolver',
 ]
