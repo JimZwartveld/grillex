@@ -303,4 +303,71 @@ const std::vector<WarpingCoupling>& DOFHandler::get_warping_couplings() const {
     return warping_couplings_;
 }
 
+// ===== Reverse lookup methods (for singularity diagnostics) =====
+
+bool DOFHandler::is_warping_dof(int global_dof) const {
+    // Check warping_dof_map_ for this global DOF
+    for (const auto& [key, dof] : warping_dof_map_) {
+        if (dof == global_dof) {
+            return true;
+        }
+    }
+
+    // Also check nodal warping DOFs in legacy mode
+    for (const auto& [key, dof] : dof_map_) {
+        if (dof == global_dof && key.second == 6) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+int DOFHandler::get_node_from_global_dof(int global_dof) const {
+    // First check standard DOF map
+    for (const auto& [key, dof] : dof_map_) {
+        if (dof == global_dof) {
+            return key.first;  // key is (node_id, local_dof)
+        }
+    }
+
+    // Check warping DOF map
+    for (const auto& [key, dof] : warping_dof_map_) {
+        if (dof == global_dof) {
+            return key.second;  // key is (element_id, node_id)
+        }
+    }
+
+    return -1;  // Not found
+}
+
+int DOFHandler::get_local_dof_from_global_dof(int global_dof) const {
+    // First check standard DOF map
+    for (const auto& [key, dof] : dof_map_) {
+        if (dof == global_dof) {
+            return key.second;  // key is (node_id, local_dof)
+        }
+    }
+
+    // Check warping DOF map (warping is always local_dof = 6)
+    for (const auto& [key, dof] : warping_dof_map_) {
+        if (dof == global_dof) {
+            return 6;  // Warping DOF
+        }
+    }
+
+    return -1;  // Not found
+}
+
+int DOFHandler::get_element_from_warping_dof(int global_dof) const {
+    // Only check warping DOF map
+    for (const auto& [key, dof] : warping_dof_map_) {
+        if (dof == global_dof) {
+            return key.first;  // key is (element_id, node_id)
+        }
+    }
+
+    return -1;  // Not a warping DOF or not found
+}
+
 } // namespace grillex

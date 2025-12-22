@@ -188,6 +188,40 @@ public:
      */
     double get_collinearity_tolerance() const { return collinearity_tolerance_; }
 
+    // ===== Reverse lookup methods (for singularity diagnostics) =====
+
+    /**
+     * @brief Check if a global DOF is a warping DOF
+     *
+     * @param global_dof Global DOF index
+     * @return bool True if this is a warping DOF
+     */
+    bool is_warping_dof(int global_dof) const;
+
+    /**
+     * @brief Get the node ID for a given global DOF
+     *
+     * @param global_dof Global DOF index
+     * @return int Node ID, or -1 if not found
+     */
+    int get_node_from_global_dof(int global_dof) const;
+
+    /**
+     * @brief Get the local DOF index (0-6) for a given global DOF
+     *
+     * @param global_dof Global DOF index
+     * @return int Local DOF index (0-5 for standard, 6 for warping), or -1 if not found
+     */
+    int get_local_dof_from_global_dof(int global_dof) const;
+
+    /**
+     * @brief Get the element ID for a warping DOF
+     *
+     * @param global_dof Global DOF index (must be a warping DOF)
+     * @return int Element ID, or -1 if not a warping DOF or not found
+     */
+    int get_element_from_warping_dof(int global_dof) const;
+
 private:
     int total_dofs_;                                    ///< Total number of DOFs
     bool has_warping_;                                  ///< True if any warping DOFs exist

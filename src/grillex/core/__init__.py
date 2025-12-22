@@ -25,6 +25,9 @@ from .data_types import (
     # Phase 11: Error Handling & Diagnostics
     ErrorCode, GrillexError, WarningCode, WarningSeverity,
     GrillexWarning, WarningList,
+    # Phase 11 (Task 11.3): Singularity Diagnostics
+    RigidBodyModeType, RigidBodyModeInfo, DOFParticipation,
+    SingularityDiagnostics, SingularityAnalyzerSettings, SingularityAnalyzer,
     # Phase 16: Eigenvalue Analysis
     EigensolverMethod, EigensolverSettings, ModeResult,
     EigensolverResult, EigenvalueSolver,
@@ -67,6 +70,9 @@ __all__ = [
     # Phase 11: Error Handling & Diagnostics
     'ErrorCode', 'GrillexError', 'WarningCode', 'WarningSeverity',
     'GrillexWarning', 'WarningList',
+    # Phase 11 (Task 11.3): Singularity Diagnostics
+    'RigidBodyModeType', 'RigidBodyModeInfo', 'DOFParticipation',
+    'SingularityDiagnostics', 'SingularityAnalyzerSettings', 'SingularityAnalyzer',
     # Phase 16: Eigenvalue Analysis
     'EigensolverMethod', 'EigensolverSettings', 'ModeResult',
     'EigensolverResult', 'EigenvalueSolver',

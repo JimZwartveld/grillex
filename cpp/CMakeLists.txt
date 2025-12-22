@@ -34,6 +34,7 @@ pybind11_add_module(_grillex_cpp
     src/internal_actions_warping.cpp
     src/nonlinear_solver.cpp
     src/eigenvalue_solver.cpp
+    src/singularity_diagnostics.cpp
 )
 
 target_link_libraries(_grillex_cpp PRIVATE grillex_core)
