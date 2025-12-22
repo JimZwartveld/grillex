@@ -15,7 +15,7 @@ This document provides a detailed, step-by-step implementation plan for building
 
 ## Phases Overview
 
-The implementation plan is organized into 15 phases:
+The implementation plan is organized into 17 phases:
 
 ### Phase 0: Project Setup & Infrastructure
 **Requirements:** R-ARCH-001, R-DEV-001, R-DEV-003 **Dependencies:** None **Difficulty:** Low **Description:** Create the basic project directory structure.
@@ -107,7 +107,17 @@ The implementation plan is organized into 15 phases:
 → [See full Phase 13 details](implementation_plan_phase13.md)
 
 ### Phase 14: DevOps & Packaging
-
+**Requirements:** R-DEV-001, R-DEV-002 **Dependencies:** All phases **Difficulty:** Medium **Description:** CI/CD pipeline, documentation, and packaging.
 
 → [See full Phase 14 details](implementation_plan_phase14.md)
+
+### Phase 15: Nonlinear Springs
+**Requirements:** R-ELEM-007 (extended) **Dependencies:** Phase 8 **Difficulty:** High **Description:** Implement tension-only, compression-only, and gap springs with iterative nonlinear solver. Supports static→dynamic load sequencing for proper gap closure behavior.
+
+→ [See full Phase 15 details](implementation_plan_phase15.md)
+
+### Phase 16: Eigenvalue Analysis (Modal/Dynamic)
+**Requirements:** R-ASM-006 (extensibility) **Dependencies:** Phase 3, Phase 8 **Difficulty:** High **Description:** Implement eigenvalue analysis for computing natural frequencies and mode shapes. Includes subspace iteration solver, participation factors, and effective modal mass calculations.
+
+→ [See full Phase 16 details](implementation_plan_phase16_eigenvalue.md)
 
