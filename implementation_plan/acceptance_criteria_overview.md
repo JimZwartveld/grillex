@@ -23,8 +23,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 12 | LLM Tooling | 10 | 9 | 1 | 90% |
 | 13 | Validation Benchmarks | 12 | 12 | 0 | 100% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| 15 | Nonlinear Springs | 79 | 66 | 13 | 84% |
-| **Total** | | **321** | **271** | **50** | **84%** |
+| 15 | Nonlinear Springs | 79 | 77 | 2 | 97% |
+| **Total** | | **321** | **282** | **39** | **88%** |
 
 ---
 
@@ -582,20 +582,20 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] All new types have complete docstrings with units
 
 ### Task 15.5: Results Reporting for Nonlinear Springs
-- [ ] LoadCaseResult includes iterations and solver_message
-- [ ] Spring states stored in results
-- [ ] Spring forces computed and stored
-- [ ] Python API can query individual spring states
-- [ ] Summary DataFrame shows all springs with states and forces
-- [ ] Units documented (kN for force, kN·m for moment)
+- [x] LoadCaseResult includes iterations and solver_message
+- [x] Spring states stored in results
+- [x] Spring forces computed and stored
+- [x] Python API can query individual spring states
+- [x] Summary DataFrame shows all springs with states and forces
+- [x] Units documented (kN for force, kN·m for moment)
 
 ### Task 15.6: Convergence Enhancements
-- [ ] Oscillation detection implemented
-- [ ] Partial stiffness option for oscillating springs
-- [ ] Hysteresis band prevents rapid state changes
+- [x] Oscillation detection implemented
+- [x] Partial stiffness option for oscillating springs
+- [x] Hysteresis band prevents rapid state changes
 - [ ] Line search damping available as option
-- [ ] Clear warning messages for convergence issues
-- [ ] Settings expose all convergence parameters
+- [x] Clear warning messages for convergence issues
+- [x] Settings expose all convergence parameters
 
 ### Task 15.7: Validation Tests
 - [x] Tension-only spring tests pass
