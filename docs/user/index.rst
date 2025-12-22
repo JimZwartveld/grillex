@@ -14,5 +14,6 @@ a structural analysis platform for offshore and heavy-lift structures.
    coordinate_systems
    loads_and_boundary_conditions
    analysis_workflow
+   eigenvalue_analysis
    nonlinear_springs
    results_and_postprocessing
