@@ -411,6 +411,288 @@ Analysis attempted with no elements:
     model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
 
 
+Advanced Singularity Diagnostics
+================================
+
+When a linear solver fails due to a singular stiffness matrix, Grillex provides
+advanced diagnostics using eigenvalue analysis to identify the exact cause and
+suggest fixes. This is implemented in the ``SingularityAnalyzer`` class.
+
+Overview
+--------
+
+A **singular stiffness matrix** means the structure has **rigid body modes** —
+unconstrained degrees of freedom that allow free motion without resistance.
+The ``SingularityAnalyzer`` uses eigenvalue decomposition to:
+
+1. Detect near-zero eigenvalues (rigid body modes)
+2. Identify which specific DOFs are unconstrained
+3. Classify the mode type (translation, rotation, warping)
+4. Generate actionable fix suggestions
+
+Basic Usage
+-----------
+
+.. code-block:: python
+
+    from grillex.core import (
+        SingularityAnalyzer,
+        SingularityAnalyzerSettings,
+        DOFHandler,
+        Assembler,
+    )
+
+    # After assembling stiffness matrix (before applying BCs)
+    analyzer = SingularityAnalyzer()
+    result = analyzer.analyze(K, dof_handler)
+
+    if result.is_singular:
+        print(f"Found {result.n_rigid_body_modes} rigid body modes")
+        print(result.detailed_message)
+
+        for fix in result.suggested_fixes:
+            print(f"Suggestion: {fix}")
+
+Quick Check Methods
+-------------------
+
+For fast singularity detection without full diagnostics:
+
+.. code-block:: python
+
+    analyzer = SingularityAnalyzer()
+
+    # Quick boolean check
+    if analyzer.is_singular(K):
+        print("Matrix is singular!")
+
+    # Count rigid body modes
+    n_modes = analyzer.count_rigid_body_modes(K)
+    print(f"Found {n_modes} rigid body modes")
+
+Rigid Body Mode Types
+---------------------
+
+The analyzer classifies each detected mode into one of these types:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Mode Type
+     - Description
+   * - ``TranslationX``
+     - Structure can translate freely in the X direction
+   * - ``TranslationY``
+     - Structure can translate freely in the Y direction
+   * - ``TranslationZ``
+     - Structure can translate freely in the Z direction
+   * - ``RotationX``
+     - Structure can rotate freely about the X axis
+   * - ``RotationY``
+     - Structure can rotate freely about the Y axis
+   * - ``RotationZ``
+     - Structure can rotate freely about the Z axis
+   * - ``Warping``
+     - Unconstrained warping degree of freedom
+   * - ``Mixed``
+     - Combined mode involving multiple DOF types
+
+Analyzing Results
+-----------------
+
+The ``SingularityDiagnostics`` result contains detailed information:
+
+.. code-block:: python
+
+    result = analyzer.analyze(K, dof_handler)
+
+    # Basic status
+    result.is_singular          # True if system has rigid body modes
+    result.n_rigid_body_modes   # Number of modes detected
+
+    # Detailed mode information
+    for mode in result.rigid_body_modes:
+        print(f"Mode {mode.mode_number}: {mode.description}")
+        print(f"  Eigenvalue: {mode.eigenvalue}")
+        print(f"  Type: {mode.mode_type}")
+        print(f"  Involved nodes: {mode.involved_nodes}")
+        print(f"  Suggested fix: {mode.suggested_fix}")
+
+    # Unconstrained DOFs with participation levels
+    for dof in result.unconstrained_dofs:
+        print(f"DOF {dof.global_dof} (Node {dof.node_id}): "
+              f"{dof.participation*100:.1f}% participation")
+
+    # Nodes that need additional constraints
+    print(f"Nodes needing constraints: {result.nodes_needing_constraints}")
+
+    # Specific DOFs to constrain (node_id, local_dof pairs)
+    for node_id, local_dof in result.dofs_to_constrain:
+        print(f"Constrain DOF {local_dof} at node {node_id}")
+
+Output Formats
+--------------
+
+Human-readable output:
+
+.. code-block:: python
+
+    # Formatted string with all details
+    print(result.to_string())
+
+    # Example output:
+    # SINGULAR SYSTEM: 6 rigid body mode(s) detected. Nodes needing constraints: 1, 2
+    #
+    # The stiffness matrix is singular, meaning the structure has unconstrained
+    # degrees of freedom that allow rigid body motion.
+    #
+    # Detected rigid body modes:
+    #   Mode 1: Unconstrained X translation (eigenvalue = 2.31e-17)
+    #     Involved nodes: 1, 2
+    #   Mode 2: Unconstrained Y translation (eigenvalue = 1.45e-16)
+    #     ...
+    #
+    # Suggested fixes:
+    #   1. Add X-direction support (fix UX) at node 1
+    #   2. Add Y-direction support (fix UY) at node 1
+    #   ...
+
+Machine-readable JSON output (for LLM agents):
+
+.. code-block:: python
+
+    json_output = result.to_json()
+    print(json_output)
+
+    # Example output:
+    # {
+    #   "is_singular": true,
+    #   "n_rigid_body_modes": 6,
+    #   "nodes_needing_constraints": [1, 2],
+    #   "dofs_to_constrain": [
+    #     {"node_id": 1, "local_dof": 0},
+    #     {"node_id": 1, "local_dof": 1},
+    #     ...
+    #   ],
+    #   "rigid_body_modes": [
+    #     {
+    #       "mode_number": 0,
+    #       "eigenvalue": 2.31e-17,
+    #       "mode_type": "X translation",
+    #       "description": "Unconstrained X translation",
+    #       "involved_nodes": [1, 2]
+    #     },
+    #     ...
+    #   ]
+    # }
+
+Customizing Analysis Settings
+-----------------------------
+
+Fine-tune the analysis with ``SingularityAnalyzerSettings``:
+
+.. code-block:: python
+
+    from grillex.core import SingularityAnalyzerSettings
+
+    settings = SingularityAnalyzerSettings()
+
+    # Eigenvalue threshold for rigid body mode detection
+    # Eigenvalues with |λ| < threshold are considered rigid body modes
+    settings.eigenvalue_threshold = 1e-8  # default
+
+    # Number of lowest eigenvalues to check
+    settings.n_modes_to_check = 10  # default
+
+    # Minimum participation to include a DOF in the report
+    settings.participation_threshold = 0.01  # default (1%)
+
+    # Maximum unconstrained DOFs to report
+    settings.max_dofs_to_report = 20  # default
+
+    # Use mass matrix for better mode identification
+    settings.use_mass_matrix = True  # default
+
+    # Run analysis with custom settings
+    result = analyzer.analyze(K, dof_handler, settings)
+
+Using Mass Matrix for Better Mode Identification
+------------------------------------------------
+
+For more accurate mode classification, provide the mass matrix:
+
+.. code-block:: python
+
+    # Assemble both stiffness and mass matrices
+    K = assembler.assemble_stiffness(elements)
+    M = assembler.assemble_mass(elements)
+
+    # Analyze with mass matrix (preferred method)
+    result = analyzer.analyze_with_mass(K, M, dof_handler)
+
+The generalized eigenvalue problem ``K*φ = λ*M*φ`` provides physically
+meaningful mode shapes, improving the accuracy of mode type identification.
+
+Example: Diagnosing a Free-Floating Beam
+----------------------------------------
+
+.. code-block:: python
+
+    from grillex.core import (
+        NodeRegistry, Material, Section, BeamConfig, BeamFormulation,
+        create_beam_element, DOFHandler, Assembler, SingularityAnalyzer
+    )
+
+    # Create a beam with no boundary conditions
+    registry = NodeRegistry(1e-6)
+    node_i = registry.get_or_create_node(0.0, 0.0, 0.0)
+    node_j = registry.get_or_create_node(5.0, 0.0, 0.0)
+
+    material = Material(1, "Steel", 210e6, 0.3, 7.85e-3)
+    section = Section(1, "IPE300", 0.00538, 8.36e-5, 6.04e-6, 2.01e-7)
+
+    config = BeamConfig()
+    config.formulation = BeamFormulation.EulerBernoulli
+    beam = create_beam_element(1, node_i, node_j, material, section, config)
+
+    # Number DOFs and assemble
+    dof_handler = DOFHandler()
+    dof_handler.number_dofs(registry)
+    assembler = Assembler(dof_handler)
+    K = assembler.assemble_stiffness([beam])
+
+    # Analyze for singularity
+    analyzer = SingularityAnalyzer()
+    result = analyzer.analyze(K, dof_handler)
+
+    # A free-floating 3D beam has 6 rigid body modes
+    assert result.is_singular
+    assert result.n_rigid_body_modes >= 6
+
+    # Print diagnostics
+    print(result.to_string())
+
+    # Apply suggested fixes by adding boundary conditions...
+
+Important Notes
+---------------
+
+1. **Run diagnostics on raw matrices**: The penalty boundary condition method
+   makes matrices artificially non-singular. Run singularity diagnostics
+   *before* applying boundary conditions for accurate results.
+
+2. **Six rigid body modes for 3D structures**: An unconstrained 3D structure
+   has exactly 6 rigid body modes (3 translations + 3 rotations). Detection
+   of fewer modes indicates partial constraints.
+
+3. **Warping DOFs**: Beams with warping enabled (14-DOF elements) may have
+   additional warping rigid body modes if warping is not restrained.
+
+4. **Participation threshold**: DOFs with low participation (<1% by default)
+   are filtered from reports to focus on the primary contributors.
+
+
 LLM Agent Integration
 =====================
 
