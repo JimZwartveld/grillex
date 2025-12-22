@@ -178,12 +178,30 @@ struct EigensolverResult {
 ```
 
 **Acceptance Criteria:**
-- [ ] EigensolverSettings struct with all configuration options
-- [ ] ModeResult struct with eigenvalue, frequency, period, mode shape
-- [ ] ModeResult includes participation factors for X, Y, Z
-- [ ] ModeResult includes effective modal mass (absolute and percentage)
-- [ ] EigensolverResult contains vector of ModeResult plus summary data
-- [ ] Cumulative mass participation tracked for code compliance checking
+- [x] EigensolverSettings struct with all configuration options
+- [x] ModeResult struct with eigenvalue, frequency, period, mode shape
+- [x] ModeResult includes participation factors for X, Y, Z
+- [x] ModeResult includes effective modal mass (absolute and percentage)
+- [x] EigensolverResult contains vector of ModeResult plus summary data
+- [x] Cumulative mass participation tracked for code compliance checking
+
+### Execution Notes (Completed 2025-12-22)
+
+**Steps Taken:**
+1. Created `cpp/include/grillex/eigenvalue_solver.hpp` with all data structures
+2. Implemented `EigensolverMethod` enum with Dense, SubspaceIteration, ShiftInvert options
+3. Created `EigensolverSettings` struct with all configuration options (n_modes, shift, tolerance, max_iterations, method, compute_participation, mass_normalize, rigid_body_threshold)
+4. Created `ModeResult` struct with eigenvalue, omega, frequency_hz, period_s, mode_shape, and all participation/effective mass fields
+5. Created `EigensolverResult` struct with convergence info, modes vector, DOF mapping, and helper methods
+
+**Key Implementation Details:**
+- Added `is_rigid_body_mode` flag to ModeResult for detecting zero-frequency modes
+- Included `reduced_to_full` DOF mapping in EigensolverResult for mode shape expansion
+- Added helper methods: `get_mode()`, `get_frequencies()`, `get_periods()`, `expand_mode_shape()`
+
+**Verification:**
+- 22 Python tests passing ✓
+- All struct fields accessible from Python via pybind11 bindings ✓
 
 ---
 
@@ -223,11 +241,35 @@ public:
 4. After solving, expand mode shapes: insert zeros at fixed DOFs
 
 **Acceptance Criteria:**
-- [ ] Fixed DOFs are eliminated (not penalized)
-- [ ] Reduced matrices are symmetric and sparse
-- [ ] DOF mapping correctly tracks free vs fixed DOFs
-- [ ] Mode shapes expand correctly with zeros at fixed DOFs
-- [ ] Prescribed non-zero displacements handled (set to zero for eigenmodes)
+- [x] Fixed DOFs are eliminated (not penalized)
+- [x] Reduced matrices are symmetric and sparse
+- [x] DOF mapping correctly tracks free vs fixed DOFs
+- [x] Mode shapes expand correctly with zeros at fixed DOFs
+- [x] Prescribed non-zero displacements handled (set to zero for eigenmodes)
+
+### Execution Notes (Completed 2025-12-22)
+
+**Steps Taken:**
+1. Implemented `reduce_system()` method in `EigenvalueSolver` class
+2. Created mapping from reduced DOF indices to full DOF indices
+3. Used sparse matrix slicing to extract free DOF submatrices
+4. Implemented static `expand_mode_shape()` for restoring full DOF vectors
+
+**Algorithm Details:**
+- Iterates through BCHandler's fixed DOFs to build set of constrained DOFs
+- Creates `reduced_to_full` mapping vector for free DOFs only
+- Uses Eigen sparse matrix indexing for efficient submatrix extraction
+- Expansion inserts zeros at fixed DOF positions
+
+**Problems Encountered:**
+- **Issue**: Initially used wrong iteration pattern for `BCHandler::get_fixed_dofs()`
+  - **Error**: Tried to use map-style structured binding when it returns `std::vector<FixedDOF>`
+  - **Solution**: Iterate over vector directly, accessing `fixed_dof.node_id`, `fixed_dof.local_dof`
+
+**Verification:**
+- Test `test_reduce_system_fixed_node` passes ✓
+- Reduced matrices maintain correct dimensions ✓
+- Mode shapes expand with zeros at fixed DOFs ✓
 
 ---
 
@@ -259,11 +301,41 @@ EigensolverResult EigenvalueSolver::solve_dense(
 ```
 
 **Acceptance Criteria:**
-- [ ] Correctly solves K × φ = λ × M × φ
-- [ ] Eigenvalues sorted in ascending order (lowest frequency first)
-- [ ] Returns only first n_modes requested
-- [ ] Handles case where n_modes > n_dofs gracefully
-- [ ] Reports error for non-positive-definite M matrix
+- [x] Correctly solves K × φ = λ × M × φ
+- [x] Eigenvalues sorted in ascending order (lowest frequency first)
+- [x] Returns only first n_modes requested
+- [x] Handles case where n_modes > n_dofs gracefully
+- [x] Reports error for non-positive-definite M matrix
+
+### Execution Notes (Completed 2025-12-22)
+
+**Steps Taken:**
+1. Implemented `solve_dense()` method using `Eigen::GeneralizedSelfAdjointEigenSolver`
+2. Added `solve()` dispatcher that routes to appropriate solver method
+3. Implemented `mass_normalize()` for eigenvector normalization
+4. Implemented `compute_frequencies()` for eigenvalue → frequency/period conversion
+5. Added rigid body mode detection (eigenvalue < threshold)
+6. Created Python bindings for all eigenvalue types
+
+**Algorithm Details:**
+- Converts sparse matrices to dense for Eigen's GSAE solver
+- Eigenvalues naturally sorted ascending by Eigen
+- Mass normalization: φ = φ / sqrt(φᵀMφ)
+- Frequency: ω = sqrt(λ), f = ω/(2π), T = 1/f
+- Handles negative eigenvalues (sets frequency/period to 0)
+
+**Key Implementation Details:**
+- `solve()` dispatches based on `settings.method`:
+  - Dense: Uses `solve_dense()`
+  - SubspaceIteration/ShiftInvert: Falls back to Dense (not yet implemented)
+- Automatic clipping of n_modes to n_dofs when needed
+- Returns `converged=false` with error message for non-positive-definite M
+
+**Verification:**
+- Tests for cantilever beam eigenvalues pass ✓
+- Mass normalization verified: φᵀMφ ≈ 1.0 ✓
+- Frequencies correctly computed from eigenvalues ✓
+- 22 tests total passing ✓
 
 ---
 

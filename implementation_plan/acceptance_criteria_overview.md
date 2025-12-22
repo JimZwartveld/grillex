@@ -2,7 +2,7 @@
 
 This document provides a comprehensive overview of all acceptance criteria across implementation phases. It is automatically updated when tasks are completed.
 
-**Last Updated:** 2025-12-22 (Phase 16 added)
+**Last Updated:** 2025-12-22 (Tasks 16.1-16.3 completed)
 
 ## Summary Statistics
 
@@ -24,8 +24,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 13 | Validation Benchmarks | 12 | 12 | 0 | 100% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
 | 15 | Nonlinear Springs | 79 | 79 | 0 | 100% |
-| 16 | Eigenvalue Analysis | 78 | 0 | 78 | 0% |
-| **Total** | | **399** | **284** | **115** | **71%** |
+| 16 | Eigenvalue Analysis | 78 | 16 | 62 | 21% |
+| **Total** | | **399** | **300** | **99** | **75%** |
 
 ---
 
@@ -634,26 +634,26 @@ This document provides a comprehensive overview of all acceptance criteria acros
 ## Phase 16: Eigenvalue Analysis (Modal/Dynamic)
 
 ### Task 16.1: Eigenvalue Solver Settings and Results (C++)
-- [ ] EigensolverSettings struct with all configuration options
-- [ ] ModeResult struct with eigenvalue, frequency, period, mode shape
-- [ ] ModeResult includes participation factors for X, Y, Z
-- [ ] ModeResult includes effective modal mass (absolute and percentage)
-- [ ] EigensolverResult contains vector of ModeResult plus summary data
-- [ ] Cumulative mass participation tracked for code compliance checking
+- [x] EigensolverSettings struct with all configuration options
+- [x] ModeResult struct with eigenvalue, frequency, period, mode shape
+- [x] ModeResult includes participation factors for X, Y, Z
+- [x] ModeResult includes effective modal mass (absolute and percentage)
+- [x] EigensolverResult contains vector of ModeResult plus summary data
+- [x] Cumulative mass participation tracked for code compliance checking
 
 ### Task 16.2: Boundary Condition Reduction for Eigenvalue Analysis
-- [ ] Fixed DOFs are eliminated (not penalized)
-- [ ] Reduced matrices are symmetric and sparse
-- [ ] DOF mapping correctly tracks free vs fixed DOFs
-- [ ] Mode shapes expand correctly with zeros at fixed DOFs
-- [ ] Prescribed non-zero displacements handled (set to zero for eigenmodes)
+- [x] Fixed DOFs are eliminated (not penalized)
+- [x] Reduced matrices are symmetric and sparse
+- [x] DOF mapping correctly tracks free vs fixed DOFs
+- [x] Mode shapes expand correctly with zeros at fixed DOFs
+- [x] Prescribed non-zero displacements handled (set to zero for eigenmodes)
 
 ### Task 16.3: Dense Eigenvalue Solver
-- [ ] Correctly solves K × φ = λ × M × φ
-- [ ] Eigenvalues sorted in ascending order (lowest frequency first)
-- [ ] Returns only first n_modes requested
-- [ ] Handles case where n_modes > n_dofs gracefully
-- [ ] Reports error for non-positive-definite M matrix
+- [x] Correctly solves K × φ = λ × M × φ
+- [x] Eigenvalues sorted in ascending order (lowest frequency first)
+- [x] Returns only first n_modes requested
+- [x] Handles case where n_modes > n_dofs gracefully
+- [x] Reports error for non-positive-definite M matrix
 
 ### Task 16.4: Subspace Iteration Solver
 - [ ] Converges to correct eigenvalues for well-conditioned problems
