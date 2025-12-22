@@ -121,3 +121,8 @@ The implementation plan is organized into 17 phases:
 
 → [See full Phase 16 details](implementation_plan_phase16_eigenvalue.md)
 
+### Phase 17: Web Application Interface
+**Requirements:** R-ARCH-003, R-LLM-001, R-LLM-002 **Dependencies:** Phase 12 **Difficulty:** High **Description:** Web-based dashboard with React frontend, Three.js 3D viewer, FastAPI backend, and Claude API integration. Features include collapsible panel layout, realistic beam section rendering, FEM/Results views, natural language commands via chat, and Docker deployment. Both UI and LLM use the same ToolExecutor API.
+
+→ [See full Phase 17 details](implementation_plan_phase17.md)
+
