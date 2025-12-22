@@ -167,7 +167,12 @@ NonlinearSolverResult NonlinearSolver::solve(
         // ---------------------------------------------------------------------
         int num_state_changes = 0;
         for (auto* spring : springs) {
-            spring->update_state(u_new, dof_handler);
+            // Use hysteresis band if configured
+            if (settings_.hysteresis_band > 0.0) {
+                spring->update_state_with_hysteresis(u_new, dof_handler, settings_.hysteresis_band);
+            } else {
+                spring->update_state(u_new, dof_handler);
+            }
             if (spring->state_changed()) {
                 num_state_changes++;
             }
@@ -241,13 +246,43 @@ NonlinearSolverResult NonlinearSolver::solve(
             }
 
             if (detect_oscillation(state_history)) {
+                // Mark oscillating springs (those whose state changed in recent iterations)
+                if (settings_.use_partial_stiffness && state_history.size() >= 2) {
+                    const auto& prev_state = state_history[state_history.size() - 2];
+                    const auto& curr_state = state_history.back();
+
+                    size_t idx = 0;
+                    for (auto* spring : springs) {
+                        bool spring_oscillating = false;
+                        for (int d = 0; d < 6; ++d) {
+                            if (idx + d < prev_state.size() && idx + d < curr_state.size()) {
+                                if (prev_state[idx + d] != curr_state[idx + d]) {
+                                    spring_oscillating = true;
+                                    break;
+                                }
+                            }
+                        }
+                        spring->set_oscillating(spring_oscillating);
+                        idx += 6;
+                    }
+                }
+
                 // Apply damping: blend with previous solution
                 double alpha = settings_.oscillation_damping_factor;
                 u_new = alpha * u_new + (1.0 - alpha) * u_prev;
 
                 // Re-update spring states with damped displacement
                 for (auto* spring : springs) {
-                    spring->update_state(u_new, dof_handler);
+                    if (settings_.hysteresis_band > 0.0) {
+                        spring->update_state_with_hysteresis(u_new, dof_handler, settings_.hysteresis_band);
+                    } else {
+                        spring->update_state(u_new, dof_handler);
+                    }
+                }
+            } else {
+                // Clear oscillating flag when not oscillating
+                for (auto* spring : springs) {
+                    spring->set_oscillating(false);
                 }
             }
         }
@@ -296,6 +331,13 @@ Eigen::SparseMatrix<double> NonlinearSolver::assemble_spring_stiffness(
         // Get element stiffness (respects is_active flags)
         Eigen::Matrix<double, 12, 12> K_elem = spring->current_stiffness_matrix();
 
+        // Apply partial stiffness factor for oscillating springs
+        // This helps stabilize convergence for marginally-active springs
+        double stiffness_factor = 1.0;
+        if (settings_.use_partial_stiffness && spring->is_oscillating()) {
+            stiffness_factor = 0.5;  // Use half stiffness for oscillating springs
+        }
+
         // Build location array
         std::array<int, 12> loc;
         for (int d = 0; d < 6; ++d) {
@@ -308,7 +350,7 @@ Eigen::SparseMatrix<double> NonlinearSolver::assemble_spring_stiffness(
             if (loc[i] < 0) continue;
             for (int j = 0; j < 12; ++j) {
                 if (loc[j] < 0) continue;
-                double val = K_elem(i, j);
+                double val = K_elem(i, j) * stiffness_factor;
                 if (std::abs(val) > 1e-20) {
                     triplets.emplace_back(loc[i], loc[j], val);
                 }

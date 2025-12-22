@@ -95,6 +95,18 @@ struct NonlinearSolverSettings {
     /// u_damped = alpha * u_new + (1 - alpha) * u_old
     double oscillation_damping_factor = 0.5;
 
+    /// Use partial stiffness (0.5*k) for oscillating springs?
+    /// When true, springs that oscillate use half stiffness instead of 0 or k
+    /// This can help convergence for marginally-active springs
+    bool use_partial_stiffness = false;
+
+    /// Hysteresis band width [m for translation, rad for rotation]
+    /// Different thresholds for activation vs deactivation:
+    /// - Activate when deformation > gap + hysteresis_band
+    /// - Deactivate when deformation < gap - hysteresis_band
+    /// Set to 0 for no hysteresis (default)
+    double hysteresis_band = 0.0;
+
     /// Linear solver method to use
     LinearSolver::Method linear_method = LinearSolver::Method::SimplicialLDLT;
 

@@ -1288,6 +1288,143 @@ class StructuralModel:
         """
         return self._cpp_model.nonlinear_settings()
 
+    # ===== Spring Results Access =====
+
+    def get_spring_state(
+        self,
+        spring_id: int,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> Dict[str, bool]:
+        """Get active/inactive state for each DOF of a spring.
+
+        Args:
+            spring_id: ID of the spring element.
+            load_case: LoadCase to query (uses active if None).
+
+        Returns:
+            Dictionary mapping DOF names to active state.
+            Keys: 'UX', 'UY', 'UZ', 'RX', 'RY', 'RZ'
+            Values: True if spring DOF is active, False if inactive.
+
+        Example:
+            state = model.get_spring_state(1)
+            if state['UZ']:
+                print("Spring is in compression (active)")
+            else:
+                print("Spring has lifted off (inactive)")
+        """
+        if load_case is not None:
+            self._cpp_model.set_active_load_case(load_case)
+
+        results = self._cpp_model.get_all_results()
+        active_lc = self._cpp_model.get_active_load_case()
+
+        if active_lc is None or active_lc.id not in results:
+            raise RuntimeError("No results available. Run analyze first.")
+
+        result = results[active_lc.id]
+
+        # Find the spring in the results
+        dof_names = ['UX', 'UY', 'UZ', 'RX', 'RY', 'RZ']
+        for sid, states in result.spring_states:
+            if sid == spring_id:
+                return {dof_names[i]: states[i] for i in range(6)}
+
+        raise ValueError(f"Spring {spring_id} not found in results")
+
+    def get_spring_force(
+        self,
+        spring_id: int,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> Dict[str, float]:
+        """Get spring forces for each DOF.
+
+        Args:
+            spring_id: ID of the spring element.
+            load_case: LoadCase to query (uses active if None).
+
+        Returns:
+            Dictionary mapping DOF names to forces.
+            Keys: 'UX', 'UY', 'UZ' [kN], 'RX', 'RY', 'RZ' [kN·m]
+            Values: Force/moment in spring (0 if inactive).
+
+        Example:
+            forces = model.get_spring_force(1)
+            print(f"Vertical force: {forces['UZ']:.2f} kN")
+        """
+        if load_case is not None:
+            self._cpp_model.set_active_load_case(load_case)
+
+        results = self._cpp_model.get_all_results()
+        active_lc = self._cpp_model.get_active_load_case()
+
+        if active_lc is None or active_lc.id not in results:
+            raise RuntimeError("No results available. Run analyze first.")
+
+        result = results[active_lc.id]
+
+        # Find the spring in the results
+        dof_names = ['UX', 'UY', 'UZ', 'RX', 'RY', 'RZ']
+        for sid, forces in result.spring_forces:
+            if sid == spring_id:
+                return {dof_names[i]: forces[i] for i in range(6)}
+
+        raise ValueError(f"Spring {spring_id} not found in results")
+
+    def get_spring_summary(
+        self,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> "pd.DataFrame":
+        """Get summary of all spring states and forces.
+
+        Args:
+            load_case: LoadCase to query (uses active if None).
+
+        Returns:
+            DataFrame with columns:
+            - spring_id: Spring element ID
+            - UX_active, UY_active, ...: Active state per DOF
+            - UX_force, UY_force, ...: Force per DOF [kN or kN·m]
+
+        Example:
+            df = model.get_spring_summary()
+            print(df[['spring_id', 'UZ_active', 'UZ_force']])
+        """
+        try:
+            import pandas as pd
+        except ImportError:
+            raise ImportError("pandas is required for get_spring_summary()")
+
+        if load_case is not None:
+            self._cpp_model.set_active_load_case(load_case)
+
+        results = self._cpp_model.get_all_results()
+        active_lc = self._cpp_model.get_active_load_case()
+
+        if active_lc is None or active_lc.id not in results:
+            raise RuntimeError("No results available. Run analyze first.")
+
+        result = results[active_lc.id]
+        dof_names = ['UX', 'UY', 'UZ', 'RX', 'RY', 'RZ']
+
+        # Build state dict
+        states_by_id = {sid: states for sid, states in result.spring_states}
+        forces_by_id = {sid: forces for sid, forces in result.spring_forces}
+
+        rows = []
+        for spring_id in states_by_id:
+            row = {'spring_id': spring_id}
+            states = states_by_id[spring_id]
+            forces = forces_by_id.get(spring_id, [0.0] * 6)
+
+            for i, name in enumerate(dof_names):
+                row[f'{name}_active'] = states[i]
+                row[f'{name}_force'] = forces[i]
+
+            rows.append(row)
+
+        return pd.DataFrame(rows)
+
     # ===== Results Access =====
 
     def get_displacement_at(

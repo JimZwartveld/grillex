@@ -119,6 +119,74 @@ void SpringElement::update_state(const Eigen::VectorXd& u,
     state_changed_ = (previous_state != is_active);
 }
 
+void SpringElement::update_state_with_hysteresis(const Eigen::VectorXd& u,
+                                                   const DOFHandler& dof_handler,
+                                                   double hysteresis_band) {
+    // Store previous state to detect changes
+    std::array<bool, 6> previous_state = is_active;
+
+    // Get DOF indices for both nodes
+    for (int i = 0; i < 6; ++i) {
+        int dof_i = dof_handler.get_global_dof(node_i->id, i);
+        int dof_j = dof_handler.get_global_dof(node_j->id, i);
+
+        // Compute deformation: δ = u_j - u_i
+        double u_i_val = (dof_i >= 0 && dof_i < u.size()) ? u(dof_i) : 0.0;
+        double u_j_val = (dof_j >= 0 && dof_j < u.size()) ? u(dof_j) : 0.0;
+        deformation[i] = u_j_val - u_i_val;
+
+        double g = gap[i];
+        double delta = deformation[i];
+        double hyst = hysteresis_band;
+
+        // Update active state with hysteresis:
+        // - Different thresholds for activation (gap + hyst) vs deactivation (gap - hyst)
+        // - This prevents chattering when deformation oscillates around threshold
+        switch (behavior[i]) {
+            case SpringBehavior::Linear:
+                // Linear spring: always active (gap handling for linear is rare but supported)
+                if (g <= gap_tolerance_) {
+                    is_active[i] = true;
+                } else {
+                    // Linear with gap: use hysteresis for bidirectional gap
+                    if (is_active[i]) {
+                        // Currently active: deactivate when within gap - hysteresis
+                        is_active[i] = (std::abs(delta) > g - hyst - gap_tolerance_);
+                    } else {
+                        // Currently inactive: activate when outside gap + hysteresis
+                        is_active[i] = (std::abs(delta) > g + hyst - gap_tolerance_);
+                    }
+                }
+                break;
+
+            case SpringBehavior::TensionOnly:
+                // Active when elongation exceeds gap
+                if (is_active[i]) {
+                    // Currently active: deactivate when δ < gap - hysteresis
+                    is_active[i] = (delta > g - hyst - gap_tolerance_);
+                } else {
+                    // Currently inactive: activate when δ > gap + hysteresis
+                    is_active[i] = (delta > g + hyst - gap_tolerance_);
+                }
+                break;
+
+            case SpringBehavior::CompressionOnly:
+                // Active when compression exceeds gap: δ < -gap
+                if (is_active[i]) {
+                    // Currently active: deactivate when δ > -gap + hysteresis
+                    is_active[i] = (delta < -g + hyst + gap_tolerance_);
+                } else {
+                    // Currently inactive: activate when δ < -gap - hysteresis
+                    is_active[i] = (delta < -g - hyst + gap_tolerance_);
+                }
+                break;
+        }
+    }
+
+    // Check if any state changed
+    state_changed_ = (previous_state != is_active);
+}
+
 bool SpringElement::has_gap() const {
     for (int i = 0; i < 6; ++i) {
         if (std::abs(gap[i]) > gap_tolerance_) {

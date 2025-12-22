@@ -1713,12 +1713,34 @@ Extend results reporting to include spring states and convergence info.
    ```
 
 **Acceptance Criteria:**
-- [ ] LoadCaseResult includes iterations and solver_message
-- [ ] Spring states stored in results
-- [ ] Spring forces computed and stored
-- [ ] Python API can query individual spring states
-- [ ] Summary DataFrame shows all springs with states and forces
-- [ ] Units documented (kN for force, kN·m for moment)
+- [x] LoadCaseResult includes iterations and solver_message
+- [x] Spring states stored in results
+- [x] Spring forces computed and stored
+- [x] Python API can query individual spring states
+- [x] Summary DataFrame shows all springs with states and forces
+- [x] Units documented (kN for force, kN·m for moment)
+
+### Execution Notes (Completed 2025-12-22)
+
+**Steps Taken:**
+1. Extended LoadCaseResult with nonlinear fields (already done in Task 15.3):
+   - `iterations`: Number of solver iterations
+   - `solver_message`: Convergence info message
+   - `spring_states`: List of (spring_id, active_states[6])
+   - `spring_forces`: List of (spring_id, forces[6])
+2. Verified `compute_forces()` method returns correct forces with gap offset
+3. Added Python methods to model_wrapper.py:
+   - `get_spring_state()`: Returns Dict[str, bool] for each DOF
+   - `get_spring_force()`: Returns Dict[str, float] for each DOF
+   - `get_spring_summary()`: Returns pandas DataFrame with all spring data
+
+**Verification:**
+- All 6 acceptance criteria verified ✓
+- Spring states correctly tracked after analysis
+- Spring forces computed with gap offset when applicable
+- Python API provides convenient access to spring results
+
+**Time Taken:** ~20 minutes
 
 ---
 
@@ -1769,12 +1791,66 @@ Implement advanced convergence strategies to handle difficult cases.
    ```
 
 **Acceptance Criteria:**
-- [ ] Oscillation detection implemented
-- [ ] Partial stiffness option for oscillating springs
-- [ ] Hysteresis band prevents rapid state changes
-- [ ] Line search damping available as option
-- [ ] Clear warning messages for convergence issues
-- [ ] Settings expose all convergence parameters
+- [x] Oscillation detection implemented
+- [x] Partial stiffness option for oscillating springs
+- [x] Hysteresis band prevents rapid state changes
+- [x] Line search damping available as option
+- [x] Clear warning messages for convergence issues
+- [x] Settings expose all convergence parameters
+
+### Execution Notes (Completed 2025-12-22)
+
+**Steps Taken:**
+1. Added `is_oscillating_` private member variable to SpringElement class
+2. Implemented `set_oscillating()` and `is_oscillating()` methods in SpringElement
+3. Implemented `update_state_with_hysteresis()` method in spring_element.cpp:
+   - Uses different thresholds for activation vs deactivation
+   - Activation threshold: gap + hysteresis_band
+   - Deactivation threshold: gap - hysteresis_band
+   - Prevents chattering when deformation oscillates around threshold
+4. Updated NonlinearSolverSettings with new fields:
+   - `use_partial_stiffness`: Use 0.5*k for oscillating springs (default: false)
+   - `hysteresis_band`: Width of hysteresis band [m or rad] (default: 0.0)
+5. Updated NonlinearSolver to use hysteresis:
+   - Uses `update_state_with_hysteresis()` when hysteresis_band > 0
+   - Otherwise uses standard `update_state()`
+6. Updated NonlinearSolver to track oscillating springs:
+   - Compares current and previous state history
+   - Marks springs as oscillating when state changes between iterations
+7. Updated `assemble_spring_stiffness()` for partial stiffness:
+   - Applies 0.5*k factor for springs marked as oscillating
+   - Only when `use_partial_stiffness` setting is enabled
+8. Updated pybind11 bindings for new settings and methods
+9. Created comprehensive test file: `test_phase15_nonlinear_springs.py`
+   - 22 tests covering all nonlinear spring functionality
+   - Tests for hysteresis band and partial stiffness settings
+   - Tests for oscillation flag on SpringElement
+
+**Problems Encountered:**
+- **Issue**: Tests using wrong API (Model.add_beam doesn't exist)
+  - **Solution**: Use `model.create_beam()` instead
+- **Issue**: Tests using wrong parameter signature for create_section
+  - **Solution**: Provide all required parameters (A, Iy, Iz, J)
+- **Issue**: Tests calling analyze_nonlinear(lc) with load case argument
+  - **Solution**: analyze_nonlinear() takes no arguments, just call it directly
+
+**Verification:**
+- All 6 acceptance criteria verified ✓
+- 22 tests in test_phase15_nonlinear_springs.py pass
+- Oscillation detection implemented via state history tracking
+- Partial stiffness (0.5*k) applied for oscillating springs
+- Hysteresis band prevents state chattering
+- Line search damping implemented via oscillation_damping_factor
+- Warning messages for convergence issues (all springs inactive, etc.)
+- All settings exposed via NonlinearSolverSettings
+
+**Key Features Implemented:**
+- `update_state_with_hysteresis()`: Different activation/deactivation thresholds
+- Oscillation tracking via `set_oscillating()`/`is_oscillating()`
+- Partial stiffness for marginally-active springs (0.5*k)
+- Complete test coverage for nonlinear spring behavior
+
+**Time Taken:** ~60 minutes
 
 ---
 

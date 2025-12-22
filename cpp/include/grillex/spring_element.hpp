@@ -227,10 +227,35 @@ public:
                       const DOFHandler& dof_handler);
 
     /**
+     * @brief Update state with hysteresis band
+     *
+     * Uses different thresholds for activation vs deactivation:
+     * - Activate when deformation exceeds gap + hysteresis_band
+     * - Deactivate when deformation falls below gap - hysteresis_band
+     *
+     * @param displacements Global displacement vector
+     * @param dof_handler DOF handler for global DOF indexing
+     * @param hysteresis_band Width of hysteresis band [m or rad]
+     */
+    void update_state_with_hysteresis(const Eigen::VectorXd& displacements,
+                                       const DOFHandler& dof_handler,
+                                       double hysteresis_band);
+
+    /**
      * @brief Check if any DOF state changed in last update_state() call
      * @return true if any is_active value changed
      */
     bool state_changed() const { return state_changed_; }
+
+    /**
+     * @brief Mark this spring as oscillating (for partial stiffness)
+     */
+    void set_oscillating(bool oscillating) { is_oscillating_ = oscillating; }
+
+    /**
+     * @brief Check if spring is marked as oscillating
+     */
+    bool is_oscillating() const { return is_oscillating_; }
 
     /**
      * @brief Check if any DOF has a non-zero gap
@@ -326,6 +351,9 @@ private:
 
     /// Tolerance for gap comparisons to prevent numerical chattering [m]
     double gap_tolerance_ = 1e-10;
+
+    /// Flag indicating if spring is oscillating (for partial stiffness)
+    bool is_oscillating_ = false;
 };
 
 } // namespace grillex

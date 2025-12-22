@@ -1034,6 +1034,10 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Number of iterations to look back for oscillation detection (default: 4)")
         .def_readwrite("oscillation_damping_factor", &grillex::NonlinearSolverSettings::oscillation_damping_factor,
              "Damping factor when oscillation detected (default: 0.5)")
+        .def_readwrite("use_partial_stiffness", &grillex::NonlinearSolverSettings::use_partial_stiffness,
+             "Use partial stiffness (0.5*k) for oscillating springs (default: false)")
+        .def_readwrite("hysteresis_band", &grillex::NonlinearSolverSettings::hysteresis_band,
+             "Hysteresis band width for state changes [m or rad] (default: 0.0)")
         .def_readwrite("linear_method", &grillex::NonlinearSolverSettings::linear_method,
              "Linear solver method to use (default: SimplicialLDLT)")
         .def("__repr__", [](const grillex::NonlinearSolverSettings &s) {
@@ -1769,6 +1773,17 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def("set_gap_tolerance", &grillex::SpringElement::set_gap_tolerance,
              py::arg("tolerance"),
              "Set the gap tolerance used for state determination [m].")
+        .def("update_state_with_hysteresis", &grillex::SpringElement::update_state_with_hysteresis,
+             py::arg("displacements"), py::arg("dof_handler"), py::arg("hysteresis_band"),
+             "Update spring state with hysteresis band.\n\n"
+             "Uses different thresholds for activation vs deactivation:\n"
+             "- Activate when deformation > gap + hysteresis_band\n"
+             "- Deactivate when deformation < gap - hysteresis_band")
+        .def("set_oscillating", &grillex::SpringElement::set_oscillating,
+             py::arg("oscillating"),
+             "Mark this spring as oscillating (for partial stiffness).")
+        .def("is_oscillating", &grillex::SpringElement::is_oscillating,
+             "Check if spring is marked as oscillating.")
         .def("__repr__", [](const grillex::SpringElement &s) {
             std::string cond_str;
             switch (s.loading_condition) {
