@@ -344,6 +344,29 @@ public:
         const std::vector<int>& dof_mapping,
         int total_dofs);
 
+    /**
+     * @brief Compute participation factors and effective modal mass
+     * @param result EigensolverResult to update (modes will be modified)
+     * @param M_reduced Reduced mass matrix (same size as mode shapes)
+     * @param dof_mapping Mapping from reduced DOF index to full DOF index
+     * @param dof_handler DOF handler for determining DOF types
+     * @param total_mass Total translational mass of structure [mT]
+     *
+     * Computes for each mode:
+     * - Participation factors Γ = φᵀ × M × r for each direction
+     * - Effective modal mass Meff = Γ² (for mass-normalized modes)
+     * - Effective modal mass percentage
+     * - Cumulative effective mass percentages
+     *
+     * Requires mode shapes to be mass-normalized (φᵀMφ = 1).
+     */
+    void compute_participation_factors(
+        EigensolverResult& result,
+        const Eigen::MatrixXd& M_reduced,
+        const std::vector<int>& dof_mapping,
+        const DOFHandler& dof_handler,
+        double total_mass) const;
+
 private:
     /**
      * @brief Solve using dense Eigen solver

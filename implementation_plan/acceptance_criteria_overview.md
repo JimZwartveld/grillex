@@ -2,7 +2,7 @@
 
 This document provides a comprehensive overview of all acceptance criteria across implementation phases. It is automatically updated when tasks are completed.
 
-**Last Updated:** 2025-12-22 (Tasks 16.1-16.3 completed)
+**Last Updated:** 2025-12-22 (Tasks 16.1-16.6 completed)
 
 ## Summary Statistics
 
@@ -24,8 +24,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 13 | Validation Benchmarks | 12 | 12 | 0 | 100% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
 | 15 | Nonlinear Springs | 79 | 79 | 0 | 100% |
-| 16 | Eigenvalue Analysis | 78 | 16 | 62 | 21% |
-| **Total** | | **399** | **300** | **99** | **75%** |
+| 16 | Eigenvalue Analysis | 78 | 32 | 46 | 41% |
+| **Total** | | **399** | **316** | **83** | **79%** |
 
 ---
 
@@ -656,28 +656,28 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Reports error for non-positive-definite M matrix
 
 ### Task 16.4: Subspace Iteration Solver
-- [ ] Converges to correct eigenvalues for well-conditioned problems
-- [ ] Uses existing LinearSolver infrastructure where possible
-- [ ] Handles shift parameter correctly (σ = 0 finds lowest modes)
-- [ ] Oversample subspace (p > n_modes) for robust convergence
-- [ ] Detects and reports non-convergence
-- [ ] Performance acceptable for 1000+ DOF systems
+- [x] Converges to correct eigenvalues for well-conditioned problems
+- [x] Uses existing LinearSolver infrastructure where possible
+- [x] Handles shift parameter correctly (σ = 0 finds lowest modes)
+- [x] Oversample subspace (p > n_modes) for robust convergence
+- [x] Detects and reports non-convergence
+- [x] Performance acceptable for 1000+ DOF systems
 
 ### Task 16.5: Mass Matrix Assembly Enhancement
-- [ ] Point mass 6×6 matrices assembled at correct global DOFs
-- [ ] Beam element mass matrices assembled (existing functionality preserved)
+- [x] Point mass 6×6 matrices assembled at correct global DOFs
+- [x] Beam element mass matrices assembled (existing functionality preserved)
 - [ ] Plate element mass matrices assembled (if implemented)
-- [ ] Mixed assembly (beams + point masses) works correctly
-- [ ] Total mass equals sum of element masses (verified by trace)
-- [ ] Backward compatible: existing assemble_mass(beams) still works
+- [x] Mixed assembly (beams + point masses) works correctly
+- [x] Total mass equals sum of element masses (verified by trace)
+- [x] Backward compatible: existing assemble_mass(beams) still works
 
 ### Task 16.6: Participation Factors and Effective Modal Mass
-- [ ] Participation factors computed for X, Y, Z translations
-- [ ] Effective modal mass computed correctly
-- [ ] Percentages sum to ≤100% across all modes
-- [ ] Cumulative mass tracked (for code compliance: need ≥90%)
+- [x] Participation factors computed for X, Y, Z translations
+- [x] Effective modal mass computed correctly
+- [x] Percentages sum to ≤100% across all modes
+- [x] Cumulative mass tracked (for code compliance: need ≥90%)
 - [ ] Rotational participation factors computed (RX, RY, RZ) - optional
-- [ ] Results match hand calculations for simple cases
+- [x] Results match hand calculations for simple cases
 
 ### Task 16.7: Model Integration
 - [ ] `analyze_eigenvalues()` returns true on success

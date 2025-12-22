@@ -610,9 +610,24 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def("assemble_stiffness", &grillex::Assembler::assemble_stiffness,
              py::arg("elements"),
              "Assemble global stiffness matrix from element stiffness matrices")
-        .def("assemble_mass", &grillex::Assembler::assemble_mass,
+        .def("assemble_mass",
+             static_cast<Eigen::SparseMatrix<double> (grillex::Assembler::*)(
+                 const std::vector<grillex::BeamElement*>&) const>(
+                 &grillex::Assembler::assemble_mass),
              py::arg("elements"),
              "Assemble global mass matrix from element mass matrices")
+        .def("assemble_mass_with_point_masses",
+             static_cast<Eigen::SparseMatrix<double> (grillex::Assembler::*)(
+                 const std::vector<grillex::BeamElement*>&,
+                 const std::vector<grillex::PointMass*>&) const>(
+                 &grillex::Assembler::assemble_mass),
+             py::arg("beam_elements"),
+             py::arg("point_masses"),
+             "Assemble global mass matrix including point masses")
+        .def("compute_total_mass", &grillex::Assembler::compute_total_mass,
+             py::arg("beam_elements"),
+             py::arg("point_masses"),
+             "Compute total translational mass from beam elements and point masses [mT]")
         .def("get_dof_handler", &grillex::Assembler::get_dof_handler,
              "Get the DOFHandler used by this assembler",
              py::return_value_policy::reference_internal)
@@ -2437,6 +2452,24 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              py::arg("dof_mapping"),
              py::arg("total_dofs"),
              "Expand reduced mode shape to full DOF vector")
+        .def("compute_participation_factors", &grillex::EigenvalueSolver::compute_participation_factors,
+             py::arg("result"),
+             py::arg("M_reduced"),
+             py::arg("dof_mapping"),
+             py::arg("dof_handler"),
+             py::arg("total_mass"),
+             "Compute participation factors and effective modal mass for all modes.\n\n"
+             "Args:\n"
+             "    result: EigensolverResult to update (modes will be modified)\n"
+             "    M_reduced: Reduced mass matrix as dense Eigen matrix\n"
+             "    dof_mapping: Mapping from reduced DOF index to full DOF index\n"
+             "    dof_handler: DOF handler for determining DOF types\n"
+             "    total_mass: Total translational mass of structure [mT]\n\n"
+             "Updates each mode with:\n"
+             "- Participation factors (Γ = φᵀ × M × r)\n"
+             "- Effective modal mass (Meff = Γ²)\n"
+             "- Effective modal mass percentage\n"
+             "Also updates result with cumulative mass percentages.")
         .def("__repr__", [](const grillex::EigenvalueSolver &) {
             return "<EigenvalueSolver>";
         });

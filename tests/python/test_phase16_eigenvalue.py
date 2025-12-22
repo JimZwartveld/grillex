@@ -5,6 +5,9 @@ Tests cover:
 - Task 16.1: EigensolverSettings and Results structs
 - Task 16.2: Boundary condition reduction for eigenvalue analysis
 - Task 16.3: Dense eigenvalue solver
+- Task 16.4: Subspace iteration solver
+- Task 16.5: Mass matrix assembly with point masses
+- Task 16.6: Participation factors and effective modal mass
 
 Analytical benchmarks for verification:
 - Simply supported beam: f_n = (n*pi/L)^2 * sqrt(EI / rho*A) / (2*pi)
@@ -524,6 +527,322 @@ class TestEdgeCases:
         # Should succeed but return only available modes
         assert result.converged
         assert len(result.modes) <= K_red.shape[0]
+
+
+class TestSubspaceIterationSolver:
+    """Task 16.4: Test subspace iteration solver"""
+
+    def test_subspace_iteration_method_setting(self):
+        """Test that SubspaceIteration method can be set"""
+        settings = EigensolverSettings()
+        settings.method = EigensolverMethod.SubspaceIteration
+        assert settings.method == EigensolverMethod.SubspaceIteration
+
+    def test_subspace_iteration_small_system(self):
+        """Test subspace iteration falls back to dense for small systems"""
+        registry = NodeRegistry(1e-6)
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(1, 0, 0)
+
+        material = Material(1, "Steel", 210e6, 0.3, 7.85e-3)
+        section = Section(1, "Test", 0.01, 1e-4, 1e-4, 1e-5)
+
+        beam = BeamElement(1, n1, n2, material, section)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam])
+        M = assembler.assemble_mass([beam])
+
+        bc = BCHandler()
+        bc.fix_node(n1.id)
+
+        solver = EigenvalueSolver()
+        K_red, M_red, dof_map = solver.reduce_system(K, M, bc, dof_handler)
+
+        settings = EigensolverSettings()
+        settings.n_modes = 3
+        settings.method = EigensolverMethod.SubspaceIteration
+
+        result = solver.solve(K_red, M_red, settings)
+
+        # Should succeed (falls back to dense for small systems)
+        assert result.converged
+        assert len(result.modes) == 3
+
+    def test_shift_and_invert_method(self):
+        """Test ShiftInvert method can be used"""
+        registry = NodeRegistry(1e-6)
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(1, 0, 0)
+
+        material = Material(1, "Steel", 210e6, 0.3, 7.85e-3)
+        section = Section(1, "Test", 0.01, 1e-4, 1e-4, 1e-5)
+
+        beam = BeamElement(1, n1, n2, material, section)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam])
+        M = assembler.assemble_mass([beam])
+
+        bc = BCHandler()
+        bc.fix_node(n1.id)
+
+        solver = EigenvalueSolver()
+        K_red, M_red, dof_map = solver.reduce_system(K, M, bc, dof_handler)
+
+        settings = EigensolverSettings()
+        settings.n_modes = 3
+        settings.method = EigensolverMethod.ShiftInvert
+
+        result = solver.solve(K_red, M_red, settings)
+
+        assert result.converged
+        assert len(result.modes) == 3
+
+
+class TestPointMassAssembly:
+    """Task 16.5: Test mass matrix assembly with point masses"""
+
+    def test_point_mass_creation(self):
+        """Test creating a point mass element"""
+        registry = NodeRegistry(1e-6)
+        n1 = registry.get_or_create_node(0, 0, 0)
+
+        pm = PointMass(1, n1)
+        pm.mass = 10.0  # mT
+        pm.Ixx = 1.0
+        pm.Iyy = 2.0
+        pm.Izz = 3.0
+
+        assert pm.mass == 10.0
+        assert pm.Ixx == 1.0
+        assert pm.Iyy == 2.0
+        assert pm.Izz == 3.0
+
+    def test_assemble_mass_with_point_masses(self):
+        """Test assembling mass matrix with point masses"""
+        registry = NodeRegistry(1e-6)
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(1, 0, 0)
+
+        material = Material(1, "Steel", 210e6, 0.3, 7.85e-3)
+        section = Section(1, "Test", 0.01, 1e-4, 1e-4, 1e-5)
+
+        beam = BeamElement(1, n1, n2, material, section)
+
+        # Add point mass at node 2
+        pm = PointMass(1, n2)
+        pm.mass = 10.0  # mT
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+
+        # Assemble with point mass
+        M_with_pm = assembler.assemble_mass_with_point_masses([beam], [pm])
+
+        # Assemble without point mass
+        M_without_pm = assembler.assemble_mass([beam])
+
+        # The matrix with point mass should have additional mass on diagonal
+        # at node 2 DOFs (translational DOFs 6, 7, 8 in global numbering)
+        M_with_dense = np.array(M_with_pm.todense())
+        M_without_dense = np.array(M_without_pm.todense())
+
+        # Point mass adds 10.0 to diagonal entries for UX, UY, UZ at node 2
+        node2_ux = dof_handler.get_global_dof(n2.id, DOFIndex.UX)
+        node2_uy = dof_handler.get_global_dof(n2.id, DOFIndex.UY)
+        node2_uz = dof_handler.get_global_dof(n2.id, DOFIndex.UZ)
+
+        diff = M_with_dense - M_without_dense
+        assert np.isclose(diff[node2_ux, node2_ux], 10.0, rtol=1e-10)
+        assert np.isclose(diff[node2_uy, node2_uy], 10.0, rtol=1e-10)
+        assert np.isclose(diff[node2_uz, node2_uz], 10.0, rtol=1e-10)
+
+    def test_compute_total_mass(self):
+        """Test computing total mass from beams and point masses"""
+        registry = NodeRegistry(1e-6)
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(1, 0, 0)
+
+        # Beam with known mass: rho * A * L = 7.85e-3 * 0.01 * 1 = 7.85e-5 mT
+        material = Material(1, "Steel", 210e6, 0.3, 7.85e-3)
+        section = Section(1, "Test", 0.01, 1e-4, 1e-4, 1e-5)
+
+        beam = BeamElement(1, n1, n2, material, section)
+        beam_mass = 7.85e-3 * 0.01 * 1.0  # rho * A * L
+
+        # Point mass
+        pm = PointMass(1, n2)
+        pm.mass = 5.0  # mT
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+        total_mass = assembler.compute_total_mass([beam], [pm])
+
+        expected_total = beam_mass + 5.0
+        np.testing.assert_almost_equal(total_mass, expected_total, decimal=10)
+
+
+class TestParticipationFactors:
+    """Task 16.6: Test participation factors and effective modal mass"""
+
+    def test_participation_factors_computed(self):
+        """Test that participation factors are computed"""
+        registry = NodeRegistry(1e-6)
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(1, 0, 0)
+
+        material = Material(1, "Steel", 210e6, 0.3, 7.85e-3)
+        section = Section(1, "Test", 0.01, 1e-4, 1e-4, 1e-5)
+
+        beam = BeamElement(1, n1, n2, material, section)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam])
+        M = assembler.assemble_mass([beam])
+
+        bc = BCHandler()
+        bc.fix_node(n1.id)
+
+        solver = EigenvalueSolver()
+        K_red, M_red, dof_map = solver.reduce_system(K, M, bc, dof_handler)
+
+        settings = EigensolverSettings()
+        settings.n_modes = 3
+        result = solver.solve(K_red, M_red, settings)
+
+        assert result.converged
+
+        # Convert M to dense for participation factor computation
+        M_dense = np.array(M_red.todense())
+
+        # Compute total mass
+        total_mass = assembler.compute_total_mass([beam], [])
+
+        # Compute participation factors
+        solver.compute_participation_factors(result, M_dense, list(dof_map),
+                                             dof_handler, total_mass)
+
+        # Check that total mass is set in result
+        assert result.total_mass_x > 0
+        assert result.total_mass_y > 0
+        assert result.total_mass_z > 0
+
+        # Check that cumulative mass vectors are populated
+        assert len(result.cumulative_mass_pct_x) == len(result.modes)
+        assert len(result.cumulative_mass_pct_y) == len(result.modes)
+        assert len(result.cumulative_mass_pct_z) == len(result.modes)
+
+    def test_effective_mass_percentage_sum(self):
+        """Test that cumulative effective mass percentage is tracked"""
+        registry = NodeRegistry(1e-6)
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(1, 0, 0)
+        n3 = registry.get_or_create_node(2, 0, 0)
+
+        material = Material(1, "Steel", 210e6, 0.3, 7.85e-3)
+        section = Section(1, "Test", 0.01, 1e-4, 1e-4, 1e-5)
+
+        beam1 = BeamElement(1, n1, n2, material, section)
+        beam2 = BeamElement(2, n2, n3, material, section)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam1, beam2])
+        M = assembler.assemble_mass([beam1, beam2])
+
+        bc = BCHandler()
+        bc.fix_node(n1.id)
+
+        solver = EigenvalueSolver()
+        K_red, M_red, dof_map = solver.reduce_system(K, M, bc, dof_handler)
+
+        settings = EigensolverSettings()
+        settings.n_modes = 6
+        result = solver.solve(K_red, M_red, settings)
+
+        assert result.converged
+
+        # Convert M to dense for participation factor computation
+        M_dense = np.array(M_red.todense())
+
+        # Compute total mass
+        total_mass = assembler.compute_total_mass([beam1, beam2], [])
+
+        # Compute participation factors
+        solver.compute_participation_factors(result, M_dense, list(dof_map),
+                                             dof_handler, total_mass)
+
+        # Check that cumulative percentages increase monotonically
+        for i in range(1, len(result.cumulative_mass_pct_x)):
+            assert result.cumulative_mass_pct_x[i] >= result.cumulative_mass_pct_x[i-1]
+            assert result.cumulative_mass_pct_y[i] >= result.cumulative_mass_pct_y[i-1]
+            assert result.cumulative_mass_pct_z[i] >= result.cumulative_mass_pct_z[i-1]
+
+    def test_mode_participation_factors_exist(self):
+        """Test that each mode has participation factors"""
+        registry = NodeRegistry(1e-6)
+        n1 = registry.get_or_create_node(0, 0, 0)
+        n2 = registry.get_or_create_node(1, 0, 0)
+
+        material = Material(1, "Steel", 210e6, 0.3, 7.85e-3)
+        section = Section(1, "Test", 0.01, 1e-4, 1e-4, 1e-5)
+
+        beam = BeamElement(1, n1, n2, material, section)
+
+        dof_handler = DOFHandler()
+        dof_handler.number_dofs(registry)
+
+        assembler = Assembler(dof_handler)
+        K = assembler.assemble_stiffness([beam])
+        M = assembler.assemble_mass([beam])
+
+        bc = BCHandler()
+        bc.fix_node(n1.id)
+
+        solver = EigenvalueSolver()
+        K_red, M_red, dof_map = solver.reduce_system(K, M, bc, dof_handler)
+
+        settings = EigensolverSettings()
+        settings.n_modes = 3
+        result = solver.solve(K_red, M_red, settings)
+
+        assert result.converged
+
+        # Convert M to dense for participation factor computation
+        M_dense = np.array(M_red.todense())
+
+        # Compute participation factors
+        total_mass = assembler.compute_total_mass([beam], [])
+        solver.compute_participation_factors(result, M_dense, list(dof_map),
+                                             dof_handler, total_mass)
+
+        # Check each mode has participation factors and effective mass
+        for mode in result.modes:
+            assert hasattr(mode, 'participation_x')
+            assert hasattr(mode, 'participation_y')
+            assert hasattr(mode, 'participation_z')
+            assert hasattr(mode, 'effective_mass_x')
+            assert hasattr(mode, 'effective_mass_y')
+            assert hasattr(mode, 'effective_mass_z')
+            assert hasattr(mode, 'effective_mass_pct_x')
+            assert hasattr(mode, 'effective_mass_pct_y')
+            assert hasattr(mode, 'effective_mass_pct_z')
 
 
 if __name__ == "__main__":
