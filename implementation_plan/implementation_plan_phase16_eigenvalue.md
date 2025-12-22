@@ -1023,11 +1023,39 @@ class TestEigenvalueIntegration:
 ```
 
 **Acceptance Criteria:**
-- [ ] Works with complex multi-element models
-- [ ] Mixed element types handled correctly
-- [ ] Warping DOFs included in analysis
-- [ ] Performance acceptable for large models
-- [ ] YAML workflow works end-to-end
+- [x] Works with complex multi-element models
+- [x] Mixed element types handled correctly
+- [x] Warping DOFs included in analysis
+- [x] Performance acceptable for large models
+- [x] YAML workflow works end-to-end
+
+### Execution Notes (Completed 2025-12-22)
+
+**Steps Taken:**
+1. Implemented `TestEigenvalueIntegration` class with 9 test methods
+2. Added grillage structure test (2x2 grid of beams with 4 corner supports)
+3. Added mixed elements with point masses test (beam + column frame)
+4. Added mixed elements with springs test (beam with spring support)
+5. Added warping elements test (14-DOF beams)
+6. Added large model performance test (100 elements, ~600 DOFs)
+7. Added YAML model eigenvalue test (end-to-end workflow)
+8. Added mode shape continuity test
+9. Added cantilever with subdivision test
+10. Added portal frame structure test
+
+**Key Implementation Details:**
+- Springs require two nodes (node_i, node_j) and use `kx`, `ky`, `kz` properties
+- Warping enabled via `BeamConfig.include_warping = True`
+- Performance test verifies 600 DOF model completes in < 30 seconds
+- YAML workflow uses temporary file for model definition
+
+**Verification:**
+- 9 integration tests passing ✓
+- Grillage with 12 beams and 9 nodes works correctly
+- Mixed element types (beams, point masses, springs) all work
+- Warping DOFs properly handled in eigenvalue analysis
+- 100-element model (600 DOFs) completes in ~13 seconds
+- YAML end-to-end workflow verified
 
 ---
 
