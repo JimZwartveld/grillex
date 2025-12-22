@@ -1066,6 +1066,170 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         });
 
     // ========================================================================
+    // Phase 16: Eigenvalue Analysis Types (must be before Model)
+    // ========================================================================
+
+    // EigensolverMethod enum
+    py::enum_<grillex::EigensolverMethod>(m, "EigensolverMethod",
+        "Eigenvalue solver method selection.\n\n"
+        "Dense: Uses Eigen's GeneralizedSelfAdjointEigenSolver (all modes, small systems)\n"
+        "SubspaceIteration: Iterative method for large systems (selected modes)\n"
+        "ShiftInvert: Shift-and-invert for targeting specific frequencies")
+        .value("Dense", grillex::EigensolverMethod::Dense,
+               "Dense solver - computes all eigenvalues (suitable for small systems)")
+        .value("SubspaceIteration", grillex::EigensolverMethod::SubspaceIteration,
+               "Subspace iteration - efficient for finding first n modes of large systems")
+        .value("ShiftInvert", grillex::EigensolverMethod::ShiftInvert,
+               "Shift-and-invert - for finding modes near a target frequency")
+        .export_values();
+
+    // EigensolverSettings struct
+    py::class_<grillex::EigensolverSettings>(m, "EigensolverSettings",
+        "Configuration settings for eigenvalue analysis.\n\n"
+        "Controls solver behavior, convergence criteria, and output options.\n\n"
+        "Example:\n"
+        "    settings = EigensolverSettings()\n"
+        "    settings.n_modes = 10           # Find first 10 modes\n"
+        "    settings.tolerance = 1e-8       # Convergence tolerance\n"
+        "    settings.method = EigensolverMethod.SubspaceIteration")
+        .def(py::init<>())
+        .def_readwrite("n_modes", &grillex::EigensolverSettings::n_modes,
+             "Number of modes to compute (lowest frequencies first)")
+        .def_readwrite("shift", &grillex::EigensolverSettings::shift,
+             "Frequency shift for shift-and-invert [rad/s]^2. Set to 0 for lowest modes.")
+        .def_readwrite("tolerance", &grillex::EigensolverSettings::tolerance,
+             "Convergence tolerance for eigenvalue relative change")
+        .def_readwrite("max_iterations", &grillex::EigensolverSettings::max_iterations,
+             "Maximum iterations for iterative solvers")
+        .def_readwrite("method", &grillex::EigensolverSettings::method,
+             "Solver method to use (Dense, SubspaceIteration, ShiftInvert)")
+        .def_readwrite("compute_participation", &grillex::EigensolverSettings::compute_participation,
+             "Whether to compute participation factors")
+        .def_readwrite("mass_normalize", &grillex::EigensolverSettings::mass_normalize,
+             "Whether to mass-normalize mode shapes (phi^T M phi = 1)")
+        .def_readwrite("rigid_body_threshold", &grillex::EigensolverSettings::rigid_body_threshold,
+             "Threshold for rigid body mode detection [rad/s]^2")
+        .def("__repr__", [](const grillex::EigensolverSettings &s) {
+            return "<EigensolverSettings n_modes=" + std::to_string(s.n_modes) +
+                   " method=" + std::to_string(static_cast<int>(s.method)) + ">";
+        });
+
+    // ModeResult struct
+    py::class_<grillex::ModeResult>(m, "ModeResult",
+        "Result for a single vibration mode.\n\n"
+        "Contains eigenvalue, frequency, period, mode shape, and modal quantities.\n"
+        "Mode shapes are mass-normalized if settings.mass_normalize is true.\n\n"
+        "Attributes:\n"
+        "    mode_number: Mode number (1-based)\n"
+        "    eigenvalue: lambda = omega^2 [rad/s]^2\n"
+        "    omega: Natural circular frequency [rad/s]\n"
+        "    frequency_hz: Natural frequency [Hz]\n"
+        "    period_s: Natural period [s]\n"
+        "    mode_shape: Eigenvector (mass-normalized)")
+        .def(py::init<>())
+        .def_readonly("mode_number", &grillex::ModeResult::mode_number,
+             "Mode number (1-based indexing)")
+        .def_readonly("eigenvalue", &grillex::ModeResult::eigenvalue,
+             "Eigenvalue lambda = omega^2 [rad/s]^2")
+        .def_readonly("omega", &grillex::ModeResult::omega,
+             "Natural circular frequency omega [rad/s]")
+        .def_readonly("frequency_hz", &grillex::ModeResult::frequency_hz,
+             "Natural frequency f = omega/(2*pi) [Hz]")
+        .def_readonly("period_s", &grillex::ModeResult::period_s,
+             "Natural period T = 1/f [s]")
+        .def_readonly("mode_shape", &grillex::ModeResult::mode_shape,
+             "Mode shape vector (mass-normalized if enabled)")
+        .def_readonly("is_rigid_body_mode", &grillex::ModeResult::is_rigid_body_mode,
+             "Whether this is a rigid body mode (omega approx 0)")
+        .def_readonly("participation_x", &grillex::ModeResult::participation_x,
+             "Participation factor for X translation")
+        .def_readonly("participation_y", &grillex::ModeResult::participation_y,
+             "Participation factor for Y translation")
+        .def_readonly("participation_z", &grillex::ModeResult::participation_z,
+             "Participation factor for Z translation")
+        .def_readonly("participation_rx", &grillex::ModeResult::participation_rx,
+             "Participation factor for rotation about X")
+        .def_readonly("participation_ry", &grillex::ModeResult::participation_ry,
+             "Participation factor for rotation about Y")
+        .def_readonly("participation_rz", &grillex::ModeResult::participation_rz,
+             "Participation factor for rotation about Z")
+        .def_readonly("effective_mass_x", &grillex::ModeResult::effective_mass_x,
+             "Effective modal mass for X translation [mT]")
+        .def_readonly("effective_mass_y", &grillex::ModeResult::effective_mass_y,
+             "Effective modal mass for Y translation [mT]")
+        .def_readonly("effective_mass_z", &grillex::ModeResult::effective_mass_z,
+             "Effective modal mass for Z translation [mT]")
+        .def_readonly("effective_mass_pct_x", &grillex::ModeResult::effective_mass_pct_x,
+             "Effective modal mass percentage for X [%]")
+        .def_readonly("effective_mass_pct_y", &grillex::ModeResult::effective_mass_pct_y,
+             "Effective modal mass percentage for Y [%]")
+        .def_readonly("effective_mass_pct_z", &grillex::ModeResult::effective_mass_pct_z,
+             "Effective modal mass percentage for Z [%]")
+        .def("__repr__", [](const grillex::ModeResult &m) {
+            return "<ModeResult mode=" + std::to_string(m.mode_number) +
+                   " f=" + std::to_string(m.frequency_hz) + " Hz" +
+                   (m.is_rigid_body_mode ? " (rigid body)" : "") + ">";
+        });
+
+    // EigensolverResult struct
+    py::class_<grillex::EigensolverResult>(m, "EigensolverResult",
+        "Complete eigenvalue analysis result.\n\n"
+        "Contains all computed modes plus summary statistics.\n\n"
+        "Attributes:\n"
+        "    converged: Whether solver converged successfully\n"
+        "    iterations: Number of iterations (for iterative solvers)\n"
+        "    message: Status/error message\n"
+        "    modes: List of ModeResult objects, sorted by frequency\n"
+        "    n_rigid_body_modes: Number of rigid body modes detected")
+        .def(py::init<>())
+        .def_readonly("converged", &grillex::EigensolverResult::converged,
+             "Whether solver converged successfully")
+        .def_readonly("iterations", &grillex::EigensolverResult::iterations,
+             "Number of iterations (for iterative solvers)")
+        .def_readonly("message", &grillex::EigensolverResult::message,
+             "Status/error message")
+        .def_readonly("modes", &grillex::EigensolverResult::modes,
+             "Computed modes, sorted by frequency (ascending)")
+        .def_readonly("n_rigid_body_modes", &grillex::EigensolverResult::n_rigid_body_modes,
+             "Number of rigid body modes detected")
+        .def_readonly("total_mass_x", &grillex::EigensolverResult::total_mass_x,
+             "Total translational mass in X direction [mT]")
+        .def_readonly("total_mass_y", &grillex::EigensolverResult::total_mass_y,
+             "Total translational mass in Y direction [mT]")
+        .def_readonly("total_mass_z", &grillex::EigensolverResult::total_mass_z,
+             "Total translational mass in Z direction [mT]")
+        .def_readonly("cumulative_mass_pct_x", &grillex::EigensolverResult::cumulative_mass_pct_x,
+             "Cumulative effective mass percentage for X [%]")
+        .def_readonly("cumulative_mass_pct_y", &grillex::EigensolverResult::cumulative_mass_pct_y,
+             "Cumulative effective mass percentage for Y [%]")
+        .def_readonly("cumulative_mass_pct_z", &grillex::EigensolverResult::cumulative_mass_pct_z,
+             "Cumulative effective mass percentage for Z [%]")
+        .def_readonly("reduced_to_full", &grillex::EigensolverResult::reduced_to_full,
+             "DOF mapping from reduced to full system")
+        .def_readonly("total_dofs", &grillex::EigensolverResult::total_dofs,
+             "Total number of DOFs (before reduction)")
+        .def("get_mode", &grillex::EigensolverResult::get_mode,
+             py::arg("mode_number"),
+             "Get mode by number (1-based)",
+             py::return_value_policy::reference_internal)
+        .def("get_frequencies", &grillex::EigensolverResult::get_frequencies,
+             "Get vector of natural frequencies [Hz], sorted ascending")
+        .def("get_periods", &grillex::EigensolverResult::get_periods,
+             "Get vector of natural periods [s]")
+        .def("expand_mode_shape", &grillex::EigensolverResult::expand_mode_shape,
+             py::arg("reduced_shape"),
+             "Expand reduced mode shape to full DOF vector")
+        .def("get_expanded_mode_shape", &grillex::EigensolverResult::get_expanded_mode_shape,
+             py::arg("mode_number"),
+             "Get expanded mode shape for a specific mode (1-based)")
+        .def("__repr__", [](const grillex::EigensolverResult &r) {
+            return "<EigensolverResult converged=" +
+                   std::string(r.converged ? "True" : "False") +
+                   " n_modes=" + std::to_string(r.modes.size()) +
+                   " rigid_body=" + std::to_string(r.n_rigid_body_modes) + ">";
+        });
+
+    // ========================================================================
     // Phase 3 (continued): Model Class (Orchestration)
     // ========================================================================
 
@@ -1289,6 +1453,33 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Get analysis error message (if analyze() failed)")
         .def("clear", &grillex::Model::clear,
              "Clear the model (remove all entities except nodes)")
+        // Eigenvalue analysis methods
+        .def("analyze_eigenvalues", &grillex::Model::analyze_eigenvalues,
+             py::arg("settings") = grillex::EigensolverSettings{},
+             "Run eigenvalue analysis to compute natural frequencies and mode shapes.\n\n"
+             "Solves the generalized eigenvalue problem: K*phi = omega^2*M*phi\n\n"
+             "Args:\n"
+             "    settings: EigensolverSettings with n_modes, tolerance, method, etc.\n\n"
+             "Returns:\n"
+             "    True if analysis converged successfully\n\n"
+             "After analysis, access results via:\n"
+             "  - get_eigenvalue_result(): Full EigensolverResult\n"
+             "  - get_natural_frequencies(): List of frequencies [Hz]\n"
+             "  - get_periods(): List of periods [s]\n"
+             "  - get_mode_shape(n): Mode shape vector for mode n (1-based)")
+        .def("has_eigenvalue_results", &grillex::Model::has_eigenvalue_results,
+             "Check if eigenvalue results are available")
+        .def("get_eigenvalue_result", &grillex::Model::get_eigenvalue_result,
+             py::return_value_policy::reference_internal,
+             "Get eigenvalue analysis results (raises RuntimeError if not available)")
+        .def("get_natural_frequencies", &grillex::Model::get_natural_frequencies,
+             "Get natural frequencies from eigenvalue analysis [Hz]")
+        .def("get_periods", &grillex::Model::get_periods,
+             "Get natural periods from eigenvalue analysis [s]")
+        .def("get_mode_shape", &grillex::Model::get_mode_shape,
+             py::arg("mode_number"),
+             "Get mode shape for a specific mode (1-based indexing)\n\n"
+             "Returns full mode shape vector (size = total_dofs) with zeros at fixed DOFs.")
         .def("__repr__", [](const grillex::Model &mdl) {
             std::ostringstream oss;
             oss << "<Model nodes=" << mdl.nodes.all_nodes().size()
@@ -2240,170 +2431,6 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def("__repr__", [](const grillex::NonlinearSolver &s) {
             return "<NonlinearSolver max_iter=" +
                    std::to_string(s.settings().max_iterations) + ">";
-        });
-
-    // ========================================================================
-    // Phase 16: Eigenvalue Analysis
-    // ========================================================================
-
-    // EigensolverMethod enum
-    py::enum_<grillex::EigensolverMethod>(m, "EigensolverMethod",
-        "Eigenvalue solver method selection.\n\n"
-        "Dense: Uses Eigen's GeneralizedSelfAdjointEigenSolver (all modes, small systems)\n"
-        "SubspaceIteration: Iterative method for large systems (selected modes)\n"
-        "ShiftInvert: Shift-and-invert for targeting specific frequencies")
-        .value("Dense", grillex::EigensolverMethod::Dense,
-               "Dense solver - computes all eigenvalues (suitable for small systems)")
-        .value("SubspaceIteration", grillex::EigensolverMethod::SubspaceIteration,
-               "Subspace iteration - efficient for finding first n modes of large systems")
-        .value("ShiftInvert", grillex::EigensolverMethod::ShiftInvert,
-               "Shift-and-invert - for finding modes near a target frequency")
-        .export_values();
-
-    // EigensolverSettings struct
-    py::class_<grillex::EigensolverSettings>(m, "EigensolverSettings",
-        "Configuration settings for eigenvalue analysis.\n\n"
-        "Controls solver behavior, convergence criteria, and output options.\n\n"
-        "Example:\n"
-        "    settings = EigensolverSettings()\n"
-        "    settings.n_modes = 10           # Find first 10 modes\n"
-        "    settings.tolerance = 1e-8       # Convergence tolerance\n"
-        "    settings.method = EigensolverMethod.SubspaceIteration")
-        .def(py::init<>())
-        .def_readwrite("n_modes", &grillex::EigensolverSettings::n_modes,
-             "Number of modes to compute (lowest frequencies first)")
-        .def_readwrite("shift", &grillex::EigensolverSettings::shift,
-             "Frequency shift for shift-and-invert [rad/s]^2. Set to 0 for lowest modes.")
-        .def_readwrite("tolerance", &grillex::EigensolverSettings::tolerance,
-             "Convergence tolerance for eigenvalue relative change")
-        .def_readwrite("max_iterations", &grillex::EigensolverSettings::max_iterations,
-             "Maximum iterations for iterative solvers")
-        .def_readwrite("method", &grillex::EigensolverSettings::method,
-             "Solver method to use (Dense, SubspaceIteration, ShiftInvert)")
-        .def_readwrite("compute_participation", &grillex::EigensolverSettings::compute_participation,
-             "Whether to compute participation factors")
-        .def_readwrite("mass_normalize", &grillex::EigensolverSettings::mass_normalize,
-             "Whether to mass-normalize mode shapes (phi^T M phi = 1)")
-        .def_readwrite("rigid_body_threshold", &grillex::EigensolverSettings::rigid_body_threshold,
-             "Threshold for rigid body mode detection [rad/s]^2")
-        .def("__repr__", [](const grillex::EigensolverSettings &s) {
-            return "<EigensolverSettings n_modes=" + std::to_string(s.n_modes) +
-                   " method=" + std::to_string(static_cast<int>(s.method)) + ">";
-        });
-
-    // ModeResult struct
-    py::class_<grillex::ModeResult>(m, "ModeResult",
-        "Result for a single vibration mode.\n\n"
-        "Contains eigenvalue, frequency, period, mode shape, and modal quantities.\n"
-        "Mode shapes are mass-normalized if settings.mass_normalize is true.\n\n"
-        "Attributes:\n"
-        "    mode_number: Mode number (1-based)\n"
-        "    eigenvalue: lambda = omega^2 [rad/s]^2\n"
-        "    omega: Natural circular frequency [rad/s]\n"
-        "    frequency_hz: Natural frequency [Hz]\n"
-        "    period_s: Natural period [s]\n"
-        "    mode_shape: Eigenvector (mass-normalized)")
-        .def(py::init<>())
-        .def_readonly("mode_number", &grillex::ModeResult::mode_number,
-             "Mode number (1-based indexing)")
-        .def_readonly("eigenvalue", &grillex::ModeResult::eigenvalue,
-             "Eigenvalue lambda = omega^2 [rad/s]^2")
-        .def_readonly("omega", &grillex::ModeResult::omega,
-             "Natural circular frequency omega [rad/s]")
-        .def_readonly("frequency_hz", &grillex::ModeResult::frequency_hz,
-             "Natural frequency f = omega/(2*pi) [Hz]")
-        .def_readonly("period_s", &grillex::ModeResult::period_s,
-             "Natural period T = 1/f [s]")
-        .def_readonly("mode_shape", &grillex::ModeResult::mode_shape,
-             "Mode shape vector (mass-normalized if enabled)")
-        .def_readonly("is_rigid_body_mode", &grillex::ModeResult::is_rigid_body_mode,
-             "Whether this is a rigid body mode (omega approx 0)")
-        .def_readonly("participation_x", &grillex::ModeResult::participation_x,
-             "Participation factor for X translation")
-        .def_readonly("participation_y", &grillex::ModeResult::participation_y,
-             "Participation factor for Y translation")
-        .def_readonly("participation_z", &grillex::ModeResult::participation_z,
-             "Participation factor for Z translation")
-        .def_readonly("participation_rx", &grillex::ModeResult::participation_rx,
-             "Participation factor for rotation about X")
-        .def_readonly("participation_ry", &grillex::ModeResult::participation_ry,
-             "Participation factor for rotation about Y")
-        .def_readonly("participation_rz", &grillex::ModeResult::participation_rz,
-             "Participation factor for rotation about Z")
-        .def_readonly("effective_mass_x", &grillex::ModeResult::effective_mass_x,
-             "Effective modal mass for X translation [mT]")
-        .def_readonly("effective_mass_y", &grillex::ModeResult::effective_mass_y,
-             "Effective modal mass for Y translation [mT]")
-        .def_readonly("effective_mass_z", &grillex::ModeResult::effective_mass_z,
-             "Effective modal mass for Z translation [mT]")
-        .def_readonly("effective_mass_pct_x", &grillex::ModeResult::effective_mass_pct_x,
-             "Effective modal mass percentage for X [%]")
-        .def_readonly("effective_mass_pct_y", &grillex::ModeResult::effective_mass_pct_y,
-             "Effective modal mass percentage for Y [%]")
-        .def_readonly("effective_mass_pct_z", &grillex::ModeResult::effective_mass_pct_z,
-             "Effective modal mass percentage for Z [%]")
-        .def("__repr__", [](const grillex::ModeResult &m) {
-            return "<ModeResult mode=" + std::to_string(m.mode_number) +
-                   " f=" + std::to_string(m.frequency_hz) + " Hz" +
-                   (m.is_rigid_body_mode ? " (rigid body)" : "") + ">";
-        });
-
-    // EigensolverResult struct
-    py::class_<grillex::EigensolverResult>(m, "EigensolverResult",
-        "Complete eigenvalue analysis result.\n\n"
-        "Contains all computed modes plus summary statistics.\n\n"
-        "Attributes:\n"
-        "    converged: Whether solver converged successfully\n"
-        "    iterations: Number of iterations (for iterative solvers)\n"
-        "    message: Status/error message\n"
-        "    modes: List of ModeResult objects, sorted by frequency\n"
-        "    n_rigid_body_modes: Number of rigid body modes detected")
-        .def(py::init<>())
-        .def_readonly("converged", &grillex::EigensolverResult::converged,
-             "Whether solver converged successfully")
-        .def_readonly("iterations", &grillex::EigensolverResult::iterations,
-             "Number of iterations (for iterative solvers)")
-        .def_readonly("message", &grillex::EigensolverResult::message,
-             "Status/error message")
-        .def_readonly("modes", &grillex::EigensolverResult::modes,
-             "Computed modes, sorted by frequency (ascending)")
-        .def_readonly("n_rigid_body_modes", &grillex::EigensolverResult::n_rigid_body_modes,
-             "Number of rigid body modes detected")
-        .def_readonly("total_mass_x", &grillex::EigensolverResult::total_mass_x,
-             "Total translational mass in X direction [mT]")
-        .def_readonly("total_mass_y", &grillex::EigensolverResult::total_mass_y,
-             "Total translational mass in Y direction [mT]")
-        .def_readonly("total_mass_z", &grillex::EigensolverResult::total_mass_z,
-             "Total translational mass in Z direction [mT]")
-        .def_readonly("cumulative_mass_pct_x", &grillex::EigensolverResult::cumulative_mass_pct_x,
-             "Cumulative effective mass percentage for X [%]")
-        .def_readonly("cumulative_mass_pct_y", &grillex::EigensolverResult::cumulative_mass_pct_y,
-             "Cumulative effective mass percentage for Y [%]")
-        .def_readonly("cumulative_mass_pct_z", &grillex::EigensolverResult::cumulative_mass_pct_z,
-             "Cumulative effective mass percentage for Z [%]")
-        .def_readonly("reduced_to_full", &grillex::EigensolverResult::reduced_to_full,
-             "DOF mapping from reduced to full system")
-        .def_readonly("total_dofs", &grillex::EigensolverResult::total_dofs,
-             "Total number of DOFs (before reduction)")
-        .def("get_mode", &grillex::EigensolverResult::get_mode,
-             py::arg("mode_number"),
-             "Get mode by number (1-based)",
-             py::return_value_policy::reference_internal)
-        .def("get_frequencies", &grillex::EigensolverResult::get_frequencies,
-             "Get vector of natural frequencies [Hz], sorted ascending")
-        .def("get_periods", &grillex::EigensolverResult::get_periods,
-             "Get vector of natural periods [s]")
-        .def("expand_mode_shape", &grillex::EigensolverResult::expand_mode_shape,
-             py::arg("reduced_shape"),
-             "Expand reduced mode shape to full DOF vector")
-        .def("get_expanded_mode_shape", &grillex::EigensolverResult::get_expanded_mode_shape,
-             py::arg("mode_number"),
-             "Get expanded mode shape for a specific mode (1-based)")
-        .def("__repr__", [](const grillex::EigensolverResult &r) {
-            return "<EigensolverResult converged=" +
-                   std::string(r.converged ? "True" : "False") +
-                   " n_modes=" + std::to_string(r.modes.size()) +
-                   " rigid_body=" + std::to_string(r.n_rigid_body_modes) + ">";
         });
 
     // EigenvalueSolver class

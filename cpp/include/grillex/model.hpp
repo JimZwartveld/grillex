@@ -14,6 +14,7 @@
 #include "grillex/load_case.hpp"
 #include "grillex/constraints.hpp"
 #include "grillex/nonlinear_solver.hpp"
+#include "grillex/eigenvalue_solver.hpp"
 
 #include <vector>
 #include <memory>
@@ -314,6 +315,88 @@ public:
      */
     bool analyze_nonlinear();
 
+    // =========================================================================
+    // Eigenvalue Analysis
+    // =========================================================================
+
+    /**
+     * @brief Run eigenvalue analysis to compute natural frequencies and mode shapes
+     * @param settings Solver configuration (default: 10 modes, dense solver)
+     * @return true if analysis converged successfully
+     *
+     * Solves the generalized eigenvalue problem:
+     *   K × φ = ω² × M × φ
+     *
+     * Where:
+     * - K: Global stiffness matrix (from beams, springs, plates)
+     * - M: Global mass matrix (from beams and point masses)
+     * - ω: Natural circular frequency [rad/s]
+     * - φ: Mode shape (eigenvector)
+     *
+     * Analysis workflow:
+     * 1. Number DOFs (reuse from static analysis if already done)
+     * 2. Assemble K and M matrices (including point masses)
+     * 3. Reduce system (eliminate fixed DOFs)
+     * 4. Solve eigenvalue problem
+     * 5. Expand mode shapes to full DOF vector
+     * 6. Compute participation factors
+     * 7. Store results
+     *
+     * Results are accessible via:
+     * - get_eigenvalue_result() for full results
+     * - get_natural_frequencies() for frequency list [Hz]
+     * - get_periods() for period list [s]
+     * - get_mode_shape(n) for mode shape vector
+     *
+     * @code
+     * EigensolverSettings settings;
+     * settings.n_modes = 20;
+     * settings.method = EigensolverMethod::SubspaceIteration;
+     * if (model.analyze_eigenvalues(settings)) {
+     *     auto freqs = model.get_natural_frequencies();
+     *     auto mode1 = model.get_mode_shape(1);
+     * }
+     * @endcode
+     */
+    bool analyze_eigenvalues(const EigensolverSettings& settings = EigensolverSettings{});
+
+    /**
+     * @brief Check if eigenvalue results are available
+     * @return true if analyze_eigenvalues() has been called successfully
+     */
+    bool has_eigenvalue_results() const;
+
+    /**
+     * @brief Get eigenvalue analysis results
+     * @return Reference to EigensolverResult
+     * @throws std::runtime_error if no eigenvalue results available
+     */
+    const EigensolverResult& get_eigenvalue_result() const;
+
+    /**
+     * @brief Get natural frequencies from eigenvalue analysis [Hz]
+     * @return Vector of frequencies, sorted ascending (lowest first)
+     * @throws std::runtime_error if no eigenvalue results available
+     */
+    std::vector<double> get_natural_frequencies() const;
+
+    /**
+     * @brief Get natural periods from eigenvalue analysis [s]
+     * @return Vector of periods, sorted by frequency (longest first)
+     * @throws std::runtime_error if no eigenvalue results available
+     */
+    std::vector<double> get_periods() const;
+
+    /**
+     * @brief Get mode shape for a specific mode
+     * @param mode_number Mode number (1-based: 1 = first mode)
+     * @return Full mode shape vector (size = total_dofs) with zeros at fixed DOFs
+     * @throws std::runtime_error if no eigenvalue results or mode not found
+     *
+     * Mode shapes are mass-normalized (φᵀMφ = 1) if settings.mass_normalize is true.
+     */
+    Eigen::VectorXd get_mode_shape(int mode_number) const;
+
     /**
      * @brief Analyze a specific load combination with nonlinear spring support
      * @param combo Load combination to analyze
@@ -443,6 +526,9 @@ private:
     int total_dofs_ = 0;
     std::map<int, LoadCaseResult> results_;        // Keyed by LoadCase::id()
     std::string error_msg_;
+
+    // Eigenvalue analysis results
+    std::unique_ptr<EigensolverResult> eigenvalue_result_;
 
     // ID counters
     int next_material_id_ = 1;

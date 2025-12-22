@@ -25,7 +25,7 @@ from grillex._grillex_cpp import (
     DOFHandler, Assembler, BCHandler, DOFIndex,
     EigenvalueSolver, EigensolverSettings, EigensolverMethod,
     EigensolverResult, ModeResult,
-    SpringElement, PointMass
+    SpringElement, PointMass, Model
 )
 
 
@@ -843,6 +843,268 @@ class TestParticipationFactors:
             assert hasattr(mode, 'effective_mass_pct_x')
             assert hasattr(mode, 'effective_mass_pct_y')
             assert hasattr(mode, 'effective_mass_pct_z')
+
+
+class TestModelIntegration:
+    """Task 16.7: Test Model.analyze_eigenvalues() integration"""
+
+    def test_model_analyze_eigenvalues_basic(self):
+        """Test basic eigenvalue analysis through Model class"""
+        model = Model()
+
+        # Create a simple cantilever beam
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(2, 0, 0)
+
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-3)
+        sec = model.create_section("Test", 0.01, 1e-4, 1e-4, 1e-5)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+
+        # Fix one end
+        model.boundary_conditions.fix_node(n1.id)
+
+        # Run eigenvalue analysis
+        settings = EigensolverSettings()
+        settings.n_modes = 3
+        success = model.analyze_eigenvalues(settings)
+
+        assert success, f"Eigenvalue analysis failed: {model.get_error_message()}"
+        assert model.has_eigenvalue_results()
+
+    def test_model_get_natural_frequencies(self):
+        """Test getting natural frequencies from Model"""
+        model = Model()
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(1, 0, 0)
+
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-3)
+        sec = model.create_section("Test", 0.01, 1e-4, 1e-4, 1e-5)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+        model.boundary_conditions.fix_node(n1.id)
+
+        settings = EigensolverSettings()
+        settings.n_modes = 3
+        model.analyze_eigenvalues(settings)
+
+        frequencies = model.get_natural_frequencies()
+        assert len(frequencies) == 3
+        assert all(f >= 0 for f in frequencies)
+        # Frequencies should be sorted ascending
+        assert frequencies == sorted(frequencies)
+
+    def test_model_get_mode_shape(self):
+        """Test getting mode shapes from Model"""
+        model = Model()
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(1, 0, 0)
+
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-3)
+        sec = model.create_section("Test", 0.01, 1e-4, 1e-4, 1e-5)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+        model.boundary_conditions.fix_node(n1.id)
+
+        settings = EigensolverSettings()
+        settings.n_modes = 3
+        model.analyze_eigenvalues(settings)
+
+        mode_shape = model.get_mode_shape(1)
+
+        # Mode shape should have same size as total DOFs
+        assert len(mode_shape) == model.total_dofs()
+
+    def test_model_eigenvalue_result_access(self):
+        """Test accessing full eigenvalue result from Model"""
+        model = Model()
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(1, 0, 0)
+
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-3)
+        sec = model.create_section("Test", 0.01, 1e-4, 1e-4, 1e-5)
+
+        beam = model.create_beam(n1, n2, mat, sec)
+        model.boundary_conditions.fix_node(n1.id)
+
+        settings = EigensolverSettings()
+        settings.n_modes = 3
+        model.analyze_eigenvalues(settings)
+
+        result = model.get_eigenvalue_result()
+
+        assert result.converged
+        assert len(result.modes) == 3
+
+    def test_model_eigenvalue_with_participation(self):
+        """Test eigenvalue analysis with participation factors"""
+        model = Model()
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(1, 0, 0)
+        n3 = model.get_or_create_node(2, 0, 0)
+
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-3)
+        sec = model.create_section("Test", 0.01, 1e-4, 1e-4, 1e-5)
+
+        model.create_beam(n1, n2, mat, sec)
+        model.create_beam(n2, n3, mat, sec)
+        model.boundary_conditions.fix_node(n1.id)
+
+        settings = EigensolverSettings()
+        settings.n_modes = 5
+        settings.compute_participation = True
+        model.analyze_eigenvalues(settings)
+
+        result = model.get_eigenvalue_result()
+
+        # Check cumulative mass percentages are populated
+        assert len(result.cumulative_mass_pct_x) == len(result.modes)
+        assert len(result.cumulative_mass_pct_y) == len(result.modes)
+        assert len(result.cumulative_mass_pct_z) == len(result.modes)
+
+
+class TestStructuralModelEigenvalue:
+    """Task 16.9: Test StructuralModel wrapper for eigenvalue analysis"""
+
+    def test_structural_model_analyze_modes(self):
+        """Test analyze_modes() wrapper method"""
+        from grillex.core import StructuralModel
+
+        model = StructuralModel(name="Modal Test")
+
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+        model.add_section("IPE200", A=0.0028, Iy=1.94e-5, Iz=1.42e-6, J=7.02e-8)
+
+        model.add_beam_by_coords([0, 0, 0], [3, 0, 0], "IPE200", "Steel")
+
+        model.fix_node_at([0, 0, 0])
+
+        success = model.analyze_modes(n_modes=5)
+
+        assert success
+        assert model.has_modal_results()
+
+    def test_structural_model_get_frequencies(self):
+        """Test get_natural_frequencies() wrapper method"""
+        from grillex.core import StructuralModel
+
+        model = StructuralModel(name="Modal Test")
+
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+        model.add_section("Test", A=0.01, Iy=1e-4, Iz=1e-4, J=1e-5)
+
+        model.add_beam_by_coords([0, 0, 0], [1, 0, 0], "Test", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        model.analyze_modes(n_modes=3)
+
+        frequencies = model.get_natural_frequencies()
+        assert len(frequencies) == 3
+        assert all(f >= 0 for f in frequencies)
+
+    def test_structural_model_get_periods(self):
+        """Test get_periods() wrapper method"""
+        from grillex.core import StructuralModel
+
+        model = StructuralModel(name="Modal Test")
+
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+        model.add_section("Test", A=0.01, Iy=1e-4, Iz=1e-4, J=1e-5)
+
+        model.add_beam_by_coords([0, 0, 0], [1, 0, 0], "Test", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        model.analyze_modes(n_modes=3)
+
+        periods = model.get_periods()
+        assert len(periods) == 3
+        assert all(t >= 0 for t in periods)
+
+    def test_structural_model_get_mode_shape(self):
+        """Test get_mode_shape() wrapper method"""
+        from grillex.core import StructuralModel
+
+        model = StructuralModel(name="Modal Test")
+
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+        model.add_section("Test", A=0.01, Iy=1e-4, Iz=1e-4, J=1e-5)
+
+        model.add_beam_by_coords([0, 0, 0], [1, 0, 0], "Test", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        model.analyze_modes(n_modes=3)
+
+        mode1 = model.get_mode_shape(1)
+
+        # Should be a numpy array
+        assert isinstance(mode1, np.ndarray)
+        # Size should match total DOFs
+        assert len(mode1) == model.total_dofs()
+
+    def test_structural_model_get_mode_displacement_at(self):
+        """Test get_mode_displacement_at() wrapper method"""
+        from grillex.core import StructuralModel
+
+        model = StructuralModel(name="Modal Test")
+
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+        model.add_section("Test", A=0.01, Iy=1e-4, Iz=1e-4, J=1e-5)
+
+        model.add_beam_by_coords([0, 0, 0], [1, 0, 0], "Test", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        model.analyze_modes(n_modes=3)
+
+        # Get mode shape at free end
+        mode_disp = model.get_mode_displacement_at(1, [1, 0, 0])
+
+        assert 'UX' in mode_disp
+        assert 'UY' in mode_disp
+        assert 'UZ' in mode_disp
+        assert 'RX' in mode_disp
+        assert 'RY' in mode_disp
+        assert 'RZ' in mode_disp
+
+    def test_structural_model_eigenvalue_methods(self):
+        """Test eigenvalue solver method selection in wrapper"""
+        from grillex.core import StructuralModel, EigensolverMethod
+
+        model = StructuralModel(name="Modal Test")
+
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+        model.add_section("Test", A=0.01, Iy=1e-4, Iz=1e-4, J=1e-5)
+
+        model.add_beam_by_coords([0, 0, 0], [1, 0, 0], "Test", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Test Dense method
+        success = model.analyze_modes(n_modes=3, method=EigensolverMethod.Dense)
+        assert success
+
+    def test_structural_model_frequency_period_consistency(self):
+        """Test that frequencies and periods are consistent (T = 1/f)"""
+        from grillex.core import StructuralModel
+
+        model = StructuralModel(name="Modal Test")
+
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+        model.add_section("Test", A=0.01, Iy=1e-4, Iz=1e-4, J=1e-5)
+
+        model.add_beam_by_coords([0, 0, 0], [1, 0, 0], "Test", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        model.analyze_modes(n_modes=3)
+
+        frequencies = model.get_natural_frequencies()
+        periods = model.get_periods()
+
+        for f, t in zip(frequencies, periods):
+            if f > 1e-10:  # Skip near-zero frequencies
+                np.testing.assert_almost_equal(t, 1.0 / f, decimal=10)
 
 
 if __name__ == "__main__":

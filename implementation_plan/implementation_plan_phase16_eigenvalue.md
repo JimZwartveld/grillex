@@ -611,12 +611,12 @@ private:
 7. Store results
 
 **Acceptance Criteria:**
-- [ ] `analyze_eigenvalues()` returns true on success
-- [ ] Results accessible via `get_eigenvalue_result()`
-- [ ] Convenience methods work correctly
-- [ ] Error handling for singular/ill-conditioned systems
-- [ ] Works with warping DOFs (14-DOF elements)
-- [ ] Works with mixed element types (beams + point masses)
+- [x] `analyze_eigenvalues()` returns true on success
+- [x] Results accessible via `get_eigenvalue_result()`
+- [x] Convenience methods work correctly
+- [x] Error handling for singular/ill-conditioned systems
+- [ ] Works with warping DOFs (14-DOF elements) - deferred to validation phase
+- [x] Works with mixed element types (beams + point masses)
 
 ---
 
@@ -676,11 +676,11 @@ py::class_<Model>(m, "Model")
 ```
 
 **Acceptance Criteria:**
-- [ ] All C++ types exported to Python
-- [ ] EigensolverSettings can be configured from Python
-- [ ] Mode results accessible with all fields
-- [ ] Mode shapes returned as numpy arrays
-- [ ] Type hints added to `_grillex_cpp.pyi`
+- [x] All C++ types exported to Python
+- [x] EigensolverSettings can be configured from Python
+- [x] Mode results accessible with all fields
+- [x] Mode shapes returned as numpy arrays
+- [ ] Type hints added to `_grillex_cpp.pyi` - deferred
 
 ---
 
@@ -753,12 +753,66 @@ class StructuralModel:
 ```
 
 **Acceptance Criteria:**
-- [ ] `analyze_modes()` provides clean high-level interface
-- [ ] Results accessible via multiple convenience methods
-- [ ] DataFrame output for easy visualization and export
-- [ ] Mode displacement queries work at arbitrary positions
-- [ ] Docstrings complete with units and examples
-- [ ] Type hints for all public methods
+- [x] `analyze_modes()` provides clean high-level interface
+- [x] Results accessible via multiple convenience methods
+- [x] DataFrame output for easy visualization and export (get_modal_summary)
+- [x] Mode displacement queries work at arbitrary positions
+- [x] Docstrings complete with units and examples
+- [x] Type hints for all public methods
+
+### Execution Notes - Tasks 16.7-16.9 (Completed 2025-12-22)
+
+**Steps Taken:**
+1. Task 16.7 - Model Integration:
+   - Added `#include "grillex/eigenvalue_solver.hpp"` to model.hpp
+   - Added `std::unique_ptr<EigensolverResult> eigenvalue_result_` member
+   - Implemented `analyze_eigenvalues()` method with full workflow:
+     - DOF numbering (reuse from static analysis if available)
+     - K and M matrix assembly (including springs and point masses)
+     - BC reduction
+     - Eigenvalue solve
+     - Participation factor computation (before mode shape expansion)
+     - Mode shape expansion to full DOF vector
+   - Added convenience methods: `has_eigenvalue_results()`, `get_eigenvalue_result()`,
+     `get_natural_frequencies()`, `get_periods()`, `get_mode_shape()`
+   - Updated `clear()` to reset eigenvalue_result_
+
+2. Task 16.8 - Python Bindings:
+   - Moved Phase 16 type bindings BEFORE Model bindings (EigensolverSettings needed
+     for Model.analyze_eigenvalues default argument)
+   - Added Model eigenvalue method bindings
+   - Updated data_types.py and core/__init__.py exports
+
+3. Task 16.9 - Python API Wrapper:
+   - Added `analyze_modes()` wrapper with n_modes, method, tolerance, etc.
+   - Added `get_natural_frequencies()`, `get_periods()`, `get_mode_shape()` wrappers
+   - Added `get_mode_displacement_at()` for nodal mode shape queries
+   - Added `get_modal_summary()` returning pandas DataFrame with mode info
+
+**Problems Encountered:**
+- **Issue**: pybind11 error "class type used before registered"
+  - **Root Cause**: EigensolverSettings used as default arg in Model.analyze_eigenvalues()
+    but registered after Model in bindings
+  - **Solution**: Moved Phase 16 type bindings before Model class bindings
+
+- **Issue**: Cumulative mass percentages were empty (length 0)
+  - **Root Cause**: Mode shapes were expanded to full size BEFORE computing
+    participation factors, causing size mismatch in compute_participation_factors()
+  - **Solution**: Swapped order - compute participation factors first, then expand mode shapes
+
+**Verification:**
+- 43 tests passing (12 new tests for Tasks 16.7-16.9)
+- TestModelIntegration: 5 tests for C++ Model integration
+- TestStructuralModelEigenvalue: 7 tests for Python wrapper
+
+**Files Modified:**
+- cpp/include/grillex/model.hpp
+- cpp/src/model.cpp
+- cpp/bindings/bindings.cpp
+- src/grillex/core/data_types.py
+- src/grillex/core/__init__.py
+- src/grillex/core/model_wrapper.py
+- tests/python/test_phase16_eigenvalue.py
 
 ---
 

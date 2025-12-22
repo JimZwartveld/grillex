@@ -956,6 +956,7 @@ void Model::clear() {
     error_msg_ = "";
     default_load_case_ = nullptr;
     active_load_case_ = nullptr;
+    eigenvalue_result_.reset();
 
     next_material_id_ = 1;
     next_section_id_ = 1;
@@ -964,6 +965,220 @@ void Model::clear() {
     next_point_mass_id_ = 1;
     next_plate_id_ = 1;
     next_load_case_id_ = 1;
+}
+
+// =============================================================================
+// Eigenvalue Analysis Methods
+// =============================================================================
+
+bool Model::analyze_eigenvalues(const EigensolverSettings& settings) {
+    // Reset eigenvalue results
+    eigenvalue_result_.reset();
+    error_msg_ = "";
+
+    try {
+        // Validation
+        if (elements.empty() && plate_elements.empty()) {
+            error_msg_ = "Model has no structural elements for eigenvalue analysis";
+            return false;
+        }
+
+        // Step 1: Number DOFs (reuse from static analysis if already done)
+        if (total_dofs_ == 0) {
+            bool has_warping = needs_warping_analysis();
+
+            if (has_warping) {
+                std::vector<BeamElement*> elem_ptrs;
+                elem_ptrs.reserve(elements.size());
+                for (const auto& elem : elements) {
+                    elem_ptrs.push_back(elem.get());
+                }
+                dof_handler_.number_dofs_with_elements(nodes, elem_ptrs);
+            } else {
+                dof_handler_.number_dofs(nodes);
+            }
+            total_dofs_ = dof_handler_.total_dofs();
+        }
+
+        if (total_dofs_ == 0) {
+            error_msg_ = "Model has no active DOFs";
+            return false;
+        }
+
+        // Step 2: Assemble global stiffness matrix K
+        if (!assembler_) {
+            assembler_ = std::make_unique<Assembler>(dof_handler_);
+        }
+
+        std::vector<BeamElement*> elem_ptrs;
+        elem_ptrs.reserve(elements.size());
+        for (const auto& elem : elements) {
+            elem_ptrs.push_back(elem.get());
+        }
+
+        Eigen::SparseMatrix<double> K = assembler_->assemble_stiffness(elem_ptrs);
+
+        // Add spring stiffness (linear springs only for eigenvalue analysis)
+        for (const auto& spring : spring_elements) {
+            if (!spring->has_stiffness()) continue;
+
+            auto K_spring = spring->global_stiffness_matrix();
+
+            std::vector<int> loc(12);
+            for (int i = 0; i < 6; ++i) {
+                loc[i] = dof_handler_.get_global_dof(spring->node_i->id, i);
+                loc[i + 6] = dof_handler_.get_global_dof(spring->node_j->id, i);
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 12; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 12; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_spring(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K += K_add;
+        }
+
+        // Add plate element stiffness
+        for (const auto& plate : plate_elements) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            std::vector<int> loc(24);
+            for (int node_idx = 0; node_idx < 4; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 24; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 24; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K += K_add;
+        }
+
+        // Step 3: Assemble global mass matrix M (including point masses)
+        std::vector<PointMass*> pm_ptrs;
+        pm_ptrs.reserve(point_masses.size());
+        for (const auto& pm : point_masses) {
+            pm_ptrs.push_back(pm.get());
+        }
+
+        Eigen::SparseMatrix<double> M = assembler_->assemble_mass(elem_ptrs, pm_ptrs);
+
+        // Check for zero mass (will cause division by zero in eigenvalue problem)
+        double total_mass = assembler_->compute_total_mass(elem_ptrs, pm_ptrs);
+        if (total_mass < 1e-14) {
+            error_msg_ = "Model has zero or negligible mass";
+            return false;
+        }
+
+        // Step 4: Reduce system (eliminate fixed DOFs)
+        EigenvalueSolver eigensolver;
+        auto [K_reduced, M_reduced, dof_mapping] = eigensolver.reduce_system(
+            K, M, boundary_conditions, dof_handler_);
+
+        int n_free_dofs = static_cast<int>(dof_mapping.size());
+        if (n_free_dofs == 0) {
+            error_msg_ = "All DOFs are constrained - no free DOFs for eigenvalue analysis";
+            return false;
+        }
+
+        // Step 5: Solve eigenvalue problem
+        EigensolverResult result = eigensolver.solve(K_reduced, M_reduced, settings);
+
+        if (!result.converged) {
+            error_msg_ = "Eigenvalue solver did not converge: " + result.message;
+            return false;
+        }
+
+        // Store DOF mapping info for mode shape expansion
+        result.reduced_to_full = dof_mapping;
+        result.total_dofs = total_dofs_;
+
+        // Step 6: Compute participation factors if requested (BEFORE expanding mode shapes)
+        // Participation factors require reduced-size mode shapes for proper matrix multiplication
+        if (settings.compute_participation) {
+            // Convert M_reduced to dense for participation factor calculation
+            Eigen::MatrixXd M_reduced_dense = Eigen::MatrixXd(M_reduced);
+            eigensolver.compute_participation_factors(
+                result, M_reduced_dense, dof_mapping, dof_handler_, total_mass);
+        }
+
+        // Step 7: Expand mode shapes to full DOF vector
+        for (auto& mode : result.modes) {
+            Eigen::VectorXd expanded = EigenvalueSolver::expand_mode_shape(
+                mode.mode_shape, dof_mapping, total_dofs_);
+            mode.mode_shape = expanded;
+        }
+
+        // Store results
+        eigenvalue_result_ = std::make_unique<EigensolverResult>(std::move(result));
+
+        return true;
+
+    } catch (const std::exception& e) {
+        error_msg_ = std::string("Eigenvalue analysis failed: ") + e.what();
+        return false;
+    }
+}
+
+bool Model::has_eigenvalue_results() const {
+    return eigenvalue_result_ != nullptr && eigenvalue_result_->converged;
+}
+
+const EigensolverResult& Model::get_eigenvalue_result() const {
+    if (!eigenvalue_result_) {
+        throw std::runtime_error("No eigenvalue results available. Call analyze_eigenvalues() first.");
+    }
+    return *eigenvalue_result_;
+}
+
+std::vector<double> Model::get_natural_frequencies() const {
+    if (!eigenvalue_result_) {
+        throw std::runtime_error("No eigenvalue results available. Call analyze_eigenvalues() first.");
+    }
+    return eigenvalue_result_->get_frequencies();
+}
+
+std::vector<double> Model::get_periods() const {
+    if (!eigenvalue_result_) {
+        throw std::runtime_error("No eigenvalue results available. Call analyze_eigenvalues() first.");
+    }
+    return eigenvalue_result_->get_periods();
+}
+
+Eigen::VectorXd Model::get_mode_shape(int mode_number) const {
+    if (!eigenvalue_result_) {
+        throw std::runtime_error("No eigenvalue results available. Call analyze_eigenvalues() first.");
+    }
+
+    const ModeResult* mode = eigenvalue_result_->get_mode(mode_number);
+    if (!mode) {
+        throw std::runtime_error("Mode " + std::to_string(mode_number) + " not found");
+    }
+
+    // Mode shapes are already expanded in analyze_eigenvalues()
+    return mode->mode_shape;
 }
 
 } // namespace grillex
