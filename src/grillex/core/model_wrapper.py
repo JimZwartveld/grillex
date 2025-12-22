@@ -48,7 +48,15 @@ from grillex._grillex_cpp import (
     DOFIndex,
     Node,
     InternalActions,
-    ActionExtreme
+    ActionExtreme,
+    # Phase 15: Nonlinear Springs
+    SpringElement as _CppSpringElement,
+    SpringBehavior,
+    NonlinearSolverSettings,
+    NonlinearSolverResult,
+    LoadCombination,
+    LoadCombinationResult,
+    LoadCaseResult,
 )
 
 from .cargo import Cargo, CargoConnection
@@ -827,6 +835,119 @@ class StructuralModel:
                 return cargo
         return None
 
+    # ===== Spring Elements =====
+
+    def add_spring(
+        self,
+        node1: Union[List[float], Node],
+        node2: Union[List[float], Node],
+        kx: float = 0.0,
+        ky: float = 0.0,
+        kz: float = 0.0,
+        krx: float = 0.0,
+        kry: float = 0.0,
+        krz: float = 0.0,
+        behavior: SpringBehavior = SpringBehavior.Linear,
+        behavior_per_dof: Optional[Dict[int, SpringBehavior]] = None,
+        gap: float = 0.0,
+        gap_per_dof: Optional[Dict[int, float]] = None,
+    ) -> _CppSpringElement:
+        """Add a spring element between two nodes.
+
+        Springs can model:
+        - Linear elastic connections (behavior=Linear)
+        - Tension-only connections like cables/hooks (behavior=TensionOnly)
+        - Compression-only connections like bearing pads (behavior=CompressionOnly)
+        - Gap springs with initial clearance (gap > 0)
+
+        Args:
+            node1: First node or [x, y, z] coordinates [m].
+            node2: Second node or [x, y, z] coordinates [m].
+            kx, ky, kz: Translational stiffness [kN/m].
+            krx, kry, krz: Rotational stiffness [kN·m/rad].
+            behavior: Default behavior for all DOFs.
+            behavior_per_dof: Optional per-DOF behavior override.
+                Keys are DOF indices (0=X, 1=Y, 2=Z, 3=RX, 4=RY, 5=RZ).
+            gap: Default gap for all DOFs [m for translation, rad for rotation].
+                Spring only activates after deformation exceeds this gap.
+            gap_per_dof: Optional per-DOF gap override.
+                Keys are DOF indices (0=X, 1=Y, 2=Z, 3=RX, 4=RY, 5=RZ).
+
+        Returns:
+            The created SpringElement.
+
+        Example:
+            # Compression-only vertical spring (bearing pad)
+            spring = model.add_spring(
+                [0, 0, 0], [0, 0, 1],
+                kz=10000.0,  # 10 MN/m vertical stiffness
+                behavior=SpringBehavior.CompressionOnly
+            )
+
+            # Mixed behavior: compression in Z, linear in X/Y
+            spring = model.add_spring(
+                [0, 0, 0], [0, 0, 1],
+                kx=1000.0, ky=1000.0, kz=5000.0,
+                behavior=SpringBehavior.Linear,
+                behavior_per_dof={2: SpringBehavior.CompressionOnly}
+            )
+
+            # Gap spring (contact with 10mm clearance)
+            spring = model.add_spring(
+                [0, 0, 0], [0, 0, 1],
+                kz=50000.0,  # High contact stiffness
+                behavior=SpringBehavior.CompressionOnly,
+                gap=0.010  # 10mm gap before contact
+            )
+        """
+        # Get or create nodes
+        if isinstance(node1, list):
+            n1 = self.get_or_create_node(*node1)
+        else:
+            n1 = node1
+
+        if isinstance(node2, list):
+            n2 = self.get_or_create_node(*node2)
+        else:
+            n2 = node2
+
+        # Create spring element
+        spring = self._cpp_model.create_spring(n1, n2)
+
+        # Set stiffness values
+        spring.kx = kx
+        spring.ky = ky
+        spring.kz = kz
+        spring.krx = krx
+        spring.kry = kry
+        spring.krz = krz
+
+        # Set behavior
+        if behavior != SpringBehavior.Linear:
+            spring.set_all_behavior(behavior)
+
+        if behavior_per_dof:
+            for dof, b in behavior_per_dof.items():
+                spring.set_behavior(dof, b)
+
+        # Set gaps
+        if gap != 0.0:
+            spring.set_all_gaps(gap)
+
+        if gap_per_dof:
+            for dof, g in gap_per_dof.items():
+                spring.set_gap(dof, g)
+
+        return spring
+
+    def has_nonlinear_springs(self) -> bool:
+        """Check if model contains nonlinear (tension/compression-only) springs.
+
+        Returns:
+            True if any spring has non-Linear behavior or gap.
+        """
+        return self._cpp_model.has_nonlinear_springs()
+
     # ===== Boundary Conditions =====
 
     def fix_node_at(self, position: List[float], include_warping: bool = False) -> None:
@@ -1051,6 +1172,258 @@ class StructuralModel:
     def is_analyzed(self) -> bool:
         """Check if the model has been analyzed."""
         return self._cpp_model.is_analyzed()
+
+    def analyze_with_nonlinear_springs(
+        self,
+        settings: Optional[NonlinearSolverSettings] = None
+    ) -> Dict[int, LoadCaseResult]:
+        """Run analysis with support for nonlinear (tension/compression-only) springs.
+
+        If no nonlinear springs exist, falls back to efficient linear analysis.
+
+        This method uses an iterative solver that:
+        1. Assembles stiffness from currently active springs
+        2. Solves the linear system
+        3. Updates spring states based on deformation
+        4. Repeats until convergence (no state changes)
+
+        Args:
+            settings: Optional solver settings. If None, uses model defaults.
+                Key settings:
+                - max_iterations: Maximum iterations (default: 50)
+                - gap_tolerance: Tolerance for gap activation [m] (default: 1e-10)
+                - displacement_tolerance: Convergence tolerance (default: 1e-8)
+
+        Returns:
+            Dictionary mapping load case ID to LoadCaseResult.
+            Each result contains:
+            - displacements: Global displacement vector
+            - reactions: Reaction forces
+            - iterations: Number of solver iterations
+            - spring_states: Final spring states [(id, active[6])]
+            - spring_forces: Final spring forces [(id, force[6])]
+
+        Example:
+            # Set up compression-only spring
+            spring = model.add_spring(
+                [0, 0, 0], [0, 0, 1],
+                kz=10000.0,
+                behavior=SpringBehavior.CompressionOnly
+            )
+
+            # Run nonlinear analysis
+            results = model.analyze_with_nonlinear_springs()
+
+            # Check spring state
+            result = results[load_case.id()]
+            print(f"Converged in {result.iterations} iterations")
+        """
+        if settings is not None:
+            # Apply settings to model
+            model_settings = self._cpp_model.nonlinear_settings()
+            model_settings.max_iterations = settings.max_iterations
+            model_settings.gap_tolerance = settings.gap_tolerance
+            model_settings.displacement_tolerance = settings.displacement_tolerance
+
+        success = self._cpp_model.analyze_nonlinear()
+
+        # Return results dictionary
+        return dict(self._cpp_model.get_all_results())
+
+    def analyze_load_combination(
+        self,
+        combination: LoadCombination,
+        settings: Optional[NonlinearSolverSettings] = None
+    ) -> LoadCombinationResult:
+        """Analyze a specific load combination with nonlinear spring support.
+
+        Unlike linear analysis where combinations can use superposition
+        (scaling and summing individual results), nonlinear springs require
+        solving each combination directly as a single problem.
+
+        **Static→Dynamic Sequencing:**
+        This method implements proper physical sequencing:
+        1. First solves Permanent loads only to establish baseline contact
+           pattern (gaps close, cargo settles under gravity)
+        2. Then solves the full combination starting from the static state
+
+        This is essential for cargo analysis where gaps must close under
+        gravity before dynamic loads (roll, pitch) are applied.
+
+        Args:
+            combination: The load combination to analyze.
+            settings: Optional solver settings.
+
+        Returns:
+            LoadCombinationResult containing:
+            - displacements: Combined displacement vector
+            - reactions: Reaction forces
+            - converged: Whether analysis converged
+            - iterations: Total iterations (static + combined)
+            - spring_states: Final spring states
+            - spring_forces: Final spring forces
+
+        Example:
+            # Create load combination
+            combo = LoadCombination(1, "ULS-Roll", 1.35, 1.5, 1.5, 1.0)
+            combo.add_load_case(dead_load)   # Permanent - solved first
+            combo.add_load_case(roll_load)   # Environmental - on top
+
+            # Analyze combination
+            result = model.analyze_load_combination(combo)
+            if result.converged:
+                print(f"Max displacement: {max(abs(result.displacements)):.4f} m")
+                print(f"Converged in {result.iterations} iterations")
+        """
+        if settings is not None:
+            return self._cpp_model.analyze_combination(combination, settings)
+        else:
+            return self._cpp_model.analyze_combination(combination)
+
+    def get_nonlinear_settings(self) -> NonlinearSolverSettings:
+        """Get the nonlinear solver settings for this model.
+
+        Returns:
+            NonlinearSolverSettings object (can be modified).
+        """
+        return self._cpp_model.nonlinear_settings()
+
+    # ===== Spring Results Access =====
+
+    def get_spring_state(
+        self,
+        spring_id: int,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> Dict[str, bool]:
+        """Get active/inactive state for each DOF of a spring.
+
+        Args:
+            spring_id: ID of the spring element.
+            load_case: LoadCase to query (uses active if None).
+
+        Returns:
+            Dictionary mapping DOF names to active state.
+            Keys: 'UX', 'UY', 'UZ', 'RX', 'RY', 'RZ'
+            Values: True if spring DOF is active, False if inactive.
+
+        Example:
+            state = model.get_spring_state(1)
+            if state['UZ']:
+                print("Spring is in compression (active)")
+            else:
+                print("Spring has lifted off (inactive)")
+        """
+        if load_case is not None:
+            self._cpp_model.set_active_load_case(load_case)
+
+        results = self._cpp_model.get_all_results()
+        active_lc = self._cpp_model.get_active_load_case()
+
+        if active_lc is None or active_lc.id not in results:
+            raise RuntimeError("No results available. Run analyze first.")
+
+        result = results[active_lc.id]
+
+        # Find the spring in the results
+        dof_names = ['UX', 'UY', 'UZ', 'RX', 'RY', 'RZ']
+        for sid, states in result.spring_states:
+            if sid == spring_id:
+                return {dof_names[i]: states[i] for i in range(6)}
+
+        raise ValueError(f"Spring {spring_id} not found in results")
+
+    def get_spring_force(
+        self,
+        spring_id: int,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> Dict[str, float]:
+        """Get spring forces for each DOF.
+
+        Args:
+            spring_id: ID of the spring element.
+            load_case: LoadCase to query (uses active if None).
+
+        Returns:
+            Dictionary mapping DOF names to forces.
+            Keys: 'UX', 'UY', 'UZ' [kN], 'RX', 'RY', 'RZ' [kN·m]
+            Values: Force/moment in spring (0 if inactive).
+
+        Example:
+            forces = model.get_spring_force(1)
+            print(f"Vertical force: {forces['UZ']:.2f} kN")
+        """
+        if load_case is not None:
+            self._cpp_model.set_active_load_case(load_case)
+
+        results = self._cpp_model.get_all_results()
+        active_lc = self._cpp_model.get_active_load_case()
+
+        if active_lc is None or active_lc.id not in results:
+            raise RuntimeError("No results available. Run analyze first.")
+
+        result = results[active_lc.id]
+
+        # Find the spring in the results
+        dof_names = ['UX', 'UY', 'UZ', 'RX', 'RY', 'RZ']
+        for sid, forces in result.spring_forces:
+            if sid == spring_id:
+                return {dof_names[i]: forces[i] for i in range(6)}
+
+        raise ValueError(f"Spring {spring_id} not found in results")
+
+    def get_spring_summary(
+        self,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> "pd.DataFrame":
+        """Get summary of all spring states and forces.
+
+        Args:
+            load_case: LoadCase to query (uses active if None).
+
+        Returns:
+            DataFrame with columns:
+            - spring_id: Spring element ID
+            - UX_active, UY_active, ...: Active state per DOF
+            - UX_force, UY_force, ...: Force per DOF [kN or kN·m]
+
+        Example:
+            df = model.get_spring_summary()
+            print(df[['spring_id', 'UZ_active', 'UZ_force']])
+        """
+        try:
+            import pandas as pd
+        except ImportError:
+            raise ImportError("pandas is required for get_spring_summary()")
+
+        if load_case is not None:
+            self._cpp_model.set_active_load_case(load_case)
+
+        results = self._cpp_model.get_all_results()
+        active_lc = self._cpp_model.get_active_load_case()
+
+        if active_lc is None or active_lc.id not in results:
+            raise RuntimeError("No results available. Run analyze first.")
+
+        result = results[active_lc.id]
+        dof_names = ['UX', 'UY', 'UZ', 'RX', 'RY', 'RZ']
+
+        # Build state dict
+        states_by_id = {sid: states for sid, states in result.spring_states}
+        forces_by_id = {sid: forces for sid, forces in result.spring_forces}
+
+        rows = []
+        for spring_id in states_by_id:
+            row = {'spring_id': spring_id}
+            states = states_by_id[spring_id]
+            forces = forces_by_id.get(spring_id, [0.0] * 6)
+
+            for i, name in enumerate(dof_names):
+                row[f'{name}_active'] = states[i]
+                row[f'{name}_force'] = forces[i]
+
+            rows.append(row)
+
+        return pd.DataFrame(rows)
 
     # ===== Results Access =====
 

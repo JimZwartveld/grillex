@@ -471,6 +471,416 @@ bool Model::needs_warping_analysis() const {
     return false;
 }
 
+bool Model::has_nonlinear_springs() const {
+    for (const auto& spring : spring_elements) {
+        if (spring->is_nonlinear() || spring->has_gap()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Model::analyze_nonlinear() {
+    // If no nonlinear springs, fall back to efficient linear analysis
+    if (!has_nonlinear_springs()) {
+        return analyze();
+    }
+
+    // Reset state
+    analyzed_ = false;
+    error_msg_ = "";
+    results_.clear();
+    total_dofs_ = 0;
+
+    try {
+        // Validation
+        if (elements.empty() && spring_elements.empty() && plate_elements.empty()) {
+            error_msg_ = "Model has no elements";
+            return false;
+        }
+
+        if (load_cases_.empty()) {
+            error_msg_ = "No load cases defined. Create at least one load case.";
+            return false;
+        }
+
+        // Step 1: Number DOFs (same for all cases)
+        bool has_warping = needs_warping_analysis();
+
+        if (has_warping) {
+            std::vector<BeamElement*> elem_ptrs;
+            elem_ptrs.reserve(elements.size());
+            for (const auto& elem : elements) {
+                elem_ptrs.push_back(elem.get());
+            }
+            dof_handler_.number_dofs_with_elements(nodes, elem_ptrs);
+        } else {
+            dof_handler_.number_dofs(nodes);
+        }
+
+        total_dofs_ = dof_handler_.total_dofs();
+
+        if (total_dofs_ == 0) {
+            error_msg_ = "Model has no active DOFs";
+            return false;
+        }
+
+        // Step 2: Assemble BASE stiffness matrix (beams + plates, NOT springs)
+        assembler_ = std::make_unique<Assembler>(dof_handler_);
+
+        std::vector<BeamElement*> elem_ptrs;
+        elem_ptrs.reserve(elements.size());
+        for (const auto& elem : elements) {
+            elem_ptrs.push_back(elem.get());
+        }
+
+        Eigen::SparseMatrix<double> K_base = assembler_->assemble_stiffness(elem_ptrs);
+
+        // Add plate element stiffness to base
+        for (const auto& plate : plate_elements) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            std::vector<int> loc(24);
+            for (int node_idx = 0; node_idx < 4; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 24; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 24; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K_base += K_add;
+        }
+
+        // Apply boundary conditions to base K
+        Eigen::VectorXd dummy_F = Eigen::VectorXd::Zero(total_dofs_);
+        auto [K_base_bc, _] = boundary_conditions.apply_to_system(K_base, dummy_F, dof_handler_);
+
+        // Create nonlinear solver
+        NonlinearSolver nl_solver(nl_settings_);
+
+        // Get raw spring pointers for solver
+        std::vector<SpringElement*> spring_ptrs;
+        spring_ptrs.reserve(spring_elements.size());
+        for (auto& spring : spring_elements) {
+            spring_ptrs.push_back(spring.get());
+        }
+
+        // Step 3: Analyze each load case
+        bool all_success = true;
+
+        for (const auto& lc_ptr : load_cases_) {
+            LoadCase* lc = lc_ptr.get();
+            LoadCaseResult result(lc);
+
+            try {
+                // Assemble load vector for this case
+                Eigen::VectorXd F = lc->assemble_load_vector(*this, dof_handler_);
+                Eigen::VectorXd F_applied = F;
+
+                // Apply boundary conditions to F
+                auto [_, F_bc] = boundary_conditions.apply_to_system(K_base, F, dof_handler_);
+
+                // Solve using nonlinear solver
+                auto nl_result = nl_solver.solve(K_base_bc, F_bc, spring_ptrs, dof_handler_);
+
+                result.displacements = nl_result.displacements;
+                result.success = nl_result.converged;
+                result.iterations = nl_result.iterations;
+                result.solver_message = nl_result.message;
+                result.spring_states = nl_result.spring_states;
+                result.spring_forces = nl_result.spring_forces;
+
+                if (!nl_result.converged) {
+                    result.error_message = nl_result.message;
+                    all_success = false;
+                } else {
+                    // Compute reactions with final spring stiffness
+                    // Assemble current spring stiffness
+                    Eigen::SparseMatrix<double> K_springs(total_dofs_, total_dofs_);
+                    std::vector<Eigen::Triplet<double>> triplets;
+
+                    for (const auto* spring : spring_ptrs) {
+                        auto K_s = spring->current_stiffness_matrix();
+                        std::array<int, 12> loc;
+                        for (int d = 0; d < 6; ++d) {
+                            loc[d] = dof_handler_.get_global_dof(spring->node_i->id, d);
+                            loc[d + 6] = dof_handler_.get_global_dof(spring->node_j->id, d);
+                        }
+                        for (int i = 0; i < 12; ++i) {
+                            if (loc[i] < 0) continue;
+                            for (int j = 0; j < 12; ++j) {
+                                if (loc[j] < 0) continue;
+                                double val = K_s(i, j);
+                                if (std::abs(val) > 1e-20) {
+                                    triplets.emplace_back(loc[i], loc[j], val);
+                                }
+                            }
+                        }
+                    }
+                    K_springs.setFromTriplets(triplets.begin(), triplets.end());
+
+                    Eigen::SparseMatrix<double> K_total = K_base + K_springs;
+                    result.reactions = K_total * result.displacements - F_applied;
+                }
+
+            } catch (const std::exception& e) {
+                result.success = false;
+                result.error_message = std::string("Load case analysis failed: ") + e.what();
+                all_success = false;
+            }
+
+            results_[lc->id()] = result;
+        }
+
+        analyzed_ = all_success;
+
+        if (!all_success) {
+            error_msg_ = "One or more load cases failed to converge";
+        }
+
+        // Ensure there's an active load case
+        if (active_load_case_ == nullptr && !load_cases_.empty()) {
+            active_load_case_ = load_cases_[0].get();
+        }
+
+        return all_success;
+
+    } catch (const std::exception& e) {
+        error_msg_ = std::string("Nonlinear analysis failed: ") + e.what();
+        return false;
+    }
+}
+
+LoadCombinationResult Model::analyze_combination(
+    const LoadCombination& combo,
+    const NonlinearSolverSettings& settings)
+{
+    LoadCombinationResult result;
+
+    try {
+        // Validation
+        if (elements.empty() && spring_elements.empty() && plate_elements.empty()) {
+            result.message = "Model has no elements";
+            return result;
+        }
+
+        if (combo.empty()) {
+            result.message = "Load combination is empty";
+            return result;
+        }
+
+        // Ensure DOFs are numbered (reuse if already done)
+        if (total_dofs_ == 0) {
+            bool has_warping = needs_warping_analysis();
+            if (has_warping) {
+                std::vector<BeamElement*> elem_ptrs;
+                elem_ptrs.reserve(elements.size());
+                for (const auto& elem : elements) {
+                    elem_ptrs.push_back(elem.get());
+                }
+                dof_handler_.number_dofs_with_elements(nodes, elem_ptrs);
+            } else {
+                dof_handler_.number_dofs(nodes);
+            }
+            total_dofs_ = dof_handler_.total_dofs();
+        }
+
+        if (total_dofs_ == 0) {
+            result.message = "Model has no active DOFs";
+            return result;
+        }
+
+        // Assemble BASE stiffness matrix (beams + plates, NOT springs)
+        if (!assembler_) {
+            assembler_ = std::make_unique<Assembler>(dof_handler_);
+        }
+
+        std::vector<BeamElement*> elem_ptrs;
+        elem_ptrs.reserve(elements.size());
+        for (const auto& elem : elements) {
+            elem_ptrs.push_back(elem.get());
+        }
+
+        Eigen::SparseMatrix<double> K_base = assembler_->assemble_stiffness(elem_ptrs);
+
+        // Add plate element stiffness to base
+        for (const auto& plate : plate_elements) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            std::vector<int> loc(24);
+            for (int node_idx = 0; node_idx < 4; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 24; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 24; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K_base += K_add;
+        }
+
+        // Apply boundary conditions to base K
+        Eigen::VectorXd dummy_F = Eigen::VectorXd::Zero(total_dofs_);
+        auto [K_base_bc, _] = boundary_conditions.apply_to_system(K_base, dummy_F, dof_handler_);
+
+        // Get raw spring pointers
+        std::vector<SpringElement*> spring_ptrs;
+        spring_ptrs.reserve(spring_elements.size());
+        for (auto& spring : spring_elements) {
+            spring_ptrs.push_back(spring.get());
+        }
+
+        // Create nonlinear solver with provided settings (or model defaults)
+        NonlinearSolverSettings effective_settings = settings;
+        if (settings.max_iterations == 50 && nl_settings_.max_iterations != 50) {
+            // Use model defaults if settings appear to be default
+            effective_settings = nl_settings_;
+        }
+        NonlinearSolver nl_solver(effective_settings);
+
+        // =====================================================================
+        // STATIC→DYNAMIC SEQUENCING
+        //
+        // For proper physical behavior:
+        // 1. First solve the "static base" (Permanent loads only)
+        //    to establish the baseline contact pattern (gaps close, cargo settles)
+        // 2. Then solve the full combination starting from the static state
+        // =====================================================================
+
+        // Step 1: Identify and assemble static base (Permanent loads only)
+        Eigen::VectorXd F_static = Eigen::VectorXd::Zero(total_dofs_);
+        bool has_permanent = false;
+
+        for (const auto& term : combo.get_terms()) {
+            if (term.load_case->type() == LoadCaseType::Permanent) {
+                Eigen::VectorXd F_case = term.load_case->assemble_load_vector(*this, dof_handler_);
+                F_static += term.factor * F_case;
+                has_permanent = true;
+            }
+        }
+
+        NonlinearInitialState initial_state;
+        int total_iterations = 0;
+
+        if (has_permanent && has_nonlinear_springs()) {
+            // Solve static base to establish baseline contact pattern
+            Eigen::VectorXd F_static_bc;
+            {
+                auto [_, F_bc] = boundary_conditions.apply_to_system(K_base, F_static, dof_handler_);
+                F_static_bc = F_bc;
+            }
+
+            auto static_result = nl_solver.solve(K_base_bc, F_static_bc, spring_ptrs, dof_handler_);
+            total_iterations += static_result.iterations;
+
+            if (!static_result.converged) {
+                result.converged = false;
+                result.iterations = total_iterations;
+                result.message = "Static base solve failed: " + static_result.message;
+                return result;
+            }
+
+            // Use static solution as starting point for full combination
+            initial_state.displacement = static_result.displacements;
+            initial_state.spring_states = static_result.spring_states;
+        }
+
+        // Step 2: Assemble full combined load vector
+        Eigen::VectorXd F_combined = Eigen::VectorXd::Zero(total_dofs_);
+
+        for (const auto& term : combo.get_terms()) {
+            Eigen::VectorXd F_case = term.load_case->assemble_load_vector(*this, dof_handler_);
+            F_combined += term.factor * F_case;
+        }
+
+        Eigen::VectorXd F_applied = F_combined;
+
+        // Apply boundary conditions to combined F
+        Eigen::VectorXd F_combined_bc;
+        {
+            auto [_, F_bc] = boundary_conditions.apply_to_system(K_base, F_combined, dof_handler_);
+            F_combined_bc = F_bc;
+        }
+
+        // Step 3: Solve full combination starting from static state
+        auto nl_result = nl_solver.solve(K_base_bc, F_combined_bc, spring_ptrs,
+                                          dof_handler_, initial_state);
+        total_iterations += nl_result.iterations;
+
+        result.displacements = nl_result.displacements;
+        result.converged = nl_result.converged;
+        result.iterations = total_iterations;
+        result.spring_states = nl_result.spring_states;
+        result.spring_forces = nl_result.spring_forces;
+
+        if (!nl_result.converged) {
+            result.message = nl_result.message;
+        } else {
+            // Compute reactions with final spring stiffness
+            Eigen::SparseMatrix<double> K_springs(total_dofs_, total_dofs_);
+            std::vector<Eigen::Triplet<double>> triplets;
+
+            for (const auto* spring : spring_ptrs) {
+                auto K_s = spring->current_stiffness_matrix();
+                std::array<int, 12> loc;
+                for (int d = 0; d < 6; ++d) {
+                    loc[d] = dof_handler_.get_global_dof(spring->node_i->id, d);
+                    loc[d + 6] = dof_handler_.get_global_dof(spring->node_j->id, d);
+                }
+                for (int i = 0; i < 12; ++i) {
+                    if (loc[i] < 0) continue;
+                    for (int j = 0; j < 12; ++j) {
+                        if (loc[j] < 0) continue;
+                        double val = K_s(i, j);
+                        if (std::abs(val) > 1e-20) {
+                            triplets.emplace_back(loc[i], loc[j], val);
+                        }
+                    }
+                }
+            }
+            K_springs.setFromTriplets(triplets.begin(), triplets.end());
+
+            Eigen::SparseMatrix<double> K_total = K_base + K_springs;
+            result.reactions = K_total * result.displacements - F_applied;
+            result.message = nl_result.message;
+        }
+
+        return result;
+
+    } catch (const std::exception& e) {
+        result.converged = false;
+        result.message = std::string("Combination analysis failed: ") + e.what();
+        return result;
+    }
+}
+
 Eigen::VectorXd Model::get_displacements() const {
     if (!analyzed_) {
         throw std::runtime_error("Model not analyzed. Call analyze() first.");

@@ -10,7 +10,7 @@ from .data_types import (
     DOFIndex, FixedDOF, BCHandler,
     SolverMethod, LinearSolver,
     LoadCaseType, NodalLoad, LineLoad, DistributedLoad,
-    LoadCase, LoadCaseResult,
+    LoadCase, LoadCaseResult, LoadCombinationResult,
     LoadCombinationTerm, LoadCombination,
     Model,
     EqualityConstraint, RigidLink, ReducedSystem, ConstraintHandler,
@@ -19,6 +19,9 @@ from .data_types import (
     ReleaseCombo4DOF, ReleaseCombo2DOF, ReleaseComboWarping, DisplacementLine,
     # Phase 8: Additional Element Types
     SpringElement, PointMass, PlateElement, LoadingCondition,
+    # Phase 15: Nonlinear Springs
+    SpringBehavior, NonlinearSolverResult, NonlinearInitialState,
+    NonlinearSolverSettings, NonlinearSolver,
     # Phase 11: Error Handling & Diagnostics
     ErrorCode, GrillexError, WarningCode, WarningSeverity,
     GrillexWarning, WarningList,
@@ -44,7 +47,7 @@ __all__ = [
     'DOFIndex', 'FixedDOF', 'BCHandler',
     'SolverMethod', 'LinearSolver',
     'LoadCaseType', 'NodalLoad', 'LineLoad', 'DistributedLoad',
-    'LoadCase', 'LoadCaseResult',
+    'LoadCase', 'LoadCaseResult', 'LoadCombinationResult',
     'LoadCombinationTerm', 'LoadCombination',
     'Model',
     'EqualityConstraint', 'RigidLink', 'ReducedSystem', 'ConstraintHandler',
@@ -53,6 +56,9 @@ __all__ = [
     'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine',
     # Phase 8: Additional Element Types
     'SpringElement', 'PointMass', 'PlateElement', 'LoadingCondition',
+    # Phase 15: Nonlinear Springs
+    'SpringBehavior', 'NonlinearSolverResult', 'NonlinearInitialState',
+    'NonlinearSolverSettings', 'NonlinearSolver',
     # Phase 9: Cargo Modelling
     'Cargo', 'CargoConnection',
     # Phase 11: Error Handling & Diagnostics

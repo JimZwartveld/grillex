@@ -2,7 +2,7 @@
 
 This document provides a comprehensive overview of all acceptance criteria across implementation phases. It is automatically updated when tasks are completed.
 
-**Last Updated:** 2025-12-21
+**Last Updated:** 2025-12-22
 
 ## Summary Statistics
 
@@ -23,7 +23,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 12 | LLM Tooling | 10 | 9 | 1 | 90% |
 | 13 | Validation Benchmarks | 12 | 12 | 0 | 100% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| **Total** | | **242** | **205** | **37** | **85%** |
+| 15 | Nonlinear Springs | 79 | 79 | 0 | 100% |
+| **Total** | | **321** | **284** | **37** | **88%** |
 
 ---
 
@@ -526,6 +527,109 @@ This document provides a comprehensive overview of all acceptance criteria acros
 
 ---
 
+## Phase 15: Nonlinear Springs (Tension/Compression-Only and Gap Springs)
+
+### Task 15.1: Spring Element State Tracking
+- [x] SpringBehavior enum added with Linear, TensionOnly, CompressionOnly values
+- [x] Per-DOF behavior can be set independently
+- [x] Per-DOF gap values can be set independently
+- [x] State tracking correctly identifies when gap is closed
+- [x] current_stiffness_matrix() returns zero contribution for inactive DOFs
+- [x] compute_forces() correctly applies gap offset to force calculation
+- [x] compute_gap_forces() returns correct gap closure forces for solver
+- [x] state_changed() correctly detects state transitions
+- [x] Gap tolerance prevents chattering near threshold
+- [x] has_gap() and is_nonlinear() helper methods work correctly
+
+### Task 15.2: Iterative Nonlinear Solver
+- [x] NonlinearSolver class implemented with settings struct
+- [x] NonlinearInitialState struct implemented for static→dynamic sequencing
+- [x] solve() accepts optional initial_state parameter
+- [x] When initial_state provided, iteration starts from that displacement/state
+- [x] When initial_state not provided, starts from zero with all springs active
+- [x] Iterative solve correctly updates spring states
+- [x] Gap forces computed and added to RHS for gap springs
+- [x] Convergence detected when no spring states change
+- [x] Maximum iteration limit prevents infinite loops
+- [x] Linear-only springs without gaps bypass iteration (optimization)
+- [x] Oscillation detection prevents flip-flopping states
+- [x] Singular system during iteration handled gracefully
+- [x] Result includes final spring states for reporting
+
+### Task 15.3: Model Integration for Nonlinear Analysis
+- [x] has_nonlinear_springs() correctly identifies nonlinear springs in model
+- [x] analyze_nonlinear() uses iterative solver for load cases
+- [x] analyze_combination() solves combined loads directly (not superposition)
+- [x] analyze_combination() implements static→dynamic sequencing:
+  - Permanent loads solved first to establish baseline contact pattern
+  - Full combination solved starting from static state (initial_state)
+  - Static solve failure returns meaningful error message
+- [x] Linear models still use efficient linear solver
+- [x] LoadCaseResult extended with iteration count and spring states
+- [x] Reactions computed correctly with final spring stiffness
+
+### Task 15.4: Python API Updates
+- [x] SpringBehavior enum exported to Python
+- [x] NonlinearSolverSettings exposed with all fields
+- [x] NonlinearSolverResult exposed with spring_states
+- [x] SpringElement.behavior accessible per-DOF from Python
+- [x] SpringElement.gap accessible per-DOF from Python
+- [x] StructuralModel.add_spring() accepts behavior and gap parameters
+- [x] set_gap() and set_all_gaps() methods work correctly
+- [x] has_gap() and is_nonlinear() methods exposed
+- [x] analyze_with_nonlinear_springs() method added
+- [x] analyze_load_combination() method added
+- [x] All new types have complete docstrings with units
+
+### Task 15.5: Results Reporting for Nonlinear Springs
+- [x] LoadCaseResult includes iterations and solver_message
+- [x] Spring states stored in results
+- [x] Spring forces computed and stored
+- [x] Python API can query individual spring states
+- [x] Summary DataFrame shows all springs with states and forces
+- [x] Units documented (kN for force, kN·m for moment)
+
+### Task 15.6: Convergence Enhancements
+- [x] Oscillation detection implemented
+- [x] Partial stiffness option for oscillating springs
+- [x] Hysteresis band prevents rapid state changes
+- [x] Line search damping available as option
+- [x] Clear warning messages for convergence issues
+- [x] Settings expose all convergence parameters
+
+### Task 15.7: Validation Tests
+- [x] Tension-only spring tests pass
+- [x] Compression-only spring tests pass
+- [x] Load reversal iteration test demonstrates state changes
+- [x] Multi-spring test shows partial liftoff
+- [x] Load combination test proves superposition invalidity
+- [x] Gap spring open/closed state tests pass
+- [x] Gap spring force offset verified (F = k × (δ - gap))
+- [x] Gap closure iteration test passes
+- [x] Contact with clearance practical test passes
+- [x] Hook with slack practical test passes
+- [x] Analytical verification test passes
+- [x] Static→dynamic sequencing test verifies Permanent loads solved first
+- [x] Liftoff from static contact test passes
+- [x] Initial state preserves spring states from static solve
+- [x] Convergence reporting verified
+- [x] Edge cases (near-zero deformation) handled
+
+### Task 15.8: Documentation and Examples
+- [x] User guide section added to docs (including gap springs)
+- [x] Technical reference documents algorithm and gap forces
+- [x] At least 3 complete examples with code (bearing pads, gap contact, slack cables)
+- [x] Troubleshooting section for common issues
+- [x] All docstrings complete with units
+
+### Task 15.9: Performance Optimization
+- [x] Sparse matrix updates avoid full reassembly
+- [x] Linear models have no performance penalty
+- [x] Iteration count logged for performance analysis
+- [x] Benchmark shows acceptable performance for 100+ springs
+
+---
+
 ## Maintenance Notes
 
 ### Updating This Document
@@ -549,4 +653,5 @@ Each acceptance criterion should be verified by:
 - `grillex_requirements.md` - Full requirements specification
 - `implementation_plan_overview.md` - Phase overview
 - `implementation_plan_phase*.md` - Detailed phase implementation plans
+- `implementation_plan_phase15.md` - Nonlinear springs (tension/compression-only, gap springs)
 - `CLAUDE.md` - AI assistant guidelines

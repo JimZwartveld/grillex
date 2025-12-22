@@ -13,6 +13,7 @@
 #include "grillex/solver.hpp"
 #include "grillex/load_case.hpp"
 #include "grillex/constraints.hpp"
+#include "grillex/nonlinear_solver.hpp"
 
 #include <vector>
 #include <memory>
@@ -282,8 +283,77 @@ public:
      *
      * After successful analysis, use set_active_load_case() to choose which
      * case's results to query via get_displacements(), etc.
+     *
+     * Note: For models with nonlinear springs, this uses the linear solver.
+     * Use analyze_nonlinear() for proper iterative nonlinear analysis.
      */
     bool analyze();
+
+    /**
+     * @brief Check if model has nonlinear (tension/compression-only) springs
+     * @return true if any spring has non-Linear behavior
+     *
+     * Use this to determine whether nonlinear analysis is needed.
+     * If false, the efficient linear solver can be used.
+     */
+    bool has_nonlinear_springs() const;
+
+    /**
+     * @brief Run nonlinear analysis for all load cases
+     * @return true if ALL load cases converged successfully
+     *
+     * Uses iterative solver for tension/compression-only springs.
+     * If no nonlinear springs exist, falls back to efficient linear analysis.
+     *
+     * Analysis workflow:
+     * 1. Number DOFs (once - same for all cases)
+     * 2. Assemble base stiffness matrix (beams, plates - excludes springs)
+     * 3. For each load case:
+     *    a. Use NonlinearSolver to iterate until spring states converge
+     *    b. Store displacements, reactions, and spring states
+     */
+    bool analyze_nonlinear();
+
+    /**
+     * @brief Analyze a specific load combination with nonlinear spring support
+     * @param combo Load combination to analyze
+     * @param settings Optional solver settings (uses model defaults if empty)
+     * @return LoadCombinationResult with displacements and convergence info
+     *
+     * **IMPORTANT**: With nonlinear springs, load combinations cannot use
+     * superposition (summing individual load case results). Each combination
+     * must be solved directly as a single nonlinear problem.
+     *
+     * **Static→Dynamic Sequencing**:
+     * For proper physical behavior, this method:
+     * 1. First solves the "static base" (Permanent load cases only)
+     *    to establish the baseline contact pattern (gaps close, cargo settles)
+     * 2. Then solves the full combination starting from the static state
+     *
+     * This is essential for gap springs where gaps must close under gravity
+     * before dynamic loads are applied.
+     *
+     * @code
+     * LoadCombination combo(1, "ULS-Roll", 1.35, 1.5, 1.5, 1.0);
+     * combo.add_load_case(dead_load);  // Permanent - solved first as baseline
+     * combo.add_load_case(roll_moment); // Environmental - applied on top
+     *
+     * auto result = model.analyze_combination(combo);
+     * if (result.converged) {
+     *     // result.displacements, result.spring_states available
+     * }
+     * @endcode
+     */
+    LoadCombinationResult analyze_combination(
+        const LoadCombination& combo,
+        const NonlinearSolverSettings& settings = {});
+
+    /**
+     * @brief Get nonlinear solver settings
+     * @return Reference to settings (can be modified)
+     */
+    NonlinearSolverSettings& nonlinear_settings() { return nl_settings_; }
+    const NonlinearSolverSettings& nonlinear_settings() const { return nl_settings_; }
 
     /**
      * @brief Check if model has been analyzed
@@ -361,6 +431,7 @@ private:
     DOFHandler dof_handler_;
     std::unique_ptr<Assembler> assembler_;  // Created during analyze()
     LinearSolver solver_;
+    NonlinearSolverSettings nl_settings_;   // Settings for nonlinear analysis
 
     // Load case management
     std::vector<std::unique_ptr<LoadCase>> load_cases_;
