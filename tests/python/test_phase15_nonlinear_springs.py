@@ -26,6 +26,7 @@ Task 15.5: Results Reporting
 Task 15.6: Convergence Enhancements
 - [x] Hysteresis band prevents chattering
 - [x] Partial stiffness helps oscillating springs converge
+- [x] Line search damping available as option
 
 Task 15.7: Validation Tests
 - [x] Tension-only spring tests pass
@@ -355,6 +356,50 @@ class TestPartialStiffness:
         # Clear oscillating
         spring.set_oscillating(False)
         assert spring.is_oscillating() is False
+
+
+class TestLineSearchDamping:
+    """Tests for line search damping convergence enhancement."""
+
+    def test_line_search_setting_applied(self):
+        """enable_line_search and line_search_factor settings work."""
+        settings = NonlinearSolverSettings()
+        settings.enable_line_search = True
+        settings.line_search_factor = 0.25
+
+        solver = NonlinearSolver(settings)
+
+        assert solver.settings().enable_line_search is True
+        assert solver.settings().line_search_factor == 0.25
+
+    def test_line_search_convergence(self):
+        """Line search damping helps convergence."""
+        model = Model()
+
+        n1 = model.get_or_create_node(0, 0, 0)
+        n2 = model.get_or_create_node(1, 0, 0)
+
+        mat = model.create_material("Steel", 210e6, 0.3, 7.85e-6)
+        sec = model.create_section("IPE300", 0.00538, 8.36e-5, 6.04e-6, 2.01e-7)
+
+        config = BeamConfig()
+        model.create_beam(n1, n2, mat, sec, config)
+
+        spring = model.create_spring(n1, n2)
+        spring.kz = 1000.0
+        spring.set_behavior(2, SpringBehavior.CompressionOnly)
+
+        model.boundary_conditions.fix_node(n1.id)
+
+        lc = model.get_default_load_case()
+        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+
+        # Enable line search damping
+        model.nonlinear_settings().enable_line_search = True
+        model.nonlinear_settings().line_search_factor = 0.2
+
+        success = model.analyze_nonlinear()
+        assert success
 
 
 class TestNonlinearSolverResult:

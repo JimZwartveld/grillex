@@ -1038,6 +1038,10 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Use partial stiffness (0.5*k) for oscillating springs (default: false)")
         .def_readwrite("hysteresis_band", &grillex::NonlinearSolverSettings::hysteresis_band,
              "Hysteresis band width for state changes [m or rad] (default: 0.0)")
+        .def_readwrite("enable_line_search", &grillex::NonlinearSolverSettings::enable_line_search,
+             "Enable line search damping for convergence (default: false)")
+        .def_readwrite("line_search_factor", &grillex::NonlinearSolverSettings::line_search_factor,
+             "Line search damping factor, typical 0.1-0.5 (default: 0.1)")
         .def_readwrite("linear_method", &grillex::NonlinearSolverSettings::linear_method,
              "Linear solver method to use (default: SimplicialLDLT)")
         .def("__repr__", [](const grillex::NonlinearSolverSettings &s) {

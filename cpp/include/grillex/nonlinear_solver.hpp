@@ -107,6 +107,15 @@ struct NonlinearSolverSettings {
     /// Set to 0 for no hysteresis (default)
     double hysteresis_band = 0.0;
 
+    /// Enable line search damping for convergence
+    /// When true, reduces step size when many springs change state
+    /// Step factor = 1.0 / (1 + line_search_factor * num_state_changes)
+    bool enable_line_search = false;
+
+    /// Line search damping factor (0 = no damping, higher = more damping)
+    /// Typical values: 0.1 to 0.5
+    double line_search_factor = 0.1;
+
     /// Linear solver method to use
     LinearSolver::Method linear_method = LinearSolver::Method::SimplicialLDLT;
 

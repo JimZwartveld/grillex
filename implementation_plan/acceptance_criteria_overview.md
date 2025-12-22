@@ -23,8 +23,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 12 | LLM Tooling | 10 | 9 | 1 | 90% |
 | 13 | Validation Benchmarks | 12 | 12 | 0 | 100% |
 | 14 | DevOps | 4 | 0 | 4 | 0% |
-| 15 | Nonlinear Springs | 79 | 77 | 2 | 97% |
-| **Total** | | **321** | **282** | **39** | **88%** |
+| 15 | Nonlinear Springs | 79 | 79 | 0 | 100% |
+| **Total** | | **321** | **284** | **37** | **88%** |
 
 ---
 
@@ -593,7 +593,7 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] Oscillation detection implemented
 - [x] Partial stiffness option for oscillating springs
 - [x] Hysteresis band prevents rapid state changes
-- [ ] Line search damping available as option
+- [x] Line search damping available as option
 - [x] Clear warning messages for convergence issues
 - [x] Settings expose all convergence parameters
 

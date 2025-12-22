@@ -163,6 +163,20 @@ NonlinearSolverResult NonlinearSolver::solve(
         }
 
         // ---------------------------------------------------------------------
+        // 3c2. Apply line search damping if enabled
+        // ---------------------------------------------------------------------
+        if (settings_.enable_line_search && iter > 0) {
+            // Use previous iteration's state changes to determine step size
+            int prev_changes = result.state_changes_per_iteration.back();
+            if (prev_changes > 0) {
+                // Reduce step size proportional to number of state changes
+                // step_factor = 1 / (1 + factor * changes)
+                double step_factor = 1.0 / (1.0 + settings_.line_search_factor * prev_changes);
+                u_new = u + step_factor * (u_new - u);
+            }
+        }
+
+        // ---------------------------------------------------------------------
         // 3d. Update spring states based on new displacements
         // ---------------------------------------------------------------------
         int num_state_changes = 0;
