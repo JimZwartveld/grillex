@@ -96,6 +96,8 @@ def get_fix_suggestions(error: GrillexError) -> List[FixSuggestion]:
         suggestions.extend(_suggest_for_invalid_node(error))
     elif error.code == ErrorCode.EMPTY_LOAD_CASE:
         suggestions.extend(_suggest_for_empty_load_case(error))
+    elif error.code == ErrorCode.SOLVER_CONVERGENCE_FAILED:
+        suggestions.extend(_suggest_for_convergence_failed(error))
     else:
         # Generic suggestion
         suggestions.append(FixSuggestion(
@@ -366,6 +368,60 @@ def _suggest_for_empty_load_case(error: GrillexError) -> List[FixSuggestion]:
             confidence=0.9
         )
     ]
+
+
+def _suggest_for_convergence_failed(error: GrillexError) -> List[FixSuggestion]:
+    """Suggestions for nonlinear solver convergence failures."""
+    suggestions = []
+
+    # Check if this is related to nonlinear springs
+    suggestions.append(FixSuggestion(
+        description="Nonlinear solver did not converge. Check for oscillating spring states "
+                    "(springs rapidly switching between active/inactive). Consider increasing "
+                    "max_iterations or adjusting gap_tolerance.",
+        tool_name="analyze_nonlinear",
+        tool_params={
+            "max_iterations": 100,
+            "gap_tolerance": 1e-5
+        },
+        priority=1,
+        confidence=0.7
+    ))
+
+    suggestions.append(FixSuggestion(
+        description="Check spring states to identify which springs are causing issues. "
+                    "Look for springs near the active/inactive boundary.",
+        tool_name="get_spring_states",
+        tool_params={},
+        priority=2,
+        confidence=0.6
+    ))
+
+    suggestions.append(FixSuggestion(
+        description="For contact problems with gaps, ensure gap values are appropriate "
+                    "for the deformation scale. Very small gaps with large loads can "
+                    "cause numerical issues.",
+        tool_name="get_model_info",
+        tool_params={},
+        priority=3,
+        confidence=0.5
+    ))
+
+    suggestions.append(FixSuggestion(
+        description="Try using linear springs (behavior=Linear) first to verify the "
+                    "model setup is correct, then switch to nonlinear behavior.",
+        tool_name="add_spring",
+        tool_params={
+            "position1": "[node1]",
+            "position2": "[node2]",
+            "kz": 10000.0,
+            "behavior": "Linear"
+        },
+        priority=4,
+        confidence=0.4
+    ))
+
+    return suggestions
 
 
 # =============================================================================

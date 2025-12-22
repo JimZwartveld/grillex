@@ -329,6 +329,41 @@ When adding new result types or output formats:
 - [ ] Numeric values are actual numbers, not strings
 - [ ] Consistent key naming across similar results
 
+### 6. LLM Tooling Reevaluation (Every Task)
+
+**CRITICAL:** After completing ANY task that adds new functionality, you MUST evaluate whether LLM tooling updates are required. This ensures the codebase remains fully accessible to AI agents.
+
+**Reevaluation Checklist (run after every task):**
+
+1. **New user-facing methods?**
+   - [ ] Add tool schema to `src/grillex/llm/tools.py`
+   - [ ] Implement handler in `ToolExecutor`
+   - [ ] Include units in parameter descriptions
+
+2. **New error conditions?**
+   - [ ] Add fix suggestions to `src/grillex/llm/diagnostics.py`
+   - [ ] Ensure suggestions are actionable tool calls
+
+3. **New result types?**
+   - [ ] Verify structured output with units
+   - [ ] Add query tools if results need to be retrieved
+
+4. **Modified existing behavior?**
+   - [ ] Update existing tool descriptions
+   - [ ] Add new parameters to existing schemas
+
+**Example - Adding nonlinear springs (Phase 15):**
+```
+After implementing add_spring() with behavior and gap parameters:
+- [ ] Add "add_spring" tool schema with behavior/gap options
+- [ ] Add "analyze_nonlinear" tool for nonlinear analysis
+- [ ] Add diagnostics for SOLVER_CONVERGENCE_FAILED
+- [ ] Add "get_spring_states" tool to query results
+```
+
+**Gap Detection:**
+If you implemented a feature and there's no corresponding LLM tool for it, that's a gap. Fill it immediately rather than deferring to Phase 12.
+
 ### Quick Reference Table
 
 | When Adding... | Update These Files |
@@ -338,6 +373,7 @@ When adding new result types or output formats:
 | New user feature | `tools.py` (schema + handler) |
 | New warning type | `get_warning_advice()` in `diagnostics.py` |
 | New result type | Ensure structured output with units |
+| **Any new task** | **Run LLM Tooling Reevaluation Checklist** |
 
 ---
 
@@ -965,12 +1001,15 @@ from .data_types import LoadCaseType  # Use the actual exported name
 
 ## Current Development Status
 
-**Overall Progress:** 193/242 acceptance criteria met (80%)
+**Overall Progress:** 362/399 acceptance criteria met (91%)
 
 ### Completed Phases:
 - Phase 0-9: 100% complete (core FEM, beams, loads, constraints, cargo)
-- Phase 11: Error Handling - 67% complete
+- Phase 11: Error Handling - 100% complete
 - Phase 12: LLM Tooling - 90% complete
+- Phase 13: Validation Benchmarks - 100% complete
+- Phase 15: Nonlinear Springs - 100% complete
+- Phase 16: Eigenvalue Analysis - 96% complete
 
 ### In Progress:
 - **Phase 10: Design Codes** - 13% complete
@@ -979,7 +1018,6 @@ from .data_types import LoadCaseType  # Use the actual exported name
   - See `implementation_plan/phase10_extension_plan.md` for details
 
 ### Pending:
-- Phase 13: Validation Benchmarks (0%)
 - Phase 14: DevOps (0%)
 
 See `implementation_plan/acceptance_criteria_overview.md` for full status.
