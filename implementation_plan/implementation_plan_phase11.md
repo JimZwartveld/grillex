@@ -155,11 +155,11 @@ Create warning system for questionable models.
 
 ### Task 11.3: Detect Rigid Body Modes
 **Requirements:** R-VAL-003, R-ERR-002
-**Dependencies:** Task 3.4
+**Dependencies:** Task 3.4, Task 16.3 (Eigenvalue Solver)
 **Difficulty:** High
 
 **Description:**
-Detect and report unconstrained rigid body modes.
+Detect and report unconstrained rigid body modes using eigenvalue analysis.
 
 **Steps:**
 1. After assembly, check for singularity:
@@ -176,9 +176,66 @@ Detect and report unconstrained rigid body modes.
 3. Suggest which supports to add
 
 **Acceptance Criteria:**
-- [ ] Free-floating model detected as singular
-- [ ] Specific unconstrained DOFs identified
-- [ ] Helpful diagnostic message generated
+- [x] Free-floating model detected as singular
+- [x] Specific unconstrained DOFs identified
+- [x] Helpful diagnostic message generated
+
+### Execution Notes (Completed 2025-12-22)
+
+**Steps Taken:**
+1. Created `cpp/include/grillex/singularity_diagnostics.hpp` with:
+   - `RigidBodyModeType` enum (TranslationX/Y/Z, RotationX/Y/Z, Warping, Mixed)
+   - `RigidBodyModeInfo` struct with mode number, eigenvalue, type, involved nodes/DOFs
+   - `DOFParticipation` struct tracking DOF participation in rigid body modes
+   - `SingularityDiagnostics` result struct with is_singular flag, mode info, messages
+   - `SingularityAnalyzerSettings` struct for configuration
+   - `SingularityAnalyzer` class using eigenvalue decomposition
+
+2. Created `cpp/src/singularity_diagnostics.cpp` implementing:
+   - Eigenvalue analysis to detect near-zero eigenvalues (rigid body modes)
+   - Mode type identification from eigenvector patterns
+   - DOF participation extraction and ranking
+   - Fix suggestion generation based on mode type
+   - JSON and string output formats
+
+3. Added reverse lookup methods to `DOFHandler`:
+   - `is_warping_dof(global_dof)`
+   - `get_node_from_global_dof(global_dof)`
+   - `get_local_dof_from_global_dof(global_dof)`
+   - `get_element_from_warping_dof(global_dof)`
+
+4. Added Python bindings for all singularity diagnostics types
+5. Updated Python exports in `data_types.py` and `__init__.py`
+6. Created comprehensive test suite `tests/python/test_phase11_singularity_diagnostics.py` (24 tests)
+
+**Implementation Features:**
+- Uses eigenvalue analysis from Phase 16 to detect rigid body modes
+- Identifies specific unconstrained DOFs with participation levels
+- Classifies mode types (translation, rotation, warping, mixed)
+- Generates actionable fix suggestions (e.g., "Add X-direction support at node 1")
+- Provides both human-readable and machine-readable (JSON) output
+- `is_singular()` quick check method for fast detection
+- `count_rigid_body_modes()` for mode counting
+
+**Problems Encountered:**
+- **Issue**: C++ default member initializers in nested struct caused compilation error
+  - **Error**: "default member initializer required before end of enclosing class"
+  - **Solution**: Moved `SingularityAnalyzerSettings` to top-level struct before `SingularityAnalyzer` class
+
+- **Issue**: Test fixtures used outdated API signatures
+  - **Solution**: Updated Material/Section constructors to include name parameter, Assembler to pass dof_handler and use assemble_stiffness([beam]) pattern
+
+**Verification:**
+- 24 unit tests passing ✓
+- Free-floating beam correctly detected with 6+ rigid body modes
+- Well-constrained cantilever correctly detected as non-singular
+- Suggested fixes include specific DOFs and directions
+- JSON output is machine-parseable
+
+**Key Learnings:**
+- Eigenvalue analysis is essential for proper rigid body mode detection
+- Penalty BC method masks singularity (by design), so diagnostics should run on raw matrices
+- Mode type identification from eigenvectors requires participation threshold tuning
 
 ---
 

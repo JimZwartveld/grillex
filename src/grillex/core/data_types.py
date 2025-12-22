@@ -44,6 +44,12 @@ This module provides Python-friendly access to the C++ core data structures:
 - WarningSeverity: Enum for warning severity levels (Low, Medium, High)
 - GrillexWarning: Warning information with severity and context
 - WarningList: Container for collecting warnings during model validation
+- RigidBodyModeType: Enum for rigid body mode types (TranslationX, RotationY, etc.)
+- RigidBodyModeInfo: Information about a detected rigid body mode
+- DOFParticipation: DOF participation information in rigid body mode
+- SingularityDiagnostics: Result of singularity diagnostics analysis
+- SingularityAnalyzerSettings: Settings for singularity analysis
+- SingularityAnalyzer: Analyzes structural systems for singularity using eigenvalue decomposition
 """
 
 from grillex._grillex_cpp import (
@@ -109,6 +115,13 @@ from grillex._grillex_cpp import (
     WarningSeverity,
     GrillexWarning,
     WarningList,
+    # Phase 11 (Task 11.3): Singularity Diagnostics
+    RigidBodyModeType,
+    RigidBodyModeInfo,
+    DOFParticipation,
+    SingularityDiagnostics,
+    SingularityAnalyzerSettings,
+    SingularityAnalyzer,
     # Phase 16: Eigenvalue Analysis
     EigensolverMethod,
     EigensolverSettings,
@@ -142,6 +155,9 @@ __all__ = [
     # Phase 11: Error Handling & Diagnostics
     'ErrorCode', 'GrillexError', 'WarningCode', 'WarningSeverity',
     'GrillexWarning', 'WarningList',
+    # Phase 11 (Task 11.3): Singularity Diagnostics
+    'RigidBodyModeType', 'RigidBodyModeInfo', 'DOFParticipation',
+    'SingularityDiagnostics', 'SingularityAnalyzerSettings', 'SingularityAnalyzer',
     # Phase 16: Eigenvalue Analysis
     'EigensolverMethod', 'EigensolverSettings', 'ModeResult',
     'EigensolverResult', 'EigenvalueSolver',

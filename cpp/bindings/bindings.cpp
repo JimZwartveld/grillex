@@ -24,6 +24,7 @@
 #include "grillex/warnings.hpp"
 #include "grillex/nonlinear_solver.hpp"
 #include "grillex/eigenvalue_solver.hpp"
+#include "grillex/singularity_diagnostics.hpp"
 
 namespace py = pybind11;
 
@@ -2329,6 +2330,180 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def("__repr__", [](const grillex::WarningList &wl) {
             return "<WarningList: " + wl.summary() + ">";
         });
+
+    // ========================================================================
+    // Phase 11 (Task 11.3): Singularity Diagnostics
+    // ========================================================================
+
+    // RigidBodyModeType enum
+    py::enum_<grillex::RigidBodyModeType>(m, "RigidBodyModeType",
+        "Type of rigid body mode detected in singularity analysis")
+        .value("TranslationX", grillex::RigidBodyModeType::TranslationX,
+               "Translation in X direction")
+        .value("TranslationY", grillex::RigidBodyModeType::TranslationY,
+               "Translation in Y direction")
+        .value("TranslationZ", grillex::RigidBodyModeType::TranslationZ,
+               "Translation in Z direction")
+        .value("RotationX", grillex::RigidBodyModeType::RotationX,
+               "Rotation about X axis")
+        .value("RotationY", grillex::RigidBodyModeType::RotationY,
+               "Rotation about Y axis")
+        .value("RotationZ", grillex::RigidBodyModeType::RotationZ,
+               "Rotation about Z axis")
+        .value("Warping", grillex::RigidBodyModeType::Warping,
+               "Warping mode")
+        .value("Mixed", grillex::RigidBodyModeType::Mixed,
+               "Combined mode (multiple DOF types)")
+        .export_values();
+
+    // RigidBodyModeInfo struct
+    py::class_<grillex::RigidBodyModeInfo>(m, "RigidBodyModeInfo",
+        "Information about a detected rigid body mode")
+        .def(py::init<>())
+        .def_readwrite("mode_number", &grillex::RigidBodyModeInfo::mode_number,
+                      "Mode number (0-indexed)")
+        .def_readwrite("eigenvalue", &grillex::RigidBodyModeInfo::eigenvalue,
+                      "Eigenvalue (should be near zero for rigid body modes)")
+        .def_readwrite("mode_type", &grillex::RigidBodyModeInfo::mode_type,
+                      "Type of rigid body mode detected")
+        .def_readwrite("involved_nodes", &grillex::RigidBodyModeInfo::involved_nodes,
+                      "Node IDs with significant participation")
+        .def_readwrite("involved_global_dofs", &grillex::RigidBodyModeInfo::involved_global_dofs,
+                      "Global DOF indices with significant participation")
+        .def_readwrite("description", &grillex::RigidBodyModeInfo::description,
+                      "Description of the mode")
+        .def_readwrite("suggested_fix", &grillex::RigidBodyModeInfo::suggested_fix,
+                      "Suggested fix for this mode")
+        .def("__repr__", [](const grillex::RigidBodyModeInfo &m) {
+            return "<RigidBodyModeInfo mode=" + std::to_string(m.mode_number) +
+                   " type=" + grillex::rigid_body_mode_type_to_string(m.mode_type) + ">";
+        });
+
+    // DOFParticipation struct
+    py::class_<grillex::DOFParticipation>(m, "DOFParticipation",
+        "DOF participation information in rigid body mode")
+        .def(py::init<>())
+        .def_readwrite("node_id", &grillex::DOFParticipation::node_id,
+                      "Node ID")
+        .def_readwrite("local_dof", &grillex::DOFParticipation::local_dof,
+                      "Local DOF index (0=UX, 1=UY, 2=UZ, 3=RX, 4=RY, 5=RZ, 6=WARP)")
+        .def_readwrite("global_dof", &grillex::DOFParticipation::global_dof,
+                      "Global DOF index")
+        .def_readwrite("participation", &grillex::DOFParticipation::participation,
+                      "Participation magnitude (0 to 1, normalized)")
+        .def_readwrite("element_id", &grillex::DOFParticipation::element_id,
+                      "Element ID for warping DOFs (-1 for node-level DOFs)")
+        .def("__repr__", [](const grillex::DOFParticipation &d) {
+            std::string dof_names[] = {"UX", "UY", "UZ", "RX", "RY", "RZ", "WARP"};
+            std::string dof_name = (d.local_dof >= 0 && d.local_dof <= 6) ?
+                                   dof_names[d.local_dof] : "DOF" + std::to_string(d.local_dof);
+            return "<DOFParticipation node=" + std::to_string(d.node_id) +
+                   " " + dof_name + " participation=" +
+                   std::to_string(static_cast<int>(d.participation * 100)) + "%>";
+        });
+
+    // SingularityDiagnostics struct
+    py::class_<grillex::SingularityDiagnostics>(m, "SingularityDiagnostics",
+        "Result of singularity diagnostics analysis.\n\n"
+        "Contains detailed information about detected rigid body modes,\n"
+        "unconstrained DOFs, and suggested fixes for making the system\n"
+        "properly constrained.")
+        .def(py::init<>())
+        .def_readwrite("is_singular", &grillex::SingularityDiagnostics::is_singular,
+                      "Whether the system is singular (has rigid body modes)")
+        .def_readwrite("n_rigid_body_modes", &grillex::SingularityDiagnostics::n_rigid_body_modes,
+                      "Number of rigid body modes detected")
+        .def_readwrite("rigid_body_modes", &grillex::SingularityDiagnostics::rigid_body_modes,
+                      "Detailed information about each rigid body mode")
+        .def_readwrite("unconstrained_dofs", &grillex::SingularityDiagnostics::unconstrained_dofs,
+                      "DOFs with highest participation in rigid body modes")
+        .def_readwrite("summary_message", &grillex::SingularityDiagnostics::summary_message,
+                      "Summary message for display")
+        .def_readwrite("detailed_message", &grillex::SingularityDiagnostics::detailed_message,
+                      "Detailed diagnostic message")
+        .def_readwrite("suggested_fixes", &grillex::SingularityDiagnostics::suggested_fixes,
+                      "Suggested fixes (one per rigid body mode)")
+        .def_readwrite("nodes_needing_constraints", &grillex::SingularityDiagnostics::nodes_needing_constraints,
+                      "Nodes that need additional constraints")
+        .def_readwrite("dofs_to_constrain", &grillex::SingularityDiagnostics::dofs_to_constrain,
+                      "DOFs that need to be constrained (as pairs of {node_id, local_dof})")
+        .def("to_string", &grillex::SingularityDiagnostics::to_string,
+             "Get formatted string representation")
+        .def("to_json", &grillex::SingularityDiagnostics::to_json,
+             "Get machine-readable JSON representation")
+        .def("__repr__", [](const grillex::SingularityDiagnostics &d) {
+            if (!d.is_singular) return std::string("<SingularityDiagnostics: System is well-constrained>");
+            return "<SingularityDiagnostics: " + std::to_string(d.n_rigid_body_modes) +
+                   " rigid body mode(s) detected>";
+        })
+        .def("__str__", &grillex::SingularityDiagnostics::to_string)
+        .def("__bool__", [](const grillex::SingularityDiagnostics &d) {
+            return d.is_singular;  // True if singular
+        });
+
+    // SingularityAnalyzerSettings struct
+    py::class_<grillex::SingularityAnalyzerSettings>(m, "SingularityAnalyzerSettings",
+        "Settings for singularity analysis.\n\n"
+        "Controls eigenvalue threshold, number of modes to check,\n"
+        "and participation threshold for DOF reporting.")
+        .def(py::init<>())
+        .def_readwrite("eigenvalue_threshold",
+                      &grillex::SingularityAnalyzerSettings::eigenvalue_threshold,
+                      "Eigenvalue threshold for rigid body mode detection (default 1e-8)")
+        .def_readwrite("n_modes_to_check",
+                      &grillex::SingularityAnalyzerSettings::n_modes_to_check,
+                      "Number of lowest eigenvalues to check (default 10)")
+        .def_readwrite("participation_threshold",
+                      &grillex::SingularityAnalyzerSettings::participation_threshold,
+                      "Minimum participation to include DOF in report (default 0.01)")
+        .def_readwrite("max_dofs_to_report",
+                      &grillex::SingularityAnalyzerSettings::max_dofs_to_report,
+                      "Maximum number of unconstrained DOFs to report (default 20)")
+        .def_readwrite("use_mass_matrix",
+                      &grillex::SingularityAnalyzerSettings::use_mass_matrix,
+                      "Use mass matrix for better mode identification (default true)");
+
+    // SingularityAnalyzer class
+    py::class_<grillex::SingularityAnalyzer>(m, "SingularityAnalyzer",
+        "Singularity analyzer using eigenvalue decomposition.\n\n"
+        "Analyzes structural systems for singularity by computing eigenvalues\n"
+        "and identifying rigid body modes. This approach can identify:\n"
+        "1. Which specific DOFs are unconstrained\n"
+        "2. The type of rigid body motion (translation, rotation, warping)\n"
+        "3. Suggested fixes based on mode analysis\n\n"
+        "Usage:\n"
+        "    analyzer = SingularityAnalyzer()\n"
+        "    result = analyzer.analyze_with_mass(K, M, dof_handler)\n"
+        "    if result.is_singular:\n"
+        "        print(result.detailed_message)\n"
+        "        for fix in result.suggested_fixes:\n"
+        "            print(f'Suggestion: {fix}')")
+        .def(py::init<>())
+        .def("analyze", [](const grillex::SingularityAnalyzer& analyzer,
+                           const Eigen::SparseMatrix<double>& K,
+                           const grillex::DOFHandler& dof_handler,
+                           const grillex::SingularityAnalyzerSettings& settings) {
+            return analyzer.analyze(K, dof_handler, settings);
+        },
+             py::arg("K"), py::arg("dof_handler"),
+             py::arg("settings") = grillex::SingularityAnalyzerSettings{},
+             "Analyze stiffness matrix for singularity (without mass matrix)")
+        .def("analyze_with_mass", [](const grillex::SingularityAnalyzer& analyzer,
+                                     const Eigen::SparseMatrix<double>& K,
+                                     const Eigen::SparseMatrix<double>& M,
+                                     const grillex::DOFHandler& dof_handler,
+                                     const grillex::SingularityAnalyzerSettings& settings) {
+            return analyzer.analyze(K, M, dof_handler, settings);
+        },
+             py::arg("K"), py::arg("M"), py::arg("dof_handler"),
+             py::arg("settings") = grillex::SingularityAnalyzerSettings{},
+             "Analyze K and M matrices for singularity (preferred method)")
+        .def("is_singular", &grillex::SingularityAnalyzer::is_singular,
+             py::arg("K"),
+             "Quick check for singularity (without detailed diagnostics)")
+        .def("count_rigid_body_modes", &grillex::SingularityAnalyzer::count_rigid_body_modes,
+             py::arg("K"), py::arg("threshold") = 1e-8,
+             "Get the number of rigid body modes in the matrix");
 
     // ========================================================================
     // Phase 15: Nonlinear Solver
