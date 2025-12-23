@@ -3,8 +3,15 @@ import useStore from '../../stores/modelStore';
 import ResultsTab from './ResultsTab';
 import ChatTab from './ChatTab';
 
+// Feature flag: Set to true to enable the AI chat tab
+// The chat requires an ANTHROPIC_API_KEY environment variable on the backend
+const CHAT_ENABLED = false;
+
 export default function RightPanel() {
   const { activeRightTab, setActiveRightTab, isAnalyzed } = useStore();
+
+  // When chat is disabled, always show results
+  const effectiveTab = CHAT_ENABLED ? activeRightTab : 'results';
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -13,7 +20,7 @@ export default function RightPanel() {
         <button
           onClick={() => setActiveRightTab('results')}
           className={`flex-1 px-4 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-            activeRightTab === 'results'
+            effectiveTab === 'results'
               ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
               : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
           }`}
@@ -24,22 +31,24 @@ export default function RightPanel() {
             <span className="w-2 h-2 bg-green-500 rounded-full" title="Analysis complete" />
           )}
         </button>
-        <button
-          onClick={() => setActiveRightTab('chat')}
-          className={`flex-1 px-4 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-            activeRightTab === 'chat'
-              ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-          }`}
-        >
-          <MessageSquare className="w-4 h-4" />
-          Chat
-        </button>
+        {CHAT_ENABLED && (
+          <button
+            onClick={() => setActiveRightTab('chat')}
+            className={`flex-1 px-4 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+              effectiveTab === 'chat'
+                ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            Chat
+          </button>
+        )}
       </div>
 
       {/* Tab content */}
       <div className="flex-1 overflow-hidden">
-        {activeRightTab === 'results' ? <ResultsTab /> : <ChatTab />}
+        {effectiveTab === 'results' ? <ResultsTab /> : <ChatTab />}
       </div>
     </div>
   );
