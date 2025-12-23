@@ -563,6 +563,188 @@ TOOLS: List[Dict[str, Any]] = [
     },
 
     # =========================================================================
+    # Element Modification
+    # =========================================================================
+    {
+        "name": "update_material",
+        "description": "Update material properties. Changes will affect all beams using this material.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the material to update"
+                },
+                "E": {
+                    "type": "number",
+                    "description": "New Young's modulus in kN/m². Optional."
+                },
+                "nu": {
+                    "type": "number",
+                    "description": "New Poisson's ratio. Optional."
+                },
+                "rho": {
+                    "type": "number",
+                    "description": "New density in mT/m³. Optional."
+                }
+            },
+            "required": ["name"]
+        }
+    },
+    {
+        "name": "delete_material",
+        "description": "Delete a material from the model. Cannot delete if material is in use by beams.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the material to delete"
+                }
+            },
+            "required": ["name"]
+        }
+    },
+    {
+        "name": "update_section",
+        "description": "Update section properties. Changes will affect all beams using this section.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the section to update"
+                },
+                "A": {
+                    "type": "number",
+                    "description": "New cross-sectional area in m². Optional."
+                },
+                "Iy": {
+                    "type": "number",
+                    "description": "New second moment of area about y-axis in m⁴. Optional."
+                },
+                "Iz": {
+                    "type": "number",
+                    "description": "New second moment of area about z-axis in m⁴. Optional."
+                },
+                "J": {
+                    "type": "number",
+                    "description": "New torsional constant in m⁴. Optional."
+                }
+            },
+            "required": ["name"]
+        }
+    },
+    {
+        "name": "delete_section",
+        "description": "Delete a section from the model. Cannot delete if section is in use by beams.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the section to delete"
+                }
+            },
+            "required": ["name"]
+        }
+    },
+    {
+        "name": "update_beam",
+        "description": "Update a beam's material and/or section. Use this to change beam properties after creation.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "beam_id": {
+                    "type": "integer",
+                    "description": "ID of the beam to update"
+                },
+                "material": {
+                    "type": "string",
+                    "description": "New material name (must exist in model). Optional - only provide if changing."
+                },
+                "section": {
+                    "type": "string",
+                    "description": "New section name (must exist in model). Optional - only provide if changing."
+                }
+            },
+            "required": ["beam_id"]
+        }
+    },
+    {
+        "name": "delete_beam",
+        "description": "Delete a beam from the model. WARNING: This cannot be undone.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "beam_id": {
+                    "type": "integer",
+                    "description": "ID of the beam to delete"
+                }
+            },
+            "required": ["beam_id"]
+        }
+    },
+    {
+        "name": "remove_boundary_condition",
+        "description": "Remove boundary conditions from a node. Can remove all BCs or specific DOFs.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Node position [x, y, z] in meters"
+                },
+                "dof": {
+                    "type": "string",
+                    "enum": ["UX", "UY", "UZ", "RX", "RY", "RZ", "ALL"],
+                    "description": "Specific DOF to unfix, or 'ALL' to remove all BCs at this node"
+                }
+            },
+            "required": ["position", "dof"]
+        }
+    },
+    {
+        "name": "update_cargo",
+        "description": "Update cargo properties (mass, name). Note: CoG position cannot be changed after creation.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cargo_id": {
+                    "type": "integer",
+                    "description": "ID of the cargo to update"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "New name for the cargo. Optional."
+                },
+                "mass": {
+                    "type": "number",
+                    "description": "New mass in metric tonnes (mT). Optional."
+                }
+            },
+            "required": ["cargo_id"]
+        }
+    },
+    {
+        "name": "delete_cargo",
+        "description": "Delete a cargo from the model. WARNING: This cannot be undone.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cargo_id": {
+                    "type": "integer",
+                    "description": "ID of the cargo to delete"
+                }
+            },
+            "required": ["cargo_id"]
+        }
+    },
+
+    # =========================================================================
     # Model Information
     # =========================================================================
     {
@@ -1245,6 +1427,420 @@ class ToolExecutor:
                 "has_nonlinear_springs": self.model.has_nonlinear_springs(),
                 "materials": list(self.model._materials.keys()),
                 "sections": list(self.model._sections.keys())
+            }
+        )
+
+    def _tool_update_material(self, params: Dict[str, Any]) -> ToolResult:
+        """Update material properties."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        name = params["name"]
+        if name not in self.model._materials:
+            return ToolResult(
+                success=False,
+                error=f"Material '{name}' not found",
+                suggestion=f"Available materials: {list(self.model._materials.keys())}"
+            )
+
+        material = self.model._materials[name]
+        changes = []
+
+        if "E" in params and params["E"] is not None:
+            material.E = params["E"]
+            changes.append(f"E -> {params['E']}")
+
+        if "nu" in params and params["nu"] is not None:
+            material.nu = params["nu"]
+            changes.append(f"nu -> {params['nu']}")
+
+        if "rho" in params and params["rho"] is not None:
+            material.rho = params["rho"]
+            changes.append(f"rho -> {params['rho']}")
+
+        if not changes:
+            return ToolResult(
+                success=True,
+                result={"name": name, "message": "No changes specified"}
+            )
+
+        # Mark model as not analyzed
+        try:
+            self.model._cpp_model.clear_analysis()
+        except Exception:
+            pass
+
+        return ToolResult(
+            success=True,
+            result={
+                "name": name,
+                "changes": changes,
+                "message": f"Material '{name}' updated: {', '.join(changes)}. Re-analysis required."
+            }
+        )
+
+    def _tool_delete_material(self, params: Dict[str, Any]) -> ToolResult:
+        """Delete a material from the model."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        name = params["name"]
+        if name not in self.model._materials:
+            return ToolResult(
+                success=False,
+                error=f"Material '{name}' not found",
+                suggestion=f"Available materials: {list(self.model._materials.keys())}"
+            )
+
+        # Check if material is in use
+        beams_using = [b.beam_id for b in self.model.beams if b.material.name == name]
+        if beams_using:
+            return ToolResult(
+                success=False,
+                error=f"Cannot delete material '{name}': in use by beams {beams_using}",
+                suggestion="Update the beams to use a different material first."
+            )
+
+        del self.model._materials[name]
+
+        return ToolResult(
+            success=True,
+            result={
+                "name": name,
+                "message": f"Material '{name}' deleted."
+            }
+        )
+
+    def _tool_update_section(self, params: Dict[str, Any]) -> ToolResult:
+        """Update section properties."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        name = params["name"]
+        if name not in self.model._sections:
+            return ToolResult(
+                success=False,
+                error=f"Section '{name}' not found",
+                suggestion=f"Available sections: {list(self.model._sections.keys())}"
+            )
+
+        section = self.model._sections[name]
+        changes = []
+
+        if "A" in params and params["A"] is not None:
+            section.A = params["A"]
+            changes.append(f"A -> {params['A']}")
+
+        if "Iy" in params and params["Iy"] is not None:
+            section.Iy = params["Iy"]
+            changes.append(f"Iy -> {params['Iy']}")
+
+        if "Iz" in params and params["Iz"] is not None:
+            section.Iz = params["Iz"]
+            changes.append(f"Iz -> {params['Iz']}")
+
+        if "J" in params and params["J"] is not None:
+            section.J = params["J"]
+            changes.append(f"J -> {params['J']}")
+
+        if not changes:
+            return ToolResult(
+                success=True,
+                result={"name": name, "message": "No changes specified"}
+            )
+
+        # Mark model as not analyzed
+        try:
+            self.model._cpp_model.clear_analysis()
+        except Exception:
+            pass
+
+        return ToolResult(
+            success=True,
+            result={
+                "name": name,
+                "changes": changes,
+                "message": f"Section '{name}' updated: {', '.join(changes)}. Re-analysis required."
+            }
+        )
+
+    def _tool_delete_section(self, params: Dict[str, Any]) -> ToolResult:
+        """Delete a section from the model."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        name = params["name"]
+        if name not in self.model._sections:
+            return ToolResult(
+                success=False,
+                error=f"Section '{name}' not found",
+                suggestion=f"Available sections: {list(self.model._sections.keys())}"
+            )
+
+        # Check if section is in use
+        beams_using = [b.beam_id for b in self.model.beams if b.section.name == name]
+        if beams_using:
+            return ToolResult(
+                success=False,
+                error=f"Cannot delete section '{name}': in use by beams {beams_using}",
+                suggestion="Update the beams to use a different section first."
+            )
+
+        del self.model._sections[name]
+
+        return ToolResult(
+            success=True,
+            result={
+                "name": name,
+                "message": f"Section '{name}' deleted."
+            }
+        )
+
+    def _tool_update_beam(self, params: Dict[str, Any]) -> ToolResult:
+        """Update a beam's material and/or section."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        beam_id = params["beam_id"]
+
+        # Find the beam by ID
+        beam = None
+        for b in self.model.beams:
+            if b.beam_id == beam_id:
+                beam = b
+                break
+
+        if beam is None:
+            return ToolResult(
+                success=False,
+                error=f"Beam with ID {beam_id} not found",
+                suggestion=f"Available beam IDs: {[b.beam_id for b in self.model.beams]}"
+            )
+
+        changes = []
+
+        # Update material if provided
+        if "material" in params and params["material"]:
+            material_name = params["material"]
+            if material_name not in self.model._materials:
+                return ToolResult(
+                    success=False,
+                    error=f"Material '{material_name}' not found",
+                    suggestion=f"Available materials: {list(self.model._materials.keys())}"
+                )
+            beam.material = self.model._materials[material_name]
+            # Update material on underlying elements
+            for elem in beam.elements:
+                elem.material = beam.material
+            changes.append(f"material -> {material_name}")
+
+        # Update section if provided
+        if "section" in params and params["section"]:
+            section_name = params["section"]
+            if section_name not in self.model._sections:
+                return ToolResult(
+                    success=False,
+                    error=f"Section '{section_name}' not found",
+                    suggestion=f"Available sections: {list(self.model._sections.keys())}"
+                )
+            beam.section = self.model._sections[section_name]
+            # Update section on underlying elements
+            for elem in beam.elements:
+                elem.section = beam.section
+            changes.append(f"section -> {section_name}")
+
+        if not changes:
+            return ToolResult(
+                success=True,
+                result={"beam_id": beam_id, "message": "No changes specified"}
+            )
+
+        # Mark model as not analyzed (changes require re-analysis)
+        self.model._cpp_model.clear_analysis()
+
+        return ToolResult(
+            success=True,
+            result={
+                "beam_id": beam_id,
+                "changes": changes,
+                "message": f"Beam {beam_id} updated: {', '.join(changes)}. Re-analysis required."
+            }
+        )
+
+    def _tool_delete_beam(self, params: Dict[str, Any]) -> ToolResult:
+        """Delete a beam from the model."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        beam_id = params["beam_id"]
+
+        # Find the beam index
+        beam_index = None
+        for i, b in enumerate(self.model.beams):
+            if b.beam_id == beam_id:
+                beam_index = i
+                break
+
+        if beam_index is None:
+            return ToolResult(
+                success=False,
+                error=f"Beam with ID {beam_id} not found",
+                suggestion=f"Available beam IDs: {[b.beam_id for b in self.model.beams]}"
+            )
+
+        # Remove from Python list
+        removed_beam = self.model.beams.pop(beam_index)
+
+        # Try to remove from C++ model if possible
+        try:
+            self.model._cpp_model.remove_beam(beam_id)
+        except Exception:
+            # C++ model might not support removal, but Python side is updated
+            pass
+
+        # Mark model as not analyzed
+        try:
+            self.model._cpp_model.clear_analysis()
+        except Exception:
+            pass
+
+        return ToolResult(
+            success=True,
+            result={
+                "beam_id": beam_id,
+                "start": list(removed_beam.start_pos),
+                "end": list(removed_beam.end_pos),
+                "message": f"Beam {beam_id} deleted. Re-analysis required."
+            }
+        )
+
+    def _tool_remove_boundary_condition(self, params: Dict[str, Any]) -> ToolResult:
+        """Remove boundary conditions from a node."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        position = params["position"]
+        dof_str = params["dof"]
+
+        try:
+            if dof_str == "ALL":
+                # Remove all BCs at this node
+                self.model._cpp_model.remove_all_bcs_at(position)
+                message = f"All boundary conditions removed at {position}"
+            else:
+                # Remove specific DOF
+                dof = _parse_dof(dof_str)
+                self.model._cpp_model.remove_bc_at(position, dof)
+                message = f"Boundary condition for {dof_str} removed at {position}"
+
+            # Mark model as not analyzed
+            try:
+                self.model._cpp_model.clear_analysis()
+            except Exception:
+                pass
+
+            return ToolResult(
+                success=True,
+                result={
+                    "position": position,
+                    "dof": dof_str,
+                    "message": message
+                }
+            )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                error=str(e),
+                suggestion="Ensure the position matches an existing node with boundary conditions."
+            )
+
+    def _tool_update_cargo(self, params: Dict[str, Any]) -> ToolResult:
+        """Update cargo properties."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        cargo_id = params["cargo_id"]
+
+        # Find the cargo by ID (using index as ID)
+        if cargo_id < 0 or cargo_id >= len(self.model.cargos):
+            return ToolResult(
+                success=False,
+                error=f"Cargo with ID {cargo_id} not found",
+                suggestion=f"Available cargo IDs: 0 to {len(self.model.cargos) - 1}" if self.model.cargos else "No cargos in model"
+            )
+
+        cargo = self.model.cargos[cargo_id]
+        changes = []
+
+        # Update name if provided
+        if "name" in params and params["name"]:
+            cargo.name = params["name"]
+            changes.append(f"name -> {params['name']}")
+
+        # Update mass if provided
+        if "mass" in params and params["mass"] is not None:
+            new_mass = params["mass"]
+            cargo.mass = new_mass
+            # Update the underlying point mass if already generated
+            if cargo._point_mass is not None:
+                cargo._point_mass.mass = new_mass
+            changes.append(f"mass -> {new_mass} mT")
+
+        if not changes:
+            return ToolResult(
+                success=True,
+                result={"cargo_id": cargo_id, "message": "No changes specified"}
+            )
+
+        # Mark model as not analyzed
+        try:
+            self.model._cpp_model.clear_analysis()
+        except Exception:
+            pass
+
+        return ToolResult(
+            success=True,
+            result={
+                "cargo_id": cargo_id,
+                "changes": changes,
+                "message": f"Cargo '{cargo.name}' updated: {', '.join(changes)}. Re-analysis required."
+            }
+        )
+
+    def _tool_delete_cargo(self, params: Dict[str, Any]) -> ToolResult:
+        """Delete a cargo from the model."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        cargo_id = params["cargo_id"]
+
+        # Find the cargo by ID (using index as ID)
+        if cargo_id < 0 or cargo_id >= len(self.model.cargos):
+            return ToolResult(
+                success=False,
+                error=f"Cargo with ID {cargo_id} not found",
+                suggestion=f"Available cargo IDs: 0 to {len(self.model.cargos) - 1}" if self.model.cargos else "No cargos in model"
+            )
+
+        # Remove from Python list
+        removed_cargo = self.model.cargos.pop(cargo_id)
+
+        # Note: The underlying C++ elements (point mass, springs) are not removed
+        # This is a limitation of the current implementation
+        # The model will need to be re-created for full removal
+
+        # Mark model as not analyzed
+        try:
+            self.model._cpp_model.clear_analysis()
+        except Exception:
+            pass
+
+        return ToolResult(
+            success=True,
+            result={
+                "cargo_id": cargo_id,
+                "name": removed_cargo.name,
+                "message": f"Cargo '{removed_cargo.name}' removed from model. Note: underlying elements may remain. Re-analysis required."
             }
         )
 

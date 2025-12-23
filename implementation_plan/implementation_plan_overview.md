@@ -15,7 +15,7 @@ This document provides a detailed, step-by-step implementation plan for building
 
 ## Phases Overview
 
-The implementation plan is organized into 17 phases:
+The implementation plan is organized into 18 phases:
 
 ### Phase 0: Project Setup & Infrastructure
 **Requirements:** R-ARCH-001, R-DEV-001, R-DEV-003 **Dependencies:** None **Difficulty:** Low **Description:** Create the basic project directory structure.
@@ -125,4 +125,9 @@ The implementation plan is organized into 17 phases:
 **Requirements:** R-ARCH-003, R-LLM-001, R-LLM-002 **Dependencies:** Phase 12 **Difficulty:** High **Description:** Web-based dashboard with React frontend, Three.js 3D viewer, FastAPI backend, and Claude API integration. Features include collapsible panel layout, realistic beam section rendering, FEM/Results views, natural language commands via chat, and Docker deployment. Both UI and LLM use the same ToolExecutor API.
 
 → [See full Phase 17 details](implementation_plan_phase17.md)
+
+### Phase 18: WebApp UX Improvements & Model Alignment
+**Requirements:** User feedback from Phase 17 **Dependencies:** Phase 17 **Difficulty:** High **Description:** UX improvements based on user testing feedback. Key changes include: Z-up coordinate system, right-click context menus for all element creation/editing, cargo and load combination support, active load case selection, flexible support DOF configuration, model invalidation on changes, searchable settings panel, and aligning frontend types directly with C++ Model class structure.
+
+→ [See full Phase 18 details](implementation_plan_phase18.md)
 
