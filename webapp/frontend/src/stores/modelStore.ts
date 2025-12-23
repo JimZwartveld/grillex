@@ -34,6 +34,13 @@ interface UIState {
     elementType: 'beam' | 'support' | 'load' | 'cargo' | null;
     elementId: number | null;
   };
+  // Add element context menu state (right-click on empty space)
+  addContextMenu: {
+    isOpen: boolean;
+    x: number;
+    y: number;
+    worldPosition: [number, number, number] | null;
+  };
   // Properties dialog state
   propertiesDialog: {
     isOpen: boolean;
@@ -57,6 +64,9 @@ interface Store extends ModelState, UIState {
   // Context menu actions
   openContextMenu: (x: number, y: number, elementType: 'beam' | 'support' | 'load' | 'cargo', elementId: number | null) => void;
   closeContextMenu: () => void;
+  // Add context menu actions (right-click on empty space)
+  openAddContextMenu: (x: number, y: number, worldPosition: [number, number, number]) => void;
+  closeAddContextMenu: () => void;
   // Properties dialog actions
   openPropertiesDialog: (elementType: 'beam' | 'support' | 'load' | 'cargo', elementId: number | null) => void;
   closePropertiesDialog: () => void;
@@ -107,6 +117,12 @@ export const useStore = create<Store>((set, get) => ({
     elementType: null,
     elementId: null,
   },
+  addContextMenu: {
+    isOpen: false,
+    x: 0,
+    y: 0,
+    worldPosition: null,
+  },
   propertiesDialog: {
     isOpen: false,
     elementType: null,
@@ -141,6 +157,18 @@ export const useStore = create<Store>((set, get) => ({
   closeContextMenu: () =>
     set({
       contextMenu: { isOpen: false, x: 0, y: 0, elementType: null, elementId: null },
+    }),
+
+  // Add context menu actions
+  openAddContextMenu: (x, y, worldPosition) =>
+    set({
+      addContextMenu: { isOpen: true, x, y, worldPosition },
+      contextMenu: { isOpen: false, x: 0, y: 0, elementType: null, elementId: null }, // Close element menu
+    }),
+
+  closeAddContextMenu: () =>
+    set({
+      addContextMenu: { isOpen: false, x: 0, y: 0, worldPosition: null },
     }),
 
   // Properties dialog actions

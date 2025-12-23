@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, Button, Input, Select } from '../common';
 import useStore from '../../stores/modelStore';
 import { toolsApi } from '../../api/client';
@@ -6,6 +6,7 @@ import { toolsApi } from '../../api/client';
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  initialPosition?: [number, number, number] | null;
 }
 
 const DOF_OPTIONS = [
@@ -17,16 +18,28 @@ const DOF_OPTIONS = [
   { value: 'RZ', label: 'RZ (Moment about Z)' },
 ];
 
-export default function AddLoadDialog({ isOpen, onClose }: Props) {
+export default function AddLoadDialog({ isOpen, onClose, initialPosition }: Props) {
   const { fetchModelState } = useStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
-    x: '6',
-    y: '0',
-    z: '0',
+    x: initialPosition ? String(initialPosition[0]) : '6',
+    y: initialPosition ? String(initialPosition[1]) : '0',
+    z: initialPosition ? String(initialPosition[2]) : '0',
     dof: 'UZ',
     value: '-10',
   });
+
+  // Update form when initialPosition changes
+  useEffect(() => {
+    if (initialPosition) {
+      setFormData(prev => ({
+        ...prev,
+        x: String(initialPosition[0]),
+        y: String(initialPosition[1]),
+        z: String(initialPosition[2]),
+      }));
+    }
+  }, [initialPosition]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

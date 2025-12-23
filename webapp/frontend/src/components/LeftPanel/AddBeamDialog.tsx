@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, Button, Input, Select } from '../common';
 import useStore from '../../stores/modelStore';
 import { toolsApi } from '../../api/client';
@@ -6,21 +6,43 @@ import { toolsApi } from '../../api/client';
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  initialPosition?: [number, number, number] | null;
 }
 
-export default function AddBeamDialog({ isOpen, onClose }: Props) {
+export default function AddBeamDialog({ isOpen, onClose, initialPosition }: Props) {
   const { materials, sections, fetchModelState } = useStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Compute default end position: 6m in +X from start
+  const defaultEndX = initialPosition ? String(initialPosition[0] + 6) : '6';
+  const defaultEndY = initialPosition ? String(initialPosition[1]) : '0';
+  const defaultEndZ = initialPosition ? String(initialPosition[2]) : '0';
+
   const [formData, setFormData] = useState({
-    startX: '0',
-    startY: '0',
-    startZ: '0',
-    endX: '6',
-    endY: '0',
-    endZ: '0',
+    startX: initialPosition ? String(initialPosition[0]) : '0',
+    startY: initialPosition ? String(initialPosition[1]) : '0',
+    startZ: initialPosition ? String(initialPosition[2]) : '0',
+    endX: defaultEndX,
+    endY: defaultEndY,
+    endZ: defaultEndZ,
     material: '',
     section: '',
   });
+
+  // Update form when initialPosition changes
+  useEffect(() => {
+    if (initialPosition) {
+      setFormData(prev => ({
+        ...prev,
+        startX: String(initialPosition[0]),
+        startY: String(initialPosition[1]),
+        startZ: String(initialPosition[2]),
+        endX: String(initialPosition[0] + 6),
+        endY: String(initialPosition[1]),
+        endZ: String(initialPosition[2]),
+      }));
+    }
+  }, [initialPosition]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

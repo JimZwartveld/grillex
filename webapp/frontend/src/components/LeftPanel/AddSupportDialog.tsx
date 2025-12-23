@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Dialog, Button, Input, Select } from '../common';
 import useStore from '../../stores/modelStore';
 import { toolsApi } from '../../api/client';
@@ -113,6 +113,18 @@ export default function AddSupportDialog({ isOpen, onClose, initialPosition }: P
     z: initialPosition ? String(initialPosition[2]) : '0',
     type: 'fixed',
   });
+
+  // Update form when initialPosition changes
+  useEffect(() => {
+    if (initialPosition) {
+      setFormData(prev => ({
+        ...prev,
+        x: String(initialPosition[0]),
+        y: String(initialPosition[1]),
+        z: String(initialPosition[2]),
+      }));
+    }
+  }, [initialPosition]);
 
   // Individual DOF states
   const [dofStates, setDofStates] = useState<Record<DOFKey, DOFState>>({

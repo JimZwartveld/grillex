@@ -234,10 +234,47 @@ function dofToIndex(dof: string | number): number {
   return mapping[dof] ?? 2; // Default to UZ
 }
 
+// Ground plane for capturing empty space clicks
+function GroundPlane({ onContextMenu }: { onContextMenu: (position: [number, number, number], event: React.MouseEvent) => void }) {
+  return (
+    <mesh
+      rotation={[-Math.PI / 2, 0, 0]}  // Rotate to XY plane for Z-up
+      position={[0, 0, 0]}
+      onContextMenu={(e) => {
+        e.stopPropagation();
+        const point = e.point;
+        // Snap to nearest 0.5m grid
+        const snappedPoint: [number, number, number] = [
+          Math.round(point.x * 2) / 2,
+          Math.round(point.y * 2) / 2,
+          Math.round(point.z * 2) / 2,
+        ];
+        if (e.nativeEvent) {
+          onContextMenu(snappedPoint, e.nativeEvent as unknown as React.MouseEvent);
+        }
+      }}
+      onPointerOver={() => {
+        document.body.style.cursor = 'crosshair';
+      }}
+      onPointerOut={() => {
+        document.body.style.cursor = 'default';
+      }}
+    >
+      <planeGeometry args={[100, 100]} />
+      <meshBasicMaterial transparent opacity={0} />
+    </mesh>
+  );
+}
+
 export default function FEMView({ showDeflected: _showDeflected = false, showRealistic: _showRealistic = false }: Props) {
   void _showDeflected; void _showRealistic; // Reserved for future implementation
 
-  const { beams, boundaryConditions, loadCases, cargos, selectedBeamId, selectBeam, openContextMenu } = useStore();
+  const { beams, boundaryConditions, loadCases, cargos, selectedBeamId, selectBeam, openContextMenu, openAddContextMenu } = useStore();
+
+  const handleGroundContextMenu = useCallback((position: [number, number, number], e: React.MouseEvent) => {
+    e.preventDefault();
+    openAddContextMenu(e.clientX, e.clientY, position);
+  }, [openAddContextMenu]);
 
   const handleBeamClick = useCallback((beamId: number) => {
     selectBeam(selectedBeamId === beamId ? null : beamId);
@@ -299,6 +336,9 @@ export default function FEMView({ showDeflected: _showDeflected = false, showRea
 
   return (
     <group>
+      {/* Ground plane for right-click context menu on empty space */}
+      <GroundPlane onContextMenu={handleGroundContextMenu} />
+
       {/* Beam elements */}
       {beams.map((beam) => (
         <BeamLine

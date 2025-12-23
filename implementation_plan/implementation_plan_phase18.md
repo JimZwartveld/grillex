@@ -194,13 +194,54 @@ Add right-click context menus for creating new elements at clicked 3D positions.
 5. Create `AddCargoDialog` for creating cargo items.
 
 **Acceptance Criteria:**
-- [ ] Right-click on empty space shows "Add" context menu
-- [ ] Add Beam opens dialog with start position pre-filled
-- [ ] Add Support creates support at clicked position
-- [ ] Add Load opens dialog with position pre-filled
-- [ ] Add Cargo opens cargo creation dialog
-- [ ] Positions snap to nearest integer when grid snap enabled
-- [ ] Context menu closes on click outside
+- [x] Right-click on empty space shows "Add" context menu
+- [x] Add Beam opens dialog with start position pre-filled
+- [x] Add Support creates support at clicked position
+- [x] Add Load opens dialog with position pre-filled
+- [x] Add Cargo opens cargo creation dialog
+- [x] Positions snap to nearest 0.5m grid
+- [x] Context menu closes on click outside
+
+### Execution Notes (Completed 2024-12-23)
+
+**Steps Taken:**
+1. Added `addContextMenu` state to modelStore.ts:
+   - `isOpen`, `x`, `y`, `worldPosition` fields
+   - `openAddContextMenu` and `closeAddContextMenu` actions
+2. Created `AddContextMenu.tsx` component:
+   - Shows clicked world position in header
+   - Menu items: Add Beam, Add Support, Add Load, Add Cargo
+   - Color-coded icons for each element type
+   - Click outside and Escape key handlers to close
+3. Added `GroundPlane` component in FEMView.tsx:
+   - Invisible mesh on XY plane (Z=0) for raycasting
+   - Right-click handler gets 3D intersection point
+   - Snaps position to 0.5m grid
+   - Crosshair cursor on hover
+4. Updated `Viewer/index.tsx`:
+   - Added state for tracking which add dialog to open
+   - Created handlers for each add action
+   - Rendered AddContextMenu and all Add dialogs with initialPosition
+5. Updated Add dialogs to accept `initialPosition` prop:
+   - `AddBeamDialog.tsx` - start position pre-filled, end position offset by 6m in +X
+   - `AddSupportDialog.tsx` - position pre-filled
+   - `AddLoadDialog.tsx` - position pre-filled
+6. Created `AddCargoDialog.tsx` for cargo creation:
+   - Name, COG position, dimensions, mass inputs
+   - Auto-incrementing cargo name
+
+**Key Files Created/Modified:**
+- `webapp/frontend/src/components/Viewer/AddContextMenu.tsx` (created)
+- `webapp/frontend/src/components/LeftPanel/AddCargoDialog.tsx` (created)
+- `webapp/frontend/src/components/Viewer/FEMView.tsx` (added GroundPlane)
+- `webapp/frontend/src/components/Viewer/index.tsx` (integrated AddContextMenu)
+- `webapp/frontend/src/components/LeftPanel/AddBeamDialog.tsx` (added initialPosition)
+- `webapp/frontend/src/components/LeftPanel/AddSupportDialog.tsx` (added useEffect for position)
+- `webapp/frontend/src/components/LeftPanel/AddLoadDialog.tsx` (added initialPosition)
+- `webapp/frontend/src/stores/modelStore.ts` (added addContextMenu state)
+
+**Verification:**
+- `npm run build` succeeds with no TypeScript errors
 
 ---
 

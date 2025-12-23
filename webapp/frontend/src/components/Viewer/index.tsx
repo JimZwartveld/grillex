@@ -4,11 +4,16 @@ import { Loader } from '@react-three/drei';
 import ViewModeSelector from './ViewModeSelector';
 import Scene from './Scene';
 import ContextMenu from './ContextMenu';
+import AddContextMenu from './AddContextMenu';
 import BeamPropertiesDialog from './BeamPropertiesDialog';
 import SupportPropertiesDialog from './SupportPropertiesDialog';
 import CargoPropertiesDialog from './CargoPropertiesDialog';
 import SectionEditDialog from './SectionEditDialog';
 import MaterialEditDialog from './MaterialEditDialog';
+import AddBeamDialog from '../LeftPanel/AddBeamDialog';
+import AddSupportDialog from '../LeftPanel/AddSupportDialog';
+import AddLoadDialog from '../LeftPanel/AddLoadDialog';
+import AddCargoDialog from '../LeftPanel/AddCargoDialog';
 import useStore from '../../stores/modelStore';
 import api from '../../api/client';
 
@@ -31,6 +36,12 @@ export default function Viewer() {
   const [sectionDialogOpen, setSectionDialogOpen] = useState(false);
   const [materialDialogOpen, setMaterialDialogOpen] = useState(false);
   const [editingBeamId, setEditingBeamId] = useState<number | null>(null);
+
+  // State for add dialogs (triggered from right-click context menu)
+  const [addDialogState, setAddDialogState] = useState<{
+    type: 'beam' | 'support' | 'load' | 'cargo' | null;
+    position: [number, number, number] | null;
+  }>({ type: null, position: null });
 
   // Get the currently selected element for properties dialog
   const getSelectedBeam = () => {
@@ -154,6 +165,27 @@ export default function Viewer() {
     }
   }, [contextMenu, boundaryConditions, nodes, fetchModelState]);
 
+  // Handlers for add context menu actions
+  const handleAddBeam = useCallback((position: [number, number, number]) => {
+    setAddDialogState({ type: 'beam', position });
+  }, []);
+
+  const handleAddSupport = useCallback((position: [number, number, number]) => {
+    setAddDialogState({ type: 'support', position });
+  }, []);
+
+  const handleAddLoad = useCallback((position: [number, number, number]) => {
+    setAddDialogState({ type: 'load', position });
+  }, []);
+
+  const handleAddCargo = useCallback((position: [number, number, number]) => {
+    setAddDialogState({ type: 'cargo', position });
+  }, []);
+
+  const closeAddDialog = useCallback(() => {
+    setAddDialogState({ type: null, position: null });
+  }, []);
+
   const { support, nodePosition } = getSelectedSupport();
 
   return (
@@ -181,12 +213,20 @@ export default function Viewer() {
         Left-click: Select | Right-click: Context menu | Scroll: Zoom
       </div>
 
-      {/* Context menu */}
+      {/* Context menu for existing elements */}
       <ContextMenu
         onProperties={handleProperties}
         onDelete={handleDelete}
         onEditSection={handleEditSection}
         onEditMaterial={handleEditMaterial}
+      />
+
+      {/* Context menu for adding new elements */}
+      <AddContextMenu
+        onAddBeam={handleAddBeam}
+        onAddSupport={handleAddSupport}
+        onAddLoad={handleAddLoad}
+        onAddCargo={handleAddCargo}
       />
 
       {/* Properties dialogs */}
@@ -225,6 +265,28 @@ export default function Viewer() {
           setMaterialDialogOpen(false);
           setEditingBeamId(null);
         }}
+      />
+
+      {/* Add dialogs (triggered from right-click context menu) */}
+      <AddBeamDialog
+        isOpen={addDialogState.type === 'beam'}
+        onClose={closeAddDialog}
+        initialPosition={addDialogState.position}
+      />
+      <AddSupportDialog
+        isOpen={addDialogState.type === 'support'}
+        onClose={closeAddDialog}
+        initialPosition={addDialogState.position ?? undefined}
+      />
+      <AddLoadDialog
+        isOpen={addDialogState.type === 'load'}
+        onClose={closeAddDialog}
+        initialPosition={addDialogState.position}
+      />
+      <AddCargoDialog
+        isOpen={addDialogState.type === 'cargo'}
+        onClose={closeAddDialog}
+        initialPosition={addDialogState.position}
       />
     </div>
   );
