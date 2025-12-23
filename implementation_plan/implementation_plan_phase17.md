@@ -1191,14 +1191,14 @@ Implement the FEM view showing beam elements as lines, nodes as points, boundary
    ```
 
 **Acceptance Criteria:**
-- [ ] Beams rendered as colored lines
-- [ ] Nodes rendered as small spheres
-- [ ] Clicking beam selects it (highlight color change)
-- [ ] Fixed supports shown with ground hatch symbol
-- [ ] Pinned supports shown with triangle symbol
-- [ ] Point loads shown as arrows with magnitude labels
-- [ ] Arrow direction matches DOF (UY = vertical, etc.)
-- [ ] Load magnitude affects arrow size (with reasonable limits)
+- [x] Beams rendered as colored lines
+- [x] Nodes rendered as small spheres
+- [x] Clicking beam selects it (highlight color change)
+- [x] Fixed supports shown with ground hatch symbol
+- [x] Pinned supports shown with triangle symbol
+- [x] Point loads shown as arrows with magnitude labels
+- [x] Arrow direction matches DOF (UY = vertical, etc.)
+- [x] Load magnitude affects arrow size (with reasonable limits)
 
 ---
 
@@ -1335,14 +1335,14 @@ Implement the results view showing deflected shapes and displacement contours.
    ```
 
 **Acceptance Criteria:**
-- [ ] Original shape shown in faded color
-- [ ] Deflected shape shown with displacement applied
-- [ ] Deformation scale slider (1x to 1000x)
-- [ ] Smooth curve along beam (not just endpoints)
-- [ ] Color gradient based on displacement magnitude
-- [ ] Color legend with min/max values
-- [ ] Works for multiple beams
-- [ ] Graceful fallback when not analyzed
+- [x] Original shape shown in faded color
+- [x] Deflected shape shown with displacement applied
+- [x] Deformation scale slider (1x to 1000x)
+- [x] Smooth curve along beam (not just endpoints)
+- [x] Color gradient based on displacement magnitude
+- [x] Color legend with min/max values
+- [x] Works for multiple beams
+- [x] Graceful fallback when not analyzed
 
 ---
 
@@ -1512,14 +1512,14 @@ Implement realistic 3D rendering of beam cross-sections (I-beams, channels, etc.
    ```
 
 **Acceptance Criteria:**
-- [ ] I-beam sections render with correct proportions
-- [ ] Box sections render as hollow rectangles
-- [ ] Beams oriented correctly (local axes applied)
-- [ ] Section profile matches actual section properties
-- [ ] Smooth metallic appearance with proper lighting
-- [ ] Works with roll angle applied
-- [ ] Standard European sections (IPE, HEB, HEA) have correct dimensions
-- [ ] Fallback to generic profile if section not in library
+- [x] I-beam sections render with correct proportions
+- [x] Box sections render as hollow rectangles
+- [x] Beams oriented correctly (local axes applied)
+- [x] Section profile matches actual section properties
+- [x] Smooth metallic appearance with proper lighting
+- [x] Works with roll angle applied
+- [x] Standard European sections (IPE, HEB, HEA) have correct dimensions
+- [x] Fallback to generic profile if section not in library
 
 ---
 
@@ -1658,14 +1658,14 @@ Implement cargo visualization as cubes with spherical supports and the naval arc
    ```
 
 **Acceptance Criteria:**
-- [ ] Cargo rendered as semi-transparent cube at CoG position
-- [ ] Cube edges visible for clarity
-- [ ] Support points shown as small metallic spheres
-- [ ] CoG indicator shows quadrant pattern (black/white)
-- [ ] CoG indicator always faces camera (billboard effect)
-- [ ] CoG has cross lines dividing quadrants
-- [ ] Works with multiple cargo items
-- [ ] Cargo dimensions configurable
+- [x] Cargo rendered as semi-transparent cube at CoG position
+- [x] Cube edges visible for clarity
+- [x] Support points shown as small metallic spheres
+- [x] CoG indicator shows quadrant pattern (black/white)
+- [x] CoG indicator always faces camera (billboard effect)
+- [x] CoG has cross lines dividing quadrants
+- [x] Works with multiple cargo items
+- [x] Cargo dimensions configurable
 
 ---
 
@@ -1855,14 +1855,14 @@ Create Docker Compose configuration for deploying frontend and backend together.
    ```
 
 **Acceptance Criteria:**
-- [ ] `docker-compose up --build` starts both services
-- [ ] Frontend accessible at http://localhost:3000
-- [ ] API requests proxied correctly to backend
-- [ ] SSE works through nginx proxy
-- [ ] Environment variable for API key
-- [ ] Health check endpoint on backend
-- [ ] Development mode with hot reload works
-- [ ] Production build optimized (minified, gzipped)
+- [x] `docker-compose up --build` starts both services
+- [x] Frontend accessible at http://localhost:3000
+- [x] API requests proxied correctly to backend
+- [x] SSE works through nginx proxy
+- [x] Environment variable for API key
+- [x] Health check endpoint on backend
+- [x] Development mode with hot reload works
+- [x] Production build optimized (minified, gzipped)
 
 ---
 
@@ -1970,10 +1970,10 @@ Create integration tests for the complete webapp workflow.
    ```
 
 **Acceptance Criteria:**
-- [ ] Backend API tests pass
-- [ ] Full workflow test (create → analyze → results)
-- [ ] SSE connection test
-- [ ] Error handling tests
+- [x] Backend API tests pass
+- [x] Full workflow test (create → analyze → results)
+- [x] SSE connection test
+- [x] Error handling tests
 - [ ] Frontend E2E tests with Playwright
 - [ ] Chat integration test with mock Claude response
 - [ ] Tests run in CI pipeline
