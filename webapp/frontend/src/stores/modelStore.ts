@@ -24,6 +24,8 @@ interface UIState {
   selectedBeamId: number | null;
   isLoading: boolean;
   error: string | null;
+  // Results invalidation warning
+  resultWarning: string | null;
   // Context menu state
   contextMenu: {
     isOpen: boolean;
@@ -58,6 +60,9 @@ interface Store extends ModelState, UIState {
   // Properties dialog actions
   openPropertiesDialog: (elementType: 'beam' | 'support' | 'load' | 'cargo', elementId: number | null) => void;
   closePropertiesDialog: () => void;
+  // Results invalidation actions
+  invalidateResults: () => void;
+  clearResultWarning: () => void;
 
   // Model actions
   fetchModelState: () => Promise<void>;
@@ -94,6 +99,7 @@ export const useStore = create<Store>((set, get) => ({
   selectedBeamId: null,
   isLoading: false,
   error: null,
+  resultWarning: null,
   contextMenu: {
     isOpen: false,
     x: 0,
@@ -148,6 +154,17 @@ export const useStore = create<Store>((set, get) => ({
       propertiesDialog: { isOpen: false, elementType: null, elementId: null },
     }),
 
+  // Results invalidation actions
+  invalidateResults: () =>
+    set({
+      isAnalyzed: false,
+      results: null,
+      resultWarning: 'Model changed. Re-run analysis for updated results.',
+    }),
+
+  clearResultWarning: () =>
+    set({ resultWarning: null }),
+
   // Model actions
   fetchModelState: async () => {
     set({ isLoading: true, error: null });
@@ -191,14 +208,33 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   updateFromEvent: (event: ModelEvent) => {
+    // Events that modify the model and should invalidate results
+    const modelChangingEvents = [
+      'beam_added', 'beam_updated', 'beam_deleted',
+      'material_added', 'material_updated', 'material_deleted',
+      'section_added', 'section_updated', 'section_deleted',
+      'bc_added', 'bc_deleted',
+      'load_added', 'load_deleted',
+      'cargo_added', 'cargo_updated', 'cargo_deleted',
+      'spring_added', 'spring_deleted',
+    ];
+
+    // Check if this event should invalidate results
+    if (modelChangingEvents.includes(event.event_type) && get().isAnalyzed) {
+      get().invalidateResults();
+    }
+
     switch (event.event_type) {
       case 'model_updated':
         get().fetchModelState();
         break;
       case 'analysis_complete':
+      case 'modal_analysis_complete':
+      case 'nonlinear_analysis_complete':
         set({
           isAnalyzed: true,
           results: event.data.results as AnalysisResults,
+          resultWarning: null,  // Clear warning on successful analysis
         });
         break;
       case 'error':
@@ -207,6 +243,12 @@ export const useStore = create<Store>((set, get) => ({
       case 'tool_executed':
         // Refresh model state after tool execution
         get().fetchModelState();
+        break;
+      default:
+        // For model-changing events, also refresh model state
+        if (modelChangingEvents.includes(event.event_type)) {
+          get().fetchModelState();
+        }
         break;
     }
   },

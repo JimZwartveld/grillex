@@ -125,22 +125,23 @@ function JointNode({ position }: { position: [number, number, number] }) {
   );
 }
 
-// Fixed support base
+// Fixed support base - Z-up coordinate system
 function FixedSupportRealistic({ position }: { position: [number, number, number] }) {
   return (
     <group position={position}>
-      <mesh position={[0, -0.08, 0]}>
-        <boxGeometry args={[0.4, 0.16, 0.4]} />
+      {/* Base plate - flat on XY plane, below node in Z */}
+      <mesh position={[0, 0, -0.08]}>
+        <boxGeometry args={[0.4, 0.4, 0.16]} />
         <meshStandardMaterial color="#555" metalness={0.3} roughness={0.7} />
       </mesh>
-      {/* Anchor bolts */}
+      {/* Anchor bolts - extending down in -Z direction */}
       {[
-        [-0.12, -0.16, -0.12],
-        [0.12, -0.16, -0.12],
-        [-0.12, -0.16, 0.12],
-        [0.12, -0.16, 0.12],
+        [-0.12, -0.12, -0.16],
+        [0.12, -0.12, -0.16],
+        [-0.12, 0.12, -0.16],
+        [0.12, 0.12, -0.16],
       ].map((pos, i) => (
-        <mesh key={i} position={pos as [number, number, number]}>
+        <mesh key={i} position={pos as [number, number, number]} rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[0.02, 0.02, 0.1, 8]} />
           <meshStandardMaterial color="#333" metalness={0.8} roughness={0.2} />
         </mesh>

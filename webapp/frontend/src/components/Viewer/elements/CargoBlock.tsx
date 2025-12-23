@@ -6,18 +6,20 @@ import CoGIndicator from './CoGIndicator';
 import SupportSphere from './SupportSphere';
 
 /**
- * 3D cargo block visualization
+ * 3D cargo block visualization - Z-up coordinate system
  * Semi-transparent cube with edges, CoG indicator, and support spheres
+ * Dimensions: [lengthX, widthY, heightZ] - height is vertical (Z-up)
  */
 export function CargoBlock({ cargo }: { cargo: Cargo }) {
   const dimensions = cargo.dimensions || [2, 2, 2];
-  const [width, height, depth] = dimensions;
+  // For Z-up: [lengthX, widthY, heightZ]
+  const [lengthX, widthY, heightZ] = dimensions;
 
   // Create edges geometry for visibility
   const edgesGeometry = useMemo(() => {
-    const boxGeom = new THREE.BoxGeometry(width, height, depth);
+    const boxGeom = new THREE.BoxGeometry(lengthX, widthY, heightZ);
     return new THREE.EdgesGeometry(boxGeom);
-  }, [width, height, depth]);
+  }, [lengthX, widthY, heightZ]);
 
   return (
     <group position={cargo.cogPosition}>
@@ -39,9 +41,9 @@ export function CargoBlock({ cargo }: { cargo: Cargo }) {
       {/* CoG indicator at center */}
       <CoGIndicator position={[0, 0, 0]} size={0.4} />
 
-      {/* Cargo label */}
+      {/* Cargo label - positioned above cargo in +Z direction (Z-up) */}
       <Text
-        position={[0, height / 2 + 0.3, 0]}
+        position={[0, 0, heightZ / 2 + 0.3]}
         fontSize={0.2}
         color="#333"
         anchorX="center"
@@ -50,11 +52,11 @@ export function CargoBlock({ cargo }: { cargo: Cargo }) {
         {cargo.name} ({cargo.mass.toFixed(1)} mT)
       </Text>
 
-      {/* Support spheres at connection points */}
+      {/* Support spheres at connection points - bottom is -Z direction */}
       {cargo.connections.map((conn, i) => (
         <SupportSphere
           key={i}
-          position={conn.cargoOffset || [0, -height / 2, 0]}
+          position={conn.cargoOffset || [0, 0, -heightZ / 2]}
           radius={0.08}
         />
       ))}

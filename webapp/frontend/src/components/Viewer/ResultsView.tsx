@@ -169,7 +169,7 @@ function OriginalNodePoint({ position }: { position: [number, number, number] })
 }
 
 export default function ResultsView() {
-  const { beams, nodes, results, isAnalyzed } = useStore();
+  const { beams, nodes, results, isAnalyzed, resultWarning } = useStore();
   const [scale, setScale] = useState(100);
 
   // Get unique node positions from beams
@@ -247,6 +247,18 @@ export default function ResultsView() {
         <div className="text-gray-400 text-center p-4 bg-white rounded-lg shadow-sm">
           <p className="text-sm mb-1">No model data</p>
           <p className="text-xs">Create beams to see the model</p>
+        </div>
+      </Html>
+    );
+  }
+
+  // Show warning if results are stale
+  if (resultWarning) {
+    return (
+      <Html center>
+        <div className="text-amber-600 text-center p-4 bg-white rounded-lg shadow-sm border border-amber-200">
+          <p className="text-sm font-medium mb-1">Results Invalidated</p>
+          <p className="text-xs">{resultWarning}</p>
         </div>
       </Html>
     );

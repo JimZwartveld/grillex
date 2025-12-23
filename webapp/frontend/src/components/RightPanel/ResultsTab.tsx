@@ -1,5 +1,6 @@
-import { BarChart2, ArrowDown, ArrowUp, Target } from 'lucide-react';
+import { BarChart2, ArrowDown, ArrowUp, Target, AlertTriangle, RefreshCw } from 'lucide-react';
 import useStore from '../../stores/modelStore';
+import api from '../../api/client';
 
 interface ResultsTableProps {
   title: string;
@@ -32,8 +33,50 @@ function ResultsTable({ title, icon, data }: ResultsTableProps) {
   );
 }
 
+// Warning banner for stale results
+function ResultsWarningBanner({ warning, onRerunAnalysis }: { warning: string; onRerunAnalysis: () => void }) {
+  return (
+    <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-yellow-700">{warning}</p>
+          <button
+            onClick={onRerunAnalysis}
+            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-yellow-700 bg-yellow-100 hover:bg-yellow-200 rounded-md transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Re-run Analysis
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ResultsTab() {
-  const { isAnalyzed, results, beams, nodes } = useStore();
+  const { isAnalyzed, results, beams, nodes, resultWarning, fetchModelState } = useStore();
+
+  const handleRerunAnalysis = async () => {
+    const response = await api.tools.execute('analyze', {});
+    if (response.success) {
+      await fetchModelState();
+    }
+  };
+
+  // Show warning if results are stale
+  if (resultWarning) {
+    return (
+      <div className="h-full overflow-y-auto p-4">
+        <ResultsWarningBanner warning={resultWarning} onRerunAnalysis={handleRerunAnalysis} />
+        <div className="text-center text-gray-400 mt-8">
+          <BarChart2 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <p className="text-sm mb-1">Results invalidated</p>
+          <p className="text-xs">Re-run analysis to get updated results</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAnalyzed || !results) {
     return (

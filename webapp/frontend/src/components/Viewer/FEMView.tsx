@@ -121,36 +121,37 @@ function BeamLine({
   );
 }
 
-// Fixed support symbol
+// Fixed support symbol - Z-up coordinate system
+// Ground is at Z=0, support renders below the node
 function FixedSupport({ position }: { position: [number, number, number] }) {
   return (
     <group position={position}>
-      {/* Ground base */}
-      <mesh position={[0, -0.05, 0]}>
-        <boxGeometry args={[0.3, 0.1, 0.3]} />
+      {/* Ground base - flat on XY plane, below node in Z */}
+      <mesh position={[0, 0, -0.05]}>
+        <boxGeometry args={[0.3, 0.3, 0.1]} />
         <meshStandardMaterial color="#666" />
       </mesh>
-      {/* Hatching lines (simplified) */}
+      {/* Hatching lines (simplified) - extending down in -Z direction */}
       <Line
         points={[
-          [-0.15, -0.1, -0.15],
-          [-0.25, -0.2, -0.25],
+          [-0.15, -0.15, -0.1],
+          [-0.25, -0.25, -0.2],
         ]}
         color="#444"
         lineWidth={1}
       />
       <Line
         points={[
-          [0, -0.1, 0],
-          [-0.1, -0.2, -0.1],
+          [0, 0, -0.1],
+          [-0.1, -0.1, -0.2],
         ]}
         color="#444"
         lineWidth={1}
       />
       <Line
         points={[
-          [0.15, -0.1, 0.15],
-          [0.05, -0.2, 0.05],
+          [0.15, 0.15, -0.1],
+          [0.05, 0.05, -0.2],
         ]}
         color="#444"
         lineWidth={1}
@@ -159,11 +160,14 @@ function FixedSupport({ position }: { position: [number, number, number] }) {
   );
 }
 
-// Pinned support symbol
+// Pinned support symbol - Z-up coordinate system
+// Triangle points up (in +Z direction), base at ground
 function PinnedSupport({ position }: { position: [number, number, number] }) {
   return (
     <group position={position}>
-      <mesh rotation={[Math.PI, 0, 0]} position={[0, -0.1, 0]}>
+      {/* Cone pointing up (+Z), positioned below the node */}
+      {/* Rotate -90 degrees around X to make cone point in +Z instead of +Y */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -0.1]}>
         <coneGeometry args={[0.12, 0.2, 3]} />
         <meshStandardMaterial color="#666" />
       </mesh>

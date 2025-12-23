@@ -1,4 +1,5 @@
 import { OrbitControls, Grid, PerspectiveCamera } from '@react-three/drei';
+import * as THREE from 'three';
 import AxesHelper from './AxesHelper';
 import FEMView from './FEMView';
 import ResultsView from './ResultsView';
@@ -38,31 +39,42 @@ export default function Scene() {
 
   const cameraDistance = Math.max(modelSize * 3, 10);
 
+  // Z-up coordinate system: Camera positioned to view from +X, -Y direction looking at model
+  // with Z pointing up
+  const cameraPosition: [number, number, number] = [
+    modelCenter[0] + cameraDistance * 0.7,
+    modelCenter[1] - cameraDistance * 0.7,
+    modelCenter[2] + cameraDistance * 0.5,
+  ];
+
   return (
     <>
-      {/* Camera */}
+      {/* Camera - Z-up coordinate system */}
       <PerspectiveCamera
         makeDefault
-        position={[cameraDistance, cameraDistance * 0.8, cameraDistance]}
+        position={cameraPosition}
+        up={[0, 0, 1]}
         fov={50}
       />
 
-      {/* Controls */}
+      {/* Controls - Z-up coordinate system */}
       <OrbitControls
         makeDefault
         target={modelCenter as [number, number, number]}
+        up={new THREE.Vector3(0, 0, 1)}
         enableDamping
         dampingFactor={0.1}
       />
 
-      {/* Lighting */}
+      {/* Lighting - adjusted for Z-up */}
       <ambientLight intensity={0.5} />
-      <directionalLight position={[10, 10, 5]} intensity={1} castShadow />
-      <directionalLight position={[-10, -10, -5]} intensity={0.3} />
+      <directionalLight position={[10, -10, 10]} intensity={1} castShadow />
+      <directionalLight position={[-10, 10, -5]} intensity={0.3} />
 
-      {/* Ground grid */}
+      {/* Ground grid - on XY plane (Z=0) for Z-up coordinate system */}
       <Grid
         position={[0, 0, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
         args={[50, 50]}
         cellSize={1}
         cellThickness={0.5}

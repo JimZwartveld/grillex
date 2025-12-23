@@ -1,15 +1,21 @@
 import { Text } from '@react-three/drei';
 
+/**
+ * Axes helper for Z-up coordinate system.
+ * X (red) - horizontal, along length
+ * Y (green) - horizontal, transverse
+ * Z (blue) - vertical (UP)
+ */
 export default function AxesHelper() {
   const axisLength = 2;
   const labelOffset = 0.3;
 
   return (
     <group>
-      {/* Axes lines */}
+      {/* Axes lines - Three.js default axes helper */}
       <axesHelper args={[axisLength]} />
 
-      {/* X axis label */}
+      {/* X axis label (red - horizontal) */}
       <Text
         position={[axisLength + labelOffset, 0, 0]}
         fontSize={0.2}
@@ -20,7 +26,7 @@ export default function AxesHelper() {
         X
       </Text>
 
-      {/* Y axis label */}
+      {/* Y axis label (green - horizontal) */}
       <Text
         position={[0, axisLength + labelOffset, 0]}
         fontSize={0.2}
@@ -31,7 +37,7 @@ export default function AxesHelper() {
         Y
       </Text>
 
-      {/* Z axis label */}
+      {/* Z axis label (blue - vertical UP) */}
       <Text
         position={[0, 0, axisLength + labelOffset]}
         fontSize={0.2}
@@ -39,7 +45,7 @@ export default function AxesHelper() {
         anchorX="center"
         anchorY="middle"
       >
-        Z
+        Z (up)
       </Text>
     </group>
   );

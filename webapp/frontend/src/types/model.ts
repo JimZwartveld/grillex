@@ -98,8 +98,25 @@ export interface ToolCall {
   result?: unknown;
 }
 
+export type ModelEventType =
+  | 'model_updated'
+  | 'model_created'
+  | 'analysis_complete'
+  | 'modal_analysis_complete'
+  | 'nonlinear_analysis_complete'
+  | 'error'
+  | 'tool_executed'
+  // Model modification events
+  | 'beam_added' | 'beam_updated' | 'beam_deleted'
+  | 'material_added' | 'material_updated' | 'material_deleted'
+  | 'section_added' | 'section_updated' | 'section_deleted'
+  | 'bc_added' | 'bc_deleted'
+  | 'load_added' | 'load_deleted'
+  | 'cargo_added' | 'cargo_updated' | 'cargo_deleted'
+  | 'spring_added' | 'spring_deleted';
+
 export interface ModelEvent {
-  event_type: 'model_updated' | 'analysis_complete' | 'error' | 'tool_executed';
+  event_type: ModelEventType;
   data: Record<string, unknown>;
   timestamp: string;
 }
