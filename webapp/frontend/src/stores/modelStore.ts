@@ -26,6 +26,8 @@ interface UIState {
   error: string | null;
   // Results invalidation warning
   resultWarning: string | null;
+  // Active load case for display filtering (null = show all)
+  activeLoadCaseId: number | null;
   // Context menu state
   contextMenu: {
     isOpen: boolean;
@@ -61,6 +63,7 @@ interface Store extends ModelState, UIState {
   setViewMode: (mode: 'fem' | 'results' | 'realistic') => void;
   selectBeam: (beamId: number | null) => void;
   setError: (error: string | null) => void;
+  setActiveLoadCase: (loadCaseId: number | null) => void;
   // Context menu actions
   openContextMenu: (x: number, y: number, elementType: 'beam' | 'support' | 'load' | 'cargo', elementId: number | null) => void;
   closeContextMenu: () => void;
@@ -110,6 +113,7 @@ export const useStore = create<Store>((set, get) => ({
   isLoading: false,
   error: null,
   resultWarning: null,
+  activeLoadCaseId: null,
   contextMenu: {
     isOpen: false,
     x: 0,
@@ -147,6 +151,8 @@ export const useStore = create<Store>((set, get) => ({
   selectBeam: (beamId) => set({ selectedBeamId: beamId }),
 
   setError: (error) => set({ error }),
+
+  setActiveLoadCase: (loadCaseId) => set({ activeLoadCaseId: loadCaseId }),
 
   // Context menu actions
   openContextMenu: (x, y, elementType, elementId) =>

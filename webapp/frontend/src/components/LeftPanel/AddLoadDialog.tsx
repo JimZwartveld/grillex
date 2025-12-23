@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Dialog, Button, Input, Select } from '../common';
 import useStore from '../../stores/modelStore';
 import { toolsApi } from '../../api/client';
@@ -19,7 +19,7 @@ const DOF_OPTIONS = [
 ];
 
 export default function AddLoadDialog({ isOpen, onClose, initialPosition }: Props) {
-  const { fetchModelState } = useStore();
+  const { fetchModelState, loadCases, activeLoadCaseId } = useStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     x: initialPosition ? String(initialPosition[0]) : '6',
@@ -27,25 +27,75 @@ export default function AddLoadDialog({ isOpen, onClose, initialPosition }: Prop
     z: initialPosition ? String(initialPosition[2]) : '0',
     dof: 'UZ',
     value: '-10',
+    loadCaseId: '',
   });
 
-  // Update form when initialPosition changes
+  // Build load case options
+  const loadCaseOptions = useMemo(() => {
+    const options = loadCases.map((lc, idx) => ({
+      value: String(lc.id ?? idx),
+      label: lc.name,
+    }));
+    // Add "Create New" option at the end
+    options.push({ value: '__new__', label: '+ Create New Load Case' });
+    return options;
+  }, [loadCases]);
+
+  // Update form when initialPosition changes or when dialog opens
   useEffect(() => {
-    if (initialPosition) {
+    if (isOpen) {
+      // Pre-select active load case if one is selected
+      const defaultLoadCaseId = activeLoadCaseId !== null
+        ? String(activeLoadCaseId)
+        : loadCases.length > 0
+          ? String(loadCases[0].id ?? 0)
+          : '';
+
       setFormData(prev => ({
         ...prev,
-        x: String(initialPosition[0]),
-        y: String(initialPosition[1]),
-        z: String(initialPosition[2]),
+        x: initialPosition ? String(initialPosition[0]) : prev.x,
+        y: initialPosition ? String(initialPosition[1]) : prev.y,
+        z: initialPosition ? String(initialPosition[2]) : prev.z,
+        loadCaseId: defaultLoadCaseId,
       }));
     }
-  }, [initialPosition]);
+  }, [initialPosition, isOpen, activeLoadCaseId, loadCases]);
+
+  const [showNewLoadCaseForm, setShowNewLoadCaseForm] = useState(false);
+  const [newLoadCaseName, setNewLoadCaseName] = useState('');
+  const [newLoadCaseType, setNewLoadCaseType] = useState('permanent');
+
+  const handleLoadCaseChange = (value: string) => {
+    if (value === '__new__') {
+      setShowNewLoadCaseForm(true);
+    } else {
+      setFormData({ ...formData, loadCaseId: value });
+      setShowNewLoadCaseForm(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
     try {
+      let loadCaseId = formData.loadCaseId;
+
+      // Create new load case if needed
+      if (showNewLoadCaseForm && newLoadCaseName.trim()) {
+        const lcResponse = await toolsApi.execute('add_load_case', {
+          name: newLoadCaseName.trim(),
+          load_case_type: newLoadCaseType,
+        });
+        if (lcResponse.success && lcResponse.data?.result) {
+          const result = lcResponse.data.result as { id: number };
+          loadCaseId = String(result.id);
+        } else {
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       const response = await toolsApi.execute('add_point_load', {
         position: [
           parseFloat(formData.x),
@@ -54,12 +104,15 @@ export default function AddLoadDialog({ isOpen, onClose, initialPosition }: Prop
         ],
         dof: formData.dof,
         value: parseFloat(formData.value),
+        load_case_id: loadCaseId ? parseInt(loadCaseId, 10) : undefined,
       });
 
       if (response.success) {
         await fetchModelState();
         onClose();
-        setFormData({ x: '6', y: '0', z: '0', dof: 'UZ', value: '-10' });
+        setFormData({ x: '6', y: '0', z: '0', dof: 'UZ', value: '-10', loadCaseId: '' });
+        setShowNewLoadCaseForm(false);
+        setNewLoadCaseName('');
       }
     } finally {
       setIsSubmitting(false);
@@ -118,11 +171,48 @@ export default function AddLoadDialog({ isOpen, onClose, initialPosition }: Prop
           Tip: Use negative values for downward loads (e.g., -10 kN in UZ for gravity)
         </p>
 
+        {/* Load Case Selection */}
+        <div className="border-t border-gray-100 pt-4">
+          <Select
+            label="Load Case"
+            options={loadCaseOptions}
+            value={showNewLoadCaseForm ? '__new__' : formData.loadCaseId}
+            onChange={(e) => handleLoadCaseChange(e.target.value)}
+          />
+
+          {showNewLoadCaseForm && (
+            <div className="mt-3 p-3 bg-gray-50 rounded-lg space-y-3">
+              <Input
+                label="New Load Case Name"
+                value={newLoadCaseName}
+                onChange={(e) => setNewLoadCaseName(e.target.value)}
+                placeholder="e.g., Dead Load"
+                autoFocus
+              />
+              <Select
+                label="Type"
+                options={[
+                  { value: 'permanent', label: 'Permanent' },
+                  { value: 'variable', label: 'Variable' },
+                  { value: 'accidental', label: 'Accidental' },
+                  { value: 'seismic', label: 'Seismic' },
+                ]}
+                value={newLoadCaseType}
+                onChange={(e) => setNewLoadCaseType(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
+
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={isSubmitting}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={isSubmitting || (showNewLoadCaseForm && !newLoadCaseName.trim()) || (!showNewLoadCaseForm && !formData.loadCaseId && loadCases.length > 0)}
+          >
             {isSubmitting ? 'Adding...' : 'Add Load'}
           </Button>
         </div>

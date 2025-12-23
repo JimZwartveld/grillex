@@ -269,7 +269,7 @@ function GroundPlane({ onContextMenu }: { onContextMenu: (position: [number, num
 export default function FEMView({ showDeflected: _showDeflected = false, showRealistic: _showRealistic = false }: Props) {
   void _showDeflected; void _showRealistic; // Reserved for future implementation
 
-  const { beams, boundaryConditions, loadCases, cargos, selectedBeamId, selectBeam, openContextMenu, openAddContextMenu, contextMenu } = useStore();
+  const { beams, boundaryConditions, loadCases, cargos, selectedBeamId, selectBeam, openContextMenu, openAddContextMenu, contextMenu, activeLoadCaseId } = useStore();
 
   const handleGroundContextMenu = useCallback((position: [number, number, number], e: React.MouseEvent) => {
     e.preventDefault();
@@ -302,7 +302,7 @@ export default function FEMView({ showDeflected: _showDeflected = false, showRea
     return Array.from(positions.values());
   }, [beams]);
 
-  // Get load data from load cases
+  // Get load data from load cases, filtered by activeLoadCaseId
   const loads = useMemo(() => {
     const result: Array<{
       position: [number, number, number];
@@ -310,8 +310,13 @@ export default function FEMView({ showDeflected: _showDeflected = false, showRea
       value: number;
     }> = [];
 
+    // Filter load cases by activeLoadCaseId (null = show all)
+    const filteredLoadCases = activeLoadCaseId === null
+      ? loadCases
+      : loadCases.filter((lc, idx) => (lc.id ?? idx) === activeLoadCaseId);
+
     // Create loads at beam endpoints based on position matching
-    loadCases.forEach((lc) => {
+    filteredLoadCases.forEach((lc) => {
       lc.loads.forEach((load) => {
         // Find the node position for this load
         const nodePos = nodePositions[load.node_id];
@@ -326,7 +331,7 @@ export default function FEMView({ showDeflected: _showDeflected = false, showRea
     });
 
     return result;
-  }, [loadCases, nodePositions]);
+  }, [loadCases, nodePositions, activeLoadCaseId]);
 
   if (beams.length === 0) {
     return (

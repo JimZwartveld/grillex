@@ -45,10 +45,13 @@ export interface Load {
 }
 
 export interface LoadCase {
+  id?: number;
   name: string;
-  type: string;
+  type: 'permanent' | 'variable' | 'accidental' | 'seismic' | string;
   loads: Load[];
 }
+
+export type LoadCaseType = 'permanent' | 'variable' | 'accidental' | 'seismic';
 
 export interface AnalysisResults {
   displacements: Record<number, number[]>;
