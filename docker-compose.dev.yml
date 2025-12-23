@@ -9,7 +9,7 @@ services:
       context: .
       dockerfile: webapp/backend/Dockerfile.dev
     volumes:
-      - ./src:/app/src:ro
+      - ./src:/app/src
       - ./webapp/backend:/app/webapp/backend:ro
     command: uvicorn webapp.backend.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
@@ -24,7 +24,10 @@ services:
     volumes:
       - ./webapp/frontend/src:/app/src:ro
       - ./webapp/frontend/index.html:/app/index.html:ro
+      - ./webapp/frontend/vite.config.ts:/app/vite.config.ts:ro
     command: npm run dev -- --host 0.0.0.0
+    environment:
+      - VITE_API_URL=http://backend:8000
     ports:
       - "5173:5173"
     depends_on:
