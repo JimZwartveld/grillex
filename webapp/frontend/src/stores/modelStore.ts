@@ -62,6 +62,7 @@ export const useStore = create<Store>((set, get) => ({
   sections: [],
   boundaryConditions: [],
   loadCases: [],
+  cargos: [],
   results: null,
   isAnalyzed: false,
 
@@ -125,6 +126,7 @@ export const useStore = create<Store>((set, get) => ({
         sections: [],
         boundaryConditions: [],
         loadCases: [],
+        cargos: [],
         results: null,
         isAnalyzed: false,
         isLoading: false,

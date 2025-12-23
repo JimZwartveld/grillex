@@ -3,6 +3,7 @@ import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import useStore from '../../stores/modelStore';
 import { createProfileFromSection } from './geometry/sectionProfiles';
+import CargoBlock from './elements/CargoBlock';
 
 // Extruded beam component with realistic cross-section
 function ExtrudedBeam({
@@ -149,7 +150,7 @@ function FixedSupportRealistic({ position }: { position: [number, number, number
 }
 
 export default function RealisticView() {
-  const { beams, sections, boundaryConditions, selectedBeamId } = useStore();
+  const { beams, sections, boundaryConditions, cargos, selectedBeamId } = useStore();
 
   // Get unique node positions
   const nodePositions = useMemo(() => {
@@ -219,6 +220,11 @@ export default function RealisticView() {
       {boundaryConditions.length > 0 && beams.length > 0 && (
         <FixedSupportRealistic position={beams[0].start as [number, number, number]} />
       )}
+
+      {/* Cargo blocks */}
+      {cargos.map((cargo) => (
+        <CargoBlock key={cargo.id} cargo={cargo} />
+      ))}
     </group>
   );
 }

@@ -57,6 +57,20 @@ export interface AnalysisResults {
   max_reaction: number;
 }
 
+export interface CargoConnection {
+  node_id: number;
+  cargoOffset: [number, number, number];
+}
+
+export interface Cargo {
+  id: number;
+  name: string;
+  cogPosition: [number, number, number];
+  dimensions: [number, number, number];
+  mass: number;
+  connections: CargoConnection[];
+}
+
 export interface ModelState {
   name: string;
   nodes: Node[];
@@ -65,6 +79,7 @@ export interface ModelState {
   sections: Section[];
   boundaryConditions: BoundaryCondition[];
   loadCases: LoadCase[];
+  cargos: Cargo[];
   results: AnalysisResults | null;
   isAnalyzed: boolean;
 }

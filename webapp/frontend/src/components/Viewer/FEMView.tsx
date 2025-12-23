@@ -2,6 +2,7 @@ import { useMemo, useCallback } from 'react';
 import { Line, Sphere, Text, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import useStore from '../../stores/modelStore';
+import CargoBlock from './elements/CargoBlock';
 
 interface Props {
   showDeflected?: boolean;
@@ -223,7 +224,7 @@ function dofToIndex(dof: string | number): number {
 export default function FEMView({ showDeflected: _showDeflected = false, showRealistic: _showRealistic = false }: Props) {
   void _showDeflected; void _showRealistic; // Reserved for future implementation
 
-  const { beams, boundaryConditions, loadCases, selectedBeamId, selectBeam } = useStore();
+  const { beams, boundaryConditions, loadCases, cargos, selectedBeamId, selectBeam } = useStore();
 
   const handleBeamClick = useCallback((beamId: number) => {
     selectBeam(selectedBeamId === beamId ? null : beamId);
@@ -316,6 +317,11 @@ export default function FEMView({ showDeflected: _showDeflected = false, showRea
           dof={load.dof}
           value={load.value}
         />
+      ))}
+
+      {/* Cargo blocks */}
+      {cargos.map((cargo) => (
+        <CargoBlock key={cargo.id} cargo={cargo} />
       ))}
     </group>
   );
