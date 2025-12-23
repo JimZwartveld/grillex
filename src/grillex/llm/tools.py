@@ -25,7 +25,7 @@ Usage:
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
 
-from grillex.core import StructuralModel, DOFIndex, LoadCaseType
+from grillex.core import StructuralModel, DOFIndex, LoadCaseType, SpringBehavior
 
 
 # =============================================================================
@@ -471,6 +471,94 @@ TOOLS: List[Dict[str, Any]] = [
                 }
             },
             "required": ["beam_start", "beam_end", "position_along_beam"]
+        }
+    },
+
+    # =========================================================================
+    # Spring Elements (Nonlinear)
+    # =========================================================================
+    {
+        "name": "add_spring",
+        "description": "Add a spring element between two nodes. Springs can be linear, tension-only, compression-only, or have gaps. Use for bearing pads, cables, contact problems, or elastic connections.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "position1": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "First node position [x, y, z] in meters"
+                },
+                "position2": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Second node position [x, y, z] in meters"
+                },
+                "kx": {
+                    "type": "number",
+                    "description": "Translational stiffness in X direction [kN/m]. Default 0."
+                },
+                "ky": {
+                    "type": "number",
+                    "description": "Translational stiffness in Y direction [kN/m]. Default 0."
+                },
+                "kz": {
+                    "type": "number",
+                    "description": "Translational stiffness in Z direction [kN/m]. Default 0."
+                },
+                "krx": {
+                    "type": "number",
+                    "description": "Rotational stiffness about X axis [kN·m/rad]. Default 0."
+                },
+                "kry": {
+                    "type": "number",
+                    "description": "Rotational stiffness about Y axis [kN·m/rad]. Default 0."
+                },
+                "krz": {
+                    "type": "number",
+                    "description": "Rotational stiffness about Z axis [kN·m/rad]. Default 0."
+                },
+                "behavior": {
+                    "type": "string",
+                    "enum": ["Linear", "TensionOnly", "CompressionOnly"],
+                    "description": "Spring behavior: Linear (bidirectional), TensionOnly (cables/hooks), CompressionOnly (bearing pads). Default Linear."
+                },
+                "gap": {
+                    "type": "number",
+                    "description": "Gap before spring engages [m for translation, rad for rotation]. Use for contact with clearance. Default 0."
+                }
+            },
+            "required": ["position1", "position2"]
+        }
+    },
+    {
+        "name": "analyze_nonlinear",
+        "description": "Run nonlinear analysis for models with tension/compression-only springs or gap springs. Uses iterative solver to determine spring states.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "max_iterations": {
+                    "type": "integer",
+                    "description": "Maximum solver iterations. Default 50."
+                },
+                "gap_tolerance": {
+                    "type": "number",
+                    "description": "Tolerance for gap state changes [m]. Default 1e-6."
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_spring_states",
+        "description": "Get the state and forces of all springs after nonlinear analysis. Shows which springs are active/inactive and their forces.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": []
         }
     },
 
@@ -1007,10 +1095,142 @@ class ToolExecutor:
             }
         )
 
+    def _tool_add_spring(self, params: Dict[str, Any]) -> ToolResult:
+        """Add a spring element."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        # Parse behavior
+        behavior_str = params.get("behavior", "Linear")
+        behavior_map = {
+            "Linear": SpringBehavior.Linear,
+            "TensionOnly": SpringBehavior.TensionOnly,
+            "CompressionOnly": SpringBehavior.CompressionOnly,
+        }
+        behavior = behavior_map.get(behavior_str, SpringBehavior.Linear)
+
+        spring = self.model.add_spring(
+            node1=params["position1"],
+            node2=params["position2"],
+            kx=params.get("kx", 0.0),
+            ky=params.get("ky", 0.0),
+            kz=params.get("kz", 0.0),
+            krx=params.get("krx", 0.0),
+            kry=params.get("kry", 0.0),
+            krz=params.get("krz", 0.0),
+            behavior=behavior,
+            gap=params.get("gap", 0.0),
+        )
+
+        return ToolResult(
+            success=True,
+            result={
+                "spring_id": spring.id(),
+                "behavior": behavior_str,
+                "gap": params.get("gap", 0.0),
+                "message": f"Spring created with behavior={behavior_str}"
+            }
+        )
+
+    def _tool_analyze_nonlinear(self, params: Dict[str, Any]) -> ToolResult:
+        """Run nonlinear analysis with springs."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        # Configure settings if provided
+        settings = self.model.get_nonlinear_settings()
+        if "max_iterations" in params:
+            settings.max_iterations = params["max_iterations"]
+        if "gap_tolerance" in params:
+            settings.gap_tolerance = params["gap_tolerance"]
+
+        # Check if model has nonlinear springs
+        has_nonlinear = self.model.has_nonlinear_springs()
+
+        # Run analysis
+        results = self.model.analyze_with_nonlinear_springs()
+
+        if results:
+            # Get first result for summary
+            first_result = next(iter(results.values()))
+            return ToolResult(
+                success=True,
+                result={
+                    "analyzed": True,
+                    "has_nonlinear_springs": has_nonlinear,
+                    "num_load_cases": len(results),
+                    "iterations": first_result.iterations if hasattr(first_result, 'iterations') else 1,
+                    "message": f"Nonlinear analysis completed for {len(results)} load case(s)"
+                }
+            )
+        else:
+            return ToolResult(
+                success=False,
+                error="Nonlinear analysis failed.",
+                suggestion="Check boundary conditions and spring configuration."
+            )
+
+    def _tool_get_spring_states(self, params: Dict[str, Any]) -> ToolResult:
+        """Get spring states after analysis."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+        if not self.model.is_analyzed():
+            return ToolResult(
+                success=False,
+                error="Model not analyzed. Call analyze or analyze_nonlinear first.",
+                suggestion="Run analysis before querying spring states."
+            )
+
+        # Get all springs from model
+        springs = self.model._cpp_model.springs
+        if not springs:
+            return ToolResult(
+                success=True,
+                result={
+                    "num_springs": 0,
+                    "springs": [],
+                    "message": "No springs in model"
+                }
+            )
+
+        spring_info = []
+        for spring in springs:
+            # Get states for each DOF (active or not)
+            states = []
+            for dof in range(6):
+                is_active = spring.is_active(dof)
+                states.append(is_active)
+
+            spring_info.append({
+                "id": spring.id(),
+                "is_nonlinear": spring.is_nonlinear(),
+                "has_gap": spring.has_gap(),
+                "active_dofs": states,
+                "stiffness": {
+                    "kx": spring.kx,
+                    "ky": spring.ky,
+                    "kz": spring.kz,
+                    "krx": spring.krx,
+                    "kry": spring.kry,
+                    "krz": spring.krz,
+                }
+            })
+
+        return ToolResult(
+            success=True,
+            result={
+                "num_springs": len(springs),
+                "springs": spring_info,
+                "units": {"k_trans": "kN/m", "k_rot": "kN·m/rad"}
+            }
+        )
+
     def _tool_get_model_info(self, params: Dict[str, Any]) -> ToolResult:
         """Get model summary."""
         if self.model is None:
             return ToolResult(success=False, error="No model created.")
+
+        num_springs = len(self.model._cpp_model.springs) if hasattr(self.model._cpp_model, 'springs') else 0
 
         return ToolResult(
             success=True,
@@ -1018,9 +1238,11 @@ class ToolExecutor:
                 "name": self.model.name,
                 "num_nodes": self.model.num_nodes(),
                 "num_beams": self.model.num_beams(),
+                "num_springs": num_springs,
                 "num_elements": self.model.num_elements(),
                 "total_dofs": self.model.total_dofs(),
                 "analyzed": self.model.is_analyzed(),
+                "has_nonlinear_springs": self.model.has_nonlinear_springs(),
                 "materials": list(self.model._materials.keys()),
                 "sections": list(self.model._sections.keys())
             }
