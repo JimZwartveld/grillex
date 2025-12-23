@@ -26,6 +26,7 @@ function BeamLine({
   selected = false,
   label,
   onClick,
+  onContextMenu,
 }: {
   id: number;
   start: [number, number, number];
@@ -33,6 +34,7 @@ function BeamLine({
   selected?: boolean;
   label?: string;
   onClick?: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const midpoint = useMemo(
     () =>
@@ -83,6 +85,13 @@ function BeamLine({
         onClick={(e) => {
           e.stopPropagation();
           onClick?.();
+        }}
+        onContextMenu={(e) => {
+          e.stopPropagation();
+          // Pass the native event for position
+          if (e.nativeEvent) {
+            onContextMenu?.(e.nativeEvent as unknown as React.MouseEvent);
+          }
         }}
         onPointerOver={(e) => {
           e.stopPropagation();
@@ -224,11 +233,16 @@ function dofToIndex(dof: string | number): number {
 export default function FEMView({ showDeflected: _showDeflected = false, showRealistic: _showRealistic = false }: Props) {
   void _showDeflected; void _showRealistic; // Reserved for future implementation
 
-  const { beams, boundaryConditions, loadCases, cargos, selectedBeamId, selectBeam } = useStore();
+  const { beams, boundaryConditions, loadCases, cargos, selectedBeamId, selectBeam, openContextMenu } = useStore();
 
   const handleBeamClick = useCallback((beamId: number) => {
     selectBeam(selectedBeamId === beamId ? null : beamId);
   }, [selectedBeamId, selectBeam]);
+
+  const handleBeamContextMenu = useCallback((beamId: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    openContextMenu(e.clientX, e.clientY, 'beam', beamId);
+  }, [openContextMenu]);
 
   // Get unique node positions
   const nodePositions = useMemo(() => {
@@ -291,6 +305,7 @@ export default function FEMView({ showDeflected: _showDeflected = false, showRea
           selected={beam.id === selectedBeamId}
           label={`B${beam.id}`}
           onClick={() => handleBeamClick(beam.id)}
+          onContextMenu={(e) => handleBeamContextMenu(beam.id, e)}
         />
       ))}
 

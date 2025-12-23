@@ -24,6 +24,20 @@ interface UIState {
   selectedBeamId: number | null;
   isLoading: boolean;
   error: string | null;
+  // Context menu state
+  contextMenu: {
+    isOpen: boolean;
+    x: number;
+    y: number;
+    elementType: 'beam' | 'support' | 'load' | 'cargo' | null;
+    elementId: number | null;
+  };
+  // Properties dialog state
+  propertiesDialog: {
+    isOpen: boolean;
+    elementType: 'beam' | 'support' | 'load' | 'cargo' | null;
+    elementId: number | null;
+  };
 }
 
 interface Store extends ModelState, UIState {
@@ -38,6 +52,12 @@ interface Store extends ModelState, UIState {
   setViewMode: (mode: 'fem' | 'results' | 'realistic') => void;
   selectBeam: (beamId: number | null) => void;
   setError: (error: string | null) => void;
+  // Context menu actions
+  openContextMenu: (x: number, y: number, elementType: 'beam' | 'support' | 'load' | 'cargo', elementId: number | null) => void;
+  closeContextMenu: () => void;
+  // Properties dialog actions
+  openPropertiesDialog: (elementType: 'beam' | 'support' | 'load' | 'cargo', elementId: number | null) => void;
+  closePropertiesDialog: () => void;
 
   // Model actions
   fetchModelState: () => Promise<void>;
@@ -74,6 +94,18 @@ export const useStore = create<Store>((set, get) => ({
   selectedBeamId: null,
   isLoading: false,
   error: null,
+  contextMenu: {
+    isOpen: false,
+    x: 0,
+    y: 0,
+    elementType: null,
+    elementId: null,
+  },
+  propertiesDialog: {
+    isOpen: false,
+    elementType: null,
+    elementId: null,
+  },
 
   // Chat state
   chatMessages: [],
@@ -93,6 +125,28 @@ export const useStore = create<Store>((set, get) => ({
   selectBeam: (beamId) => set({ selectedBeamId: beamId }),
 
   setError: (error) => set({ error }),
+
+  // Context menu actions
+  openContextMenu: (x, y, elementType, elementId) =>
+    set({
+      contextMenu: { isOpen: true, x, y, elementType, elementId },
+    }),
+
+  closeContextMenu: () =>
+    set({
+      contextMenu: { isOpen: false, x: 0, y: 0, elementType: null, elementId: null },
+    }),
+
+  // Properties dialog actions
+  openPropertiesDialog: (elementType, elementId) =>
+    set({
+      propertiesDialog: { isOpen: true, elementType, elementId },
+    }),
+
+  closePropertiesDialog: () =>
+    set({
+      propertiesDialog: { isOpen: false, elementType: null, elementId: null },
+    }),
 
   // Model actions
   fetchModelState: async () => {
