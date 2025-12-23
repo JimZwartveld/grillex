@@ -37,9 +37,17 @@ class MaterialState(BaseModel):
 
     Attributes:
         name: Material name.
+        E: Young's modulus in kN/m².
+        nu: Poisson's ratio.
+        rho: Density in mT/m³.
+        G: Shear modulus in kN/m² (computed).
     """
 
     name: str
+    E: Optional[float] = None
+    nu: Optional[float] = None
+    rho: Optional[float] = None
+    G: Optional[float] = None
 
 
 class SectionState(BaseModel):
@@ -47,9 +55,23 @@ class SectionState(BaseModel):
 
     Attributes:
         name: Section name.
+        A: Cross-sectional area in m².
+        Iy: Moment of inertia about y in m⁴.
+        Iz: Moment of inertia about z in m⁴.
+        J: Torsional constant in m⁴.
+        Iw: Warping constant in m⁶.
+        ky: Shear area factor y.
+        kz: Shear area factor z.
     """
 
     name: str
+    A: Optional[float] = None
+    Iy: Optional[float] = None
+    Iz: Optional[float] = None
+    J: Optional[float] = None
+    Iw: Optional[float] = None
+    ky: Optional[float] = None
+    kz: Optional[float] = None
 
 
 class BeamState(BaseModel):
@@ -158,6 +180,54 @@ class ResultsState(BaseModel):
     reactions: List[ReactionResult] = Field(default_factory=list)
 
 
+class LoadCaseState(BaseModel):
+    """State of a load case in the model.
+
+    Attributes:
+        id: Load case ID.
+        name: Load case name.
+        type: Load case type (permanent, variable, accidental, seismic).
+        loads: List of loads in this case.
+    """
+
+    id: int
+    name: str
+    type: str = "permanent"
+    loads: List[LoadState] = Field(default_factory=list)
+
+
+class CargoConnectionState(BaseModel):
+    """Connection from cargo to structure.
+
+    Attributes:
+        node_id: Node ID on structure.
+        cargoOffset: Offset from cargo COG [x, y, z] in meters.
+    """
+
+    node_id: int
+    cargoOffset: List[float]
+
+
+class CargoState(BaseModel):
+    """State of a cargo item in the model.
+
+    Attributes:
+        id: Cargo ID.
+        name: Cargo name.
+        cogPosition: Center of gravity [x, y, z] in meters.
+        dimensions: Bounding box [length, width, height] in meters.
+        mass: Mass in mT.
+        connections: Connection points to structure.
+    """
+
+    id: int
+    name: str
+    cogPosition: List[float]
+    dimensions: List[float]
+    mass: float
+    connections: List[CargoConnectionState] = Field(default_factory=list)
+
+
 class ModelStateResponse(BaseModel):
     """Complete model state response for frontend.
 
@@ -168,8 +238,9 @@ class ModelStateResponse(BaseModel):
         beams: List of beams.
         materials: List of materials.
         sections: List of sections.
-        loads: List of loads.
         boundaryConditions: List of boundary conditions.
+        loadCases: List of load cases.
+        cargos: List of cargo items.
         springs: List of springs.
         isAnalyzed: Whether the model has been analyzed.
         results: Analysis results (if analyzed).
@@ -181,8 +252,9 @@ class ModelStateResponse(BaseModel):
     beams: List[BeamState] = Field(default_factory=list)
     materials: List[MaterialState] = Field(default_factory=list)
     sections: List[SectionState] = Field(default_factory=list)
-    loads: List[LoadState] = Field(default_factory=list)
     boundaryConditions: List[BoundaryConditionState] = Field(default_factory=list)
+    loadCases: List[LoadCaseState] = Field(default_factory=list)
+    cargos: List[CargoState] = Field(default_factory=list)
     springs: List[SpringState] = Field(default_factory=list)
     isAnalyzed: bool = False
     results: Optional[ResultsState] = None

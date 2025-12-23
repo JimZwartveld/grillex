@@ -127,24 +127,45 @@ class ModelService:
                 "beams": [],
                 "materials": [],
                 "sections": [],
-                "loads": [],
                 "boundaryConditions": [],
+                "loadCases": [],
+                "cargos": [],
                 "springs": [],
                 "isAnalyzed": False,
                 "results": None,
             }
 
-        # Get materials
-        materials = [
-            {"name": name}
-            for name in self.model._materials.keys()
-        ]
+        # Get materials with full properties
+        materials = []
+        for name, mat in self.model._materials.items():
+            mat_data = {"name": name}
+            try:
+                mat_data["E"] = mat.E
+                mat_data["nu"] = mat.nu
+                mat_data["rho"] = mat.rho
+                mat_data["G"] = mat.G
+            except AttributeError:
+                pass  # Material properties not available
+            materials.append(mat_data)
 
-        # Get sections
-        sections = [
-            {"name": name}
-            for name in self.model._sections.keys()
-        ]
+        # Get sections with full properties
+        sections = []
+        for name, sec in self.model._sections.items():
+            sec_data = {"name": name}
+            try:
+                sec_data["A"] = sec.A
+                sec_data["Iy"] = sec.Iy
+                sec_data["Iz"] = sec.Iz
+                sec_data["J"] = sec.J
+                if hasattr(sec, 'Iw'):
+                    sec_data["Iw"] = sec.Iw
+                if hasattr(sec, 'ky'):
+                    sec_data["ky"] = sec.ky
+                if hasattr(sec, 'kz'):
+                    sec_data["kz"] = sec.kz
+            except AttributeError:
+                pass  # Section properties not available
+            sections.append(sec_data)
 
         # Get nodes from C++ model
         nodes = []
@@ -169,10 +190,66 @@ class ModelService:
                 "length": beam.length,
             })
 
-        # Boundary conditions and loads are managed by the C++ model internally
-        # We don't track them separately in the Python wrapper
+        # Boundary conditions from C++ model
         boundary_conditions: List[Dict[str, Any]] = []
-        loads: List[Dict[str, Any]] = []
+        try:
+            if hasattr(self.model._cpp_model, 'bc_handler'):
+                bc_handler = self.model._cpp_model.bc_handler
+                if hasattr(bc_handler, 'get_all_bcs'):
+                    for bc in bc_handler.get_all_bcs():
+                        boundary_conditions.append({
+                            "node_id": bc.node_id,
+                            "dof": bc.dof,
+                            "value": bc.value,
+                        })
+        except Exception:
+            pass  # BC access not available
+
+        # Get load cases from Python model
+        load_cases: List[Dict[str, Any]] = []
+        try:
+            if hasattr(self.model, '_load_cases'):
+                for idx, lc in enumerate(self.model._load_cases):
+                    lc_data = {
+                        "id": getattr(lc, 'id', idx),
+                        "name": getattr(lc, 'name', f'LC{idx}'),
+                        "type": getattr(lc, 'type', 'permanent'),
+                        "loads": [],
+                    }
+                    # Get loads from the load case
+                    if hasattr(lc, 'point_loads'):
+                        for load in lc.point_loads:
+                            lc_data["loads"].append({
+                                "node_id": load.node_id,
+                                "dof": load.dof,
+                                "value": load.value,
+                            })
+                    load_cases.append(lc_data)
+        except Exception:
+            pass  # Load case access not available
+
+        # Get cargo items from Python model
+        cargos: List[Dict[str, Any]] = []
+        try:
+            if hasattr(self.model, '_cargos'):
+                for cargo in self.model._cargos:
+                    cargo_data = {
+                        "id": cargo.id,
+                        "name": cargo.name,
+                        "cogPosition": list(cargo.cog_position),
+                        "dimensions": list(cargo.dimensions),
+                        "mass": cargo.mass,
+                        "connections": [],
+                    }
+                    if hasattr(cargo, 'connections'):
+                        for conn in cargo.connections:
+                            cargo_data["connections"].append({
+                                "node_id": conn.node_id,
+                                "cargoOffset": list(conn.offset),
+                            })
+                    cargos.append(cargo_data)
+        except Exception:
+            pass  # Cargo access not available
 
         # Get springs
         springs = []
@@ -204,8 +281,9 @@ class ModelService:
             "beams": beams,
             "materials": materials,
             "sections": sections,
-            "loads": loads,
             "boundaryConditions": boundary_conditions,
+            "loadCases": load_cases,
+            "cargos": cargos,
             "springs": springs,
             "isAnalyzed": self.model.is_analyzed(),
             "results": results,
