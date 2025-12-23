@@ -1,6 +1,7 @@
-import { ChevronLeft, ChevronRight, Layers, MessageSquare, BarChart2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 import useStore from '../stores/modelStore';
 import LeftPanel from './LeftPanel';
+import RightPanel from './RightPanel';
 
 const Viewer = () => {
   const { viewMode } = useStore();
@@ -13,87 +14,6 @@ const Viewer = () => {
         <p className="text-sm">Mode: {viewMode}</p>
         <p className="text-sm mt-2">Three.js viewer will be implemented in Task 17.6</p>
       </div>
-    </div>
-  );
-};
-
-const RightPanel = () => {
-  const { activeRightTab, setActiveRightTab, chatMessages, results, isAnalyzed } = useStore();
-
-  return (
-    <div className="h-full flex flex-col">
-      {/* Tab buttons */}
-      <div className="flex border-b border-gray-200">
-        <button
-          onClick={() => setActiveRightTab('results')}
-          className={`flex-1 px-4 py-3 text-sm font-medium flex items-center justify-center gap-2 ${
-            activeRightTab === 'results'
-              ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-          }`}
-        >
-          <BarChart2 className="w-4 h-4" />
-          Results
-        </button>
-        <button
-          onClick={() => setActiveRightTab('chat')}
-          className={`flex-1 px-4 py-3 text-sm font-medium flex items-center justify-center gap-2 ${
-            activeRightTab === 'chat'
-              ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-          }`}
-        >
-          <MessageSquare className="w-4 h-4" />
-          Chat
-        </button>
-      </div>
-
-      {/* Tab content */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {activeRightTab === 'results' ? (
-          <div>
-            {isAnalyzed && results ? (
-              <div className="space-y-4">
-                <h3 className="text-sm font-medium text-gray-700">Analysis Results</h3>
-                <p className="text-sm">Max displacement: {results.max_displacement?.toFixed(6)} m</p>
-                <p className="text-sm">Max reaction: {results.max_reaction?.toFixed(2)} kN</p>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-400">No analysis results yet. Run analysis first.</p>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {chatMessages.length === 0 ? (
-              <p className="text-sm text-gray-400">
-                Start a conversation with the AI assistant to build and analyze your model.
-              </p>
-            ) : (
-              chatMessages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`p-3 rounded-lg ${
-                    msg.role === 'user'
-                      ? 'bg-blue-100 text-blue-900 ml-8'
-                      : 'bg-gray-100 text-gray-900 mr-8'
-                  }`}
-                >
-                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Chat input - placeholder */}
-      {activeRightTab === 'chat' && (
-        <div className="p-4 border-t border-gray-200">
-          <p className="text-xs text-gray-400 text-center">
-            Chat input will be implemented in Task 17.5
-          </p>
-        </div>
-      )}
     </div>
   );
 };
