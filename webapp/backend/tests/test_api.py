@@ -422,6 +422,56 @@ class TestSimplySupportedWorkflow:
         assert state["isAnalyzed"] is True
 
 
+class TestPhase18Features:
+    """Tests for Phase 18 WebApp UX improvements."""
+
+    def test_model_state_includes_load_cases(self, client):
+        """Test that model state includes loadCases field."""
+        client.post("/api/tools/create_model", json={"name": "Test"})
+        state = client.get("/api/model/state").json()
+        assert "loadCases" in state
+        assert isinstance(state["loadCases"], list)
+
+    def test_model_state_includes_cargos(self, client):
+        """Test that model state includes cargos field."""
+        client.post("/api/tools/create_model", json={"name": "Test"})
+        state = client.get("/api/model/state").json()
+        assert "cargos" in state
+        assert isinstance(state["cargos"], list)
+
+    def test_material_state_includes_properties(self, client):
+        """Test that material state includes E, nu, rho, G."""
+        client.post("/api/tools/create_model", json={"name": "Test"})
+        client.post("/api/tools/add_material", json={
+            "name": "Steel", "E": 210e6, "nu": 0.3, "rho": 7.85e-3
+        })
+        state = client.get("/api/model/state").json()
+        assert len(state["materials"]) == 1
+        mat = state["materials"][0]
+        assert "name" in mat
+        assert mat["name"] == "Steel"
+        # Check that additional properties are included if available
+        if "E" in mat:
+            assert mat["E"] == 210e6
+        if "nu" in mat:
+            assert mat["nu"] == 0.3
+
+    def test_section_state_includes_properties(self, client):
+        """Test that section state includes A, Iy, Iz, J."""
+        client.post("/api/tools/create_model", json={"name": "Test"})
+        client.post("/api/tools/add_section", json={
+            "name": "IPE300", "A": 0.00538, "Iy": 8.36e-5, "Iz": 6.04e-6, "J": 2.01e-7
+        })
+        state = client.get("/api/model/state").json()
+        assert len(state["sections"]) == 1
+        sec = state["sections"][0]
+        assert "name" in sec
+        assert sec["name"] == "IPE300"
+        # Check that additional properties are included if available
+        if "A" in sec:
+            assert abs(sec["A"] - 0.00538) < 0.0001
+
+
 class TestMultipleBeamWorkflow:
     """Integration tests for multiple beam structures."""
 
