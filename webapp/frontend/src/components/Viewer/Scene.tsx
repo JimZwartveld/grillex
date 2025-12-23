@@ -1,6 +1,7 @@
 import { OrbitControls, Grid, PerspectiveCamera } from '@react-three/drei';
 import AxesHelper from './AxesHelper';
 import FEMView from './FEMView';
+import ResultsView from './ResultsView';
 import useStore from '../../stores/modelStore';
 
 export default function Scene() {
@@ -79,7 +80,7 @@ export default function Scene() {
 
       {/* Render view based on mode */}
       {viewMode === 'fem' && <FEMView />}
-      {viewMode === 'results' && <FEMView showDeflected />}
+      {viewMode === 'results' && <ResultsView />}
       {viewMode === 'realistic' && <FEMView showRealistic />}
     </>
   );
