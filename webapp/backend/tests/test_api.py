@@ -285,3 +285,194 @@ class TestModelServiceSingleton:
         # Get state again - should show the beam from previous request
         state2 = client.get("/api/model/state").json()
         assert len(state2["beams"]) == 1
+
+
+class TestModelReset:
+    """Tests for model reset functionality."""
+
+    def test_reset_model(self, client):
+        """Test that resetting the model clears all state."""
+        # Create model with elements
+        client.post("/api/tools/create_model", json={"name": "Test"})
+        client.post("/api/tools/add_material", json={
+            "name": "Steel", "E": 210e6, "nu": 0.3, "rho": 7.85e-3
+        })
+        client.post("/api/tools/add_section", json={
+            "name": "IPE300", "A": 0.00538, "Iy": 8.36e-5, "Iz": 6.04e-6, "J": 2.01e-7
+        })
+        client.post("/api/tools/create_beam", json={
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        # Verify model exists
+        state1 = client.get("/api/model/state").json()
+        assert state1["exists"] is True
+        assert len(state1["beams"]) == 1
+
+        # Reset
+        response = client.post("/api/model/reset", json={})
+        assert response.status_code == 200
+
+        # Verify model is empty
+        state2 = client.get("/api/model/state").json()
+        assert state2["exists"] is False
+        assert state2["beams"] == []
+
+
+class TestErrorHandling:
+    """Tests for error handling in API."""
+
+    def test_create_beam_without_model(self, client):
+        """Test that creating a beam without a model fails gracefully."""
+        response = client.post("/api/tools/create_beam", json={
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+        data = response.json()
+        assert data["success"] is False
+
+    def test_create_beam_with_invalid_material(self, client):
+        """Test that creating beam with unknown material fails."""
+        client.post("/api/tools/create_model", json={"name": "Test"})
+        client.post("/api/tools/add_section", json={
+            "name": "IPE300", "A": 0.00538, "Iy": 8.36e-5, "Iz": 6.04e-6, "J": 2.01e-7
+        })
+
+        response = client.post("/api/tools/create_beam", json={
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "UnknownMaterial"
+        })
+        data = response.json()
+        assert data["success"] is False
+
+    def test_analyze_without_boundary_conditions(self, client):
+        """Test that analysis without BC fails gracefully."""
+        client.post("/api/tools/create_model", json={"name": "Test"})
+        client.post("/api/tools/add_material", json={
+            "name": "Steel", "E": 210e6, "nu": 0.3, "rho": 7.85e-3
+        })
+        client.post("/api/tools/add_section", json={
+            "name": "IPE300", "A": 0.00538, "Iy": 8.36e-5, "Iz": 6.04e-6, "J": 2.01e-7
+        })
+        client.post("/api/tools/create_beam", json={
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        response = client.post("/api/tools/analyze", json={})
+        data = response.json()
+        # Analysis might fail due to singularity (no BCs) or might succeed
+        # with warnings - either is acceptable behavior
+        assert response.status_code == 200
+
+
+class TestSimplySupportedWorkflow:
+    """Integration tests for simply supported beam."""
+
+    def test_simply_supported_beam(self, client):
+        """Test complete simply supported beam workflow."""
+        # Create model
+        client.post("/api/tools/create_model", json={"name": "Simply Supported"})
+
+        # Add material and section
+        client.post("/api/tools/add_material", json={
+            "name": "Steel", "E": 210e6, "nu": 0.3, "rho": 7.85e-3
+        })
+        client.post("/api/tools/add_section", json={
+            "name": "IPE300", "A": 0.00538, "Iy": 8.36e-5, "Iz": 6.04e-6, "J": 2.01e-7
+        })
+
+        # Create beam
+        client.post("/api/tools/create_beam", json={
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        # Pin support at start (translations fixed)
+        client.post("/api/tools/fix_node", json={"position": [0, 0, 0]})
+
+        # Roller at end (only UZ fixed) - for simplicity, we use fix_node too
+        # In reality, we'd want selective DOF fixing
+        client.post("/api/tools/fix_node", json={"position": [6, 0, 0]})
+
+        # Add uniform load at mid-span (approximated as point load)
+        client.post("/api/tools/add_point_load", json={
+            "position": [3, 0, 0],
+            "dof": "UZ",
+            "value": -20
+        })
+
+        # Analyze
+        r = client.post("/api/tools/analyze", json={})
+        assert r.json()["success"] is True
+
+        # Check state
+        state = client.get("/api/model/state").json()
+        assert state["isAnalyzed"] is True
+
+
+class TestMultipleBeamWorkflow:
+    """Integration tests for multiple beam structures."""
+
+    def test_continuous_beam(self, client):
+        """Test workflow with multiple connected beams."""
+        # Create model
+        client.post("/api/tools/create_model", json={"name": "Continuous Beam"})
+
+        # Add material and section
+        client.post("/api/tools/add_material", json={
+            "name": "Steel", "E": 210e6, "nu": 0.3, "rho": 7.85e-3
+        })
+        client.post("/api/tools/add_section", json={
+            "name": "IPE300", "A": 0.00538, "Iy": 8.36e-5, "Iz": 6.04e-6, "J": 2.01e-7
+        })
+
+        # Create two connected beams
+        client.post("/api/tools/create_beam", json={
+            "start_position": [0, 0, 0],
+            "end_position": [4, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+        client.post("/api/tools/create_beam", json={
+            "start_position": [4, 0, 0],
+            "end_position": [8, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        # Check state has both beams
+        state = client.get("/api/model/state").json()
+        assert len(state["beams"]) == 2
+
+        # Fix supports
+        client.post("/api/tools/fix_node", json={"position": [0, 0, 0]})
+        client.post("/api/tools/fix_node", json={"position": [4, 0, 0]})
+        client.post("/api/tools/fix_node", json={"position": [8, 0, 0]})
+
+        # Add loads
+        client.post("/api/tools/add_point_load", json={
+            "position": [2, 0, 0],
+            "dof": "UZ",
+            "value": -10
+        })
+        client.post("/api/tools/add_point_load", json={
+            "position": [6, 0, 0],
+            "dof": "UZ",
+            "value": -10
+        })
+
+        # Analyze
+        r = client.post("/api/tools/analyze", json={})
+        assert r.json()["success"] is True
