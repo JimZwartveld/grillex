@@ -1,4 +1,14 @@
 import { useEffect, useRef } from 'react';
+import {
+  Edit2,
+  Trash2,
+  Box,
+  Layers,
+  ArrowDown,
+  Anchor,
+  Package,
+  Move,
+} from 'lucide-react';
 import useStore from '../../stores/modelStore';
 
 export interface ContextMenuState {
@@ -14,9 +24,59 @@ interface Props {
   onDelete: () => void;
   onEditSection?: () => void;
   onEditMaterial?: () => void;
+  // Additional beam options
+  onAddLoadToBeam?: () => void;
+  onAddSupportAtEnd?: () => void;
+  // Support options
+  onEditDOFConstraints?: () => void;
+  // Load options
+  onEditLoadValue?: () => void;
+  // Cargo options
+  onMoveCargo?: () => void;
 }
 
-export default function ContextMenu({ onProperties, onDelete, onEditSection, onEditMaterial }: Props) {
+// Reusable menu item component
+function MenuItem({
+  icon,
+  label,
+  onClick,
+  danger = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
+        danger
+          ? 'text-red-600 hover:bg-red-50'
+          : 'hover:bg-blue-50'
+      }`}
+      onClick={onClick}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function MenuDivider() {
+  return <div className="border-t border-gray-100 my-1" />;
+}
+
+export default function ContextMenu({
+  onProperties,
+  onDelete,
+  onEditSection,
+  onEditMaterial,
+  onAddLoadToBeam,
+  onAddSupportAtEnd,
+  onEditDOFConstraints,
+  onEditLoadValue,
+  onMoveCargo,
+}: Props) {
   const { contextMenu, closeContextMenu } = useStore();
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -68,80 +128,192 @@ export default function ContextMenu({ onProperties, onDelete, onEditSection, onE
   };
 
   const isBeam = contextMenu.elementType === 'beam';
+  const isSupport = contextMenu.elementType === 'support';
+  const isLoad = contextMenu.elementType === 'load';
+  const isCargo = contextMenu.elementType === 'cargo';
+
+  const handleAction = (action: () => void) => {
+    action();
+    closeContextMenu();
+  };
+
+  // Render beam-specific menu items
+  const renderBeamMenu = () => (
+    <>
+      <MenuItem
+        icon={<Edit2 className="w-4 h-4" />}
+        label="Properties..."
+        onClick={() => handleAction(onProperties)}
+      />
+      <MenuDivider />
+      {onEditSection && (
+        <MenuItem
+          icon={<Box className="w-4 h-4" />}
+          label="Change Section..."
+          onClick={() => handleAction(onEditSection)}
+        />
+      )}
+      {onEditMaterial && (
+        <MenuItem
+          icon={<Layers className="w-4 h-4" />}
+          label="Change Material..."
+          onClick={() => handleAction(onEditMaterial)}
+        />
+      )}
+      <MenuDivider />
+      {onAddLoadToBeam && (
+        <MenuItem
+          icon={<ArrowDown className="w-4 h-4 text-red-500" />}
+          label="Add Load to Beam..."
+          onClick={() => handleAction(onAddLoadToBeam)}
+        />
+      )}
+      {onAddSupportAtEnd && (
+        <MenuItem
+          icon={<Anchor className="w-4 h-4 text-green-500" />}
+          label="Add Support at End..."
+          onClick={() => handleAction(onAddSupportAtEnd)}
+        />
+      )}
+      <MenuDivider />
+      <MenuItem
+        icon={<Trash2 className="w-4 h-4" />}
+        label="Delete Beam"
+        onClick={() => handleAction(onDelete)}
+        danger
+      />
+    </>
+  );
+
+  // Render support-specific menu items
+  const renderSupportMenu = () => (
+    <>
+      <MenuItem
+        icon={<Edit2 className="w-4 h-4" />}
+        label="Properties..."
+        onClick={() => handleAction(onProperties)}
+      />
+      {onEditDOFConstraints && (
+        <>
+          <MenuDivider />
+          <MenuItem
+            icon={<Anchor className="w-4 h-4" />}
+            label="Edit DOF Constraints..."
+            onClick={() => handleAction(onEditDOFConstraints)}
+          />
+        </>
+      )}
+      <MenuDivider />
+      <MenuItem
+        icon={<Trash2 className="w-4 h-4" />}
+        label="Remove Support"
+        onClick={() => handleAction(onDelete)}
+        danger
+      />
+    </>
+  );
+
+  // Render load-specific menu items
+  const renderLoadMenu = () => (
+    <>
+      <MenuItem
+        icon={<Edit2 className="w-4 h-4" />}
+        label="Properties..."
+        onClick={() => handleAction(onProperties)}
+      />
+      {onEditLoadValue && (
+        <>
+          <MenuDivider />
+          <MenuItem
+            icon={<ArrowDown className="w-4 h-4" />}
+            label="Edit Load Value..."
+            onClick={() => handleAction(onEditLoadValue)}
+          />
+        </>
+      )}
+      <MenuDivider />
+      <MenuItem
+        icon={<Trash2 className="w-4 h-4" />}
+        label="Delete Load"
+        onClick={() => handleAction(onDelete)}
+        danger
+      />
+    </>
+  );
+
+  // Render cargo-specific menu items
+  const renderCargoMenu = () => (
+    <>
+      <MenuItem
+        icon={<Edit2 className="w-4 h-4" />}
+        label="Properties..."
+        onClick={() => handleAction(onProperties)}
+      />
+      {onMoveCargo && (
+        <>
+          <MenuDivider />
+          <MenuItem
+            icon={<Move className="w-4 h-4" />}
+            label="Move Cargo..."
+            onClick={() => handleAction(onMoveCargo)}
+          />
+        </>
+      )}
+      <MenuDivider />
+      <MenuItem
+        icon={<Trash2 className="w-4 h-4" />}
+        label="Delete Cargo"
+        onClick={() => handleAction(onDelete)}
+        danger
+      />
+    </>
+  );
+
+  // Render the appropriate menu based on element type
+  const renderMenuItems = () => {
+    if (isBeam) return renderBeamMenu();
+    if (isSupport) return renderSupportMenu();
+    if (isLoad) return renderLoadMenu();
+    if (isCargo) return renderCargoMenu();
+
+    // Fallback for unknown element type
+    return (
+      <>
+        <MenuItem
+          icon={<Edit2 className="w-4 h-4" />}
+          label="Properties..."
+          onClick={() => handleAction(onProperties)}
+        />
+        <MenuDivider />
+        <MenuItem
+          icon={<Trash2 className="w-4 h-4" />}
+          label="Delete"
+          onClick={() => handleAction(onDelete)}
+          danger
+        />
+      </>
+    );
+  };
 
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[180px]"
+      className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[200px]"
       style={{
         left: contextMenu.x,
         top: contextMenu.y,
       }}
     >
       {/* Header showing element type */}
-      <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 border-b border-gray-100">
+      <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 border-b border-gray-100 flex items-center gap-1">
+        {isBeam && <Box className="w-3 h-3 text-blue-500" />}
+        {isSupport && <Anchor className="w-3 h-3 text-green-500" />}
+        {isLoad && <ArrowDown className="w-3 h-3 text-red-500" />}
+        {isCargo && <Package className="w-3 h-3 text-amber-600" />}
         {getElementLabel()}
       </div>
 
-      {/* Menu items */}
-      <button
-        className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50 flex items-center gap-2"
-        onClick={() => {
-          onProperties();
-          closeContextMenu();
-        }}
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-        </svg>
-        Properties...
-      </button>
-
-      {/* Beam-specific options */}
-      {isBeam && onEditSection && (
-        <button
-          className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50 flex items-center gap-2"
-          onClick={() => {
-            onEditSection();
-            closeContextMenu();
-          }}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6z" />
-          </svg>
-          Edit Section...
-        </button>
-      )}
-
-      {isBeam && onEditMaterial && (
-        <button
-          className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50 flex items-center gap-2"
-          onClick={() => {
-            onEditMaterial();
-            closeContextMenu();
-          }}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-          </svg>
-          Edit Material...
-        </button>
-      )}
-
-      <div className="border-t border-gray-100 my-1" />
-
-      <button
-        className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-        onClick={() => {
-          onDelete();
-          closeContextMenu();
-        }}
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-        </svg>
-        Delete
-      </button>
+      {renderMenuItems()}
     </div>
   );
 }

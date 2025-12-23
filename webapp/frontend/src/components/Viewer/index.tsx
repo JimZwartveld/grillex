@@ -186,6 +186,28 @@ export default function Viewer() {
     setAddDialogState({ type: null, position: null });
   }, []);
 
+  // Handle add load to beam (opens load dialog with beam endpoint)
+  const handleAddLoadToBeam = useCallback(() => {
+    if (contextMenu.elementType === 'beam' && contextMenu.elementId !== null) {
+      const beam = beams.find((b) => b.id === contextMenu.elementId);
+      if (beam) {
+        // Use end position of beam as default load position
+        setAddDialogState({ type: 'load', position: beam.end as [number, number, number] });
+      }
+    }
+  }, [contextMenu, beams]);
+
+  // Handle add support at beam end
+  const handleAddSupportAtEnd = useCallback(() => {
+    if (contextMenu.elementType === 'beam' && contextMenu.elementId !== null) {
+      const beam = beams.find((b) => b.id === contextMenu.elementId);
+      if (beam) {
+        // Use end position of beam as default support position
+        setAddDialogState({ type: 'support', position: beam.end as [number, number, number] });
+      }
+    }
+  }, [contextMenu, beams]);
+
   const { support, nodePosition } = getSelectedSupport();
 
   return (
@@ -219,6 +241,8 @@ export default function Viewer() {
         onDelete={handleDelete}
         onEditSection={handleEditSection}
         onEditMaterial={handleEditMaterial}
+        onAddLoadToBeam={handleAddLoadToBeam}
+        onAddSupportAtEnd={handleAddSupportAtEnd}
       />
 
       {/* Context menu for adding new elements */}
