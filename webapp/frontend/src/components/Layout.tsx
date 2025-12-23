@@ -1,48 +1,6 @@
 import { ChevronLeft, ChevronRight, Layers, MessageSquare, BarChart2 } from 'lucide-react';
 import useStore from '../stores/modelStore';
-
-// Placeholder components - will be implemented in subsequent tasks
-const LeftPanel = () => {
-  const { beams, nodes, materials, sections } = useStore();
-
-  return (
-    <div className="h-full flex flex-col">
-      <div className="p-4 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-800">Model Tree</h2>
-      </div>
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="space-y-4">
-          <div>
-            <h3 className="text-sm font-medium text-gray-600 mb-2">
-              Nodes ({nodes.length})
-            </h3>
-            {nodes.length === 0 && (
-              <p className="text-sm text-gray-400">No nodes defined</p>
-            )}
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-gray-600 mb-2">
-              Beams ({beams.length})
-            </h3>
-            {beams.length === 0 && (
-              <p className="text-sm text-gray-400">No beams defined</p>
-            )}
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-gray-600 mb-2">
-              Materials ({materials.length})
-            </h3>
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-gray-600 mb-2">
-              Sections ({sections.length})
-            </h3>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+import LeftPanel from './LeftPanel';
 
 const Viewer = () => {
   const { viewMode } = useStore();

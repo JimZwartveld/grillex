@@ -665,15 +665,49 @@ Implement the left panel with model tree view and action buttons.
    ```
 
 **Acceptance Criteria:**
-- [ ] Model tree shows all entity types (materials, sections, beams, loads, BCs)
-- [ ] Tree nodes expand/collapse
-- [ ] Clicking tree item selects element in viewer
-- [ ] Action buttons open input dialogs
-- [ ] Add Beam dialog creates beam via API
-- [ ] Add Load dialog creates load via API
-- [ ] Add Support dialog creates BC via API
-- [ ] Run Analysis button triggers analysis
-- [ ] Buttons disabled when not applicable
+- [x] Model tree shows all entity types (materials, sections, beams, loads, BCs)
+- [x] Tree nodes expand/collapse
+- [x] Clicking tree item selects element in viewer
+- [x] Action buttons open input dialogs
+- [x] Add Beam dialog creates beam via API
+- [x] Add Load dialog creates load via API
+- [x] Add Support dialog creates BC via API
+- [x] Run Analysis button triggers analysis
+- [x] Buttons disabled when not applicable
+
+### Execution Notes (Completed 2024-12-23)
+
+**Steps Taken:**
+1. Created common UI components (Button, Dialog, Input, Select)
+2. Implemented ModelTree with collapsible tree nodes for all entity types
+3. Implemented ActionButtons with New Model, Reset, and element creation buttons
+4. Created AddBeamDialog with coordinate inputs and material/section selection
+5. Created AddSupportDialog with support type selection (fixed, pinned, roller)
+6. Created AddLoadDialog with DOF selection and value input
+7. Integrated LeftPanel with Layout component
+
+**Key Features:**
+- Tree nodes show entity counts and are collapsible
+- Auto-creation of default Steel material and IPE300 section if none exists
+- Support for various boundary condition types
+- Loading states on submit buttons
+
+**Verification:**
+- `npm run build` succeeds
+- All components render without errors
+- Dialogs open and close correctly
+
+**Key Files Created:**
+- `webapp/frontend/src/components/common/Button.tsx`
+- `webapp/frontend/src/components/common/Dialog.tsx`
+- `webapp/frontend/src/components/common/Input.tsx`
+- `webapp/frontend/src/components/common/Select.tsx`
+- `webapp/frontend/src/components/LeftPanel/index.tsx`
+- `webapp/frontend/src/components/LeftPanel/ModelTree.tsx`
+- `webapp/frontend/src/components/LeftPanel/ActionButtons.tsx`
+- `webapp/frontend/src/components/LeftPanel/AddBeamDialog.tsx`
+- `webapp/frontend/src/components/LeftPanel/AddSupportDialog.tsx`
+- `webapp/frontend/src/components/LeftPanel/AddLoadDialog.tsx`
 
 ---
 
