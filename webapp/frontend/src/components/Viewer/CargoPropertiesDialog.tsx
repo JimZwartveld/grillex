@@ -179,20 +179,20 @@ export default function CargoPropertiesDialog({ cargo, isOpen, onClose }: Props)
           )}
         </div>
 
-        {/* Dimensions (read-only) */}
+        {/* Dimensions (read-only) - Z-up: [Length X, Width Y, Height Z] */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Dimensions (m)
           </label>
           <div className="grid grid-cols-3 gap-2 text-sm">
             <div className="bg-gray-50 px-3 py-2 rounded border text-center">
-              <span className="text-gray-500">Width:</span> {cargo.dimensions[0].toFixed(2)}
+              <span className="text-gray-500">Length (X):</span> {cargo.dimensions[0].toFixed(2)}
             </div>
             <div className="bg-gray-50 px-3 py-2 rounded border text-center">
-              <span className="text-gray-500">Height:</span> {cargo.dimensions[1].toFixed(2)}
+              <span className="text-gray-500">Width (Y):</span> {cargo.dimensions[1].toFixed(2)}
             </div>
             <div className="bg-gray-50 px-3 py-2 rounded border text-center">
-              <span className="text-gray-500">Depth:</span> {cargo.dimensions[2].toFixed(2)}
+              <span className="text-gray-500">Height (Z):</span> {cargo.dimensions[2].toFixed(2)}
             </div>
           </div>
         </div>

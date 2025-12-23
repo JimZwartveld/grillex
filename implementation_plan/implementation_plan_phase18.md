@@ -431,13 +431,45 @@ Implement full cargo support in the webapp including visualization and editing.
    - View/edit connection points
 
 **Acceptance Criteria:**
-- [ ] Add Cargo dialog creates cargo with proper dimensions
-- [ ] Cargo rendered as semi-transparent box in 3D
-- [ ] CoG indicator shown at center of mass
-- [ ] Connection points visible as spheres
-- [ ] Cargo properties editable via dialog
-- [ ] Cargo deletable via context menu
-- [ ] Cargo mass used in analysis (if gravity load applied)
+- [x] Add Cargo dialog creates cargo with proper dimensions
+- [x] Cargo rendered as semi-transparent box in 3D
+- [x] CoG indicator shown at center of mass
+- [x] Connection points visible as spheres
+- [x] Cargo properties editable via dialog
+- [x] Cargo deletable via context menu
+- [ ] Cargo mass used in analysis (if gravity load applied) - requires backend
+
+### Execution Notes (Completed 2024-12-23)
+
+**Steps Taken:**
+1. Updated `CargoBlock.tsx` to be interactive:
+   - Added Props interface with `selected`, `onClick`, `onContextMenu`
+   - Added hover state with cursor change and color highlight
+   - Selection state changes box color to orange
+   - Connected click/context menu handlers
+2. Updated `FEMView.tsx`:
+   - Added `contextMenu` state from store
+   - Added `handleCargoContextMenu` handler
+   - Connected CargoBlock with selection state and context menu
+3. Updated `CargoPropertiesDialog.tsx`:
+   - Fixed dimension labels for Z-up coordinate system (Length X, Width Y, Height Z)
+
+**Already Existing Features:**
+- AddCargoDialog was created in Task 18.2
+- CargoPropertiesDialog has full edit functionality (name, mass)
+- CargoBlock has CoG indicator and support spheres visualization
+- Delete via context menu works through Task 18.3 enhanced menus
+
+**Deferred Items:**
+- **Cargo mass in analysis**: Requires backend add_cargo tool to create connections and apply gravity loads
+
+**Key Files Modified:**
+- `webapp/frontend/src/components/Viewer/elements/CargoBlock.tsx`
+- `webapp/frontend/src/components/Viewer/FEMView.tsx`
+- `webapp/frontend/src/components/Viewer/CargoPropertiesDialog.tsx`
+
+**Verification:**
+- `npm run build` succeeds with no TypeScript errors
 
 ---
 

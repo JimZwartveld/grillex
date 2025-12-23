@@ -269,7 +269,7 @@ function GroundPlane({ onContextMenu }: { onContextMenu: (position: [number, num
 export default function FEMView({ showDeflected: _showDeflected = false, showRealistic: _showRealistic = false }: Props) {
   void _showDeflected; void _showRealistic; // Reserved for future implementation
 
-  const { beams, boundaryConditions, loadCases, cargos, selectedBeamId, selectBeam, openContextMenu, openAddContextMenu } = useStore();
+  const { beams, boundaryConditions, loadCases, cargos, selectedBeamId, selectBeam, openContextMenu, openAddContextMenu, contextMenu } = useStore();
 
   const handleGroundContextMenu = useCallback((position: [number, number, number], e: React.MouseEvent) => {
     e.preventDefault();
@@ -283,6 +283,11 @@ export default function FEMView({ showDeflected: _showDeflected = false, showRea
   const handleBeamContextMenu = useCallback((beamId: number, e: React.MouseEvent) => {
     e.preventDefault();
     openContextMenu(e.clientX, e.clientY, 'beam', beamId);
+  }, [openContextMenu]);
+
+  const handleCargoContextMenu = useCallback((cargoId: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    openContextMenu(e.clientX, e.clientY, 'cargo', cargoId);
   }, [openContextMenu]);
 
   // Get unique node positions
@@ -380,7 +385,12 @@ export default function FEMView({ showDeflected: _showDeflected = false, showRea
 
       {/* Cargo blocks */}
       {cargos.map((cargo) => (
-        <CargoBlock key={cargo.id} cargo={cargo} />
+        <CargoBlock
+          key={cargo.id}
+          cargo={cargo}
+          selected={contextMenu.elementType === 'cargo' && contextMenu.elementId === cargo.id}
+          onContextMenu={(e) => handleCargoContextMenu(cargo.id, e)}
+        />
       ))}
     </group>
   );

@@ -1,16 +1,24 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Box, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import type { Cargo } from '../../../types/model';
 import CoGIndicator from './CoGIndicator';
 import SupportSphere from './SupportSphere';
 
+interface Props {
+  cargo: Cargo;
+  selected?: boolean;
+  onClick?: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+}
+
 /**
  * 3D cargo block visualization - Z-up coordinate system
  * Semi-transparent cube with edges, CoG indicator, and support spheres
  * Dimensions: [lengthX, widthY, heightZ] - height is vertical (Z-up)
  */
-export function CargoBlock({ cargo }: { cargo: Cargo }) {
+export function CargoBlock({ cargo, selected = false, onClick, onContextMenu }: Props) {
+  const [hovered, setHovered] = useState(false);
   const dimensions = cargo.dimensions || [2, 2, 2];
   // For Z-up: [lengthX, widthY, heightZ]
   const [lengthX, widthY, heightZ] = dimensions;
@@ -21,13 +29,38 @@ export function CargoBlock({ cargo }: { cargo: Cargo }) {
     return new THREE.EdgesGeometry(boxGeom);
   }, [lengthX, widthY, heightZ]);
 
+  // Determine color based on selection/hover state
+  const boxColor = selected ? '#ff6600' : hovered ? '#d4a373' : '#8B4513';
+  const opacity = selected || hovered ? 0.8 : 0.6;
+
   return (
     <group position={cargo.cogPosition}>
-      {/* Cargo cube - semi-transparent */}
-      <Box args={dimensions as [number, number, number]}>
+      {/* Cargo cube - semi-transparent, interactive */}
+      <Box
+        args={dimensions as [number, number, number]}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick?.();
+        }}
+        onContextMenu={(e) => {
+          e.stopPropagation();
+          if (e.nativeEvent) {
+            onContextMenu?.(e.nativeEvent as unknown as React.MouseEvent);
+          }
+        }}
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          setHovered(true);
+          document.body.style.cursor = 'pointer';
+        }}
+        onPointerOut={() => {
+          setHovered(false);
+          document.body.style.cursor = 'default';
+        }}
+      >
         <meshStandardMaterial
-          color="#8B4513"
-          opacity={0.6}
+          color={boxColor}
+          opacity={opacity}
           transparent
           side={THREE.DoubleSide}
         />
