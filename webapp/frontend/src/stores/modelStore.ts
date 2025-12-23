@@ -16,6 +16,40 @@ import type {
 import api from '../api/client';
 import { sseClient } from '../api/events';
 
+// Settings types
+export interface AppSettings {
+  // Display settings
+  gridSnap: boolean;
+  gridSize: number;
+  showNodes: boolean;
+  nodeSize: number;
+  beamColor: string;
+  selectedBeamColor: string;
+  // Analysis settings
+  autoAnalyze: boolean;
+  tolerance: number;
+  // Viewer settings
+  deformationScale: number;
+  showOriginal: boolean;
+  showLabels: boolean;
+  backgroundColor: string;
+}
+
+const DEFAULT_SETTINGS: AppSettings = {
+  gridSnap: true,
+  gridSize: 1,
+  showNodes: true,
+  nodeSize: 0.05,
+  beamColor: '#0066ff',
+  selectedBeamColor: '#ff6600',
+  autoAnalyze: false,
+  tolerance: 1e-10,
+  deformationScale: 100,
+  showOriginal: true,
+  showLabels: true,
+  backgroundColor: '#f0f0f0',
+};
+
 interface UIState {
   leftPanelCollapsed: boolean;
   rightPanelCollapsed: boolean;
@@ -49,6 +83,9 @@ interface UIState {
     elementType: 'beam' | 'support' | 'load' | 'cargo' | null;
     elementId: number | null;
   };
+  // Application settings
+  settings: AppSettings;
+  settingsOpen: boolean;
 }
 
 interface Store extends ModelState, UIState {
@@ -76,6 +113,12 @@ interface Store extends ModelState, UIState {
   // Results invalidation actions
   invalidateResults: () => void;
   clearResultWarning: () => void;
+  // Settings actions
+  openSettings: () => void;
+  closeSettings: () => void;
+  updateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
+  loadSettings: () => void;
+  resetSettings: () => void;
 
   // Model actions
   fetchModelState: () => Promise<void>;
@@ -132,6 +175,16 @@ export const useStore = create<Store>((set, get) => ({
     elementType: null,
     elementId: null,
   },
+  // Settings state (loaded from localStorage)
+  settings: (() => {
+    try {
+      const saved = localStorage.getItem('grillex-settings');
+      return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
+    } catch {
+      return DEFAULT_SETTINGS;
+    }
+  })(),
+  settingsOpen: false,
 
   // Chat state
   chatMessages: [],
@@ -198,6 +251,42 @@ export const useStore = create<Store>((set, get) => ({
 
   clearResultWarning: () =>
     set({ resultWarning: null }),
+
+  // Settings actions
+  openSettings: () => set({ settingsOpen: true }),
+
+  closeSettings: () => set({ settingsOpen: false }),
+
+  updateSetting: (key, value) =>
+    set((state) => {
+      const newSettings = { ...state.settings, [key]: value };
+      try {
+        localStorage.setItem('grillex-settings', JSON.stringify(newSettings));
+      } catch {
+        // Ignore localStorage errors
+      }
+      return { settings: newSettings };
+    }),
+
+  loadSettings: () => {
+    try {
+      const saved = localStorage.getItem('grillex-settings');
+      if (saved) {
+        set({ settings: { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } });
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+  },
+
+  resetSettings: () => {
+    try {
+      localStorage.removeItem('grillex-settings');
+    } catch {
+      // Ignore localStorage errors
+    }
+    set({ settings: DEFAULT_SETTINGS });
+  },
 
   // Model actions
   fetchModelState: async () => {

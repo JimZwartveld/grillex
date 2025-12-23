@@ -1,18 +1,29 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Settings } from 'lucide-react';
 import useStore from '../stores/modelStore';
 import LeftPanel from './LeftPanel';
 import RightPanel from './RightPanel';
 import Viewer from './Viewer';
+import SettingsPanel from './SettingsPanel';
 
 export default function Layout() {
-  const { leftPanelCollapsed, rightPanelCollapsed, toggleLeftPanel, toggleRightPanel, error, setError } = useStore();
+  const { leftPanelCollapsed, rightPanelCollapsed, toggleLeftPanel, toggleRightPanel, error, setError, openSettings } = useStore();
 
   return (
     <div className="h-screen flex flex-col bg-white">
       {/* Header */}
-      <header className="h-12 bg-gray-800 text-white flex items-center px-4 flex-shrink-0">
+      <header className="h-12 bg-gray-800 text-white flex items-center justify-between px-4 flex-shrink-0">
         <h1 className="text-lg font-semibold">Grillex FEM Solver</h1>
+        <button
+          onClick={openSettings}
+          className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+          title="Settings"
+        >
+          <Settings className="w-5 h-5" />
+        </button>
       </header>
+
+      {/* Settings Panel */}
+      <SettingsPanel />
 
       {/* Error banner */}
       {error && (
