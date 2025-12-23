@@ -1,4 +1,7 @@
-import { Dialog, Button } from '../common';
+import { useState, useEffect } from 'react';
+import { Dialog, Button, Input } from '../common';
+import useStore from '../../stores/modelStore';
+import api from '../../api/client';
 import type { Cargo } from '../../types/model';
 
 interface Props {
@@ -8,42 +11,152 @@ interface Props {
 }
 
 export default function CargoPropertiesDialog({ cargo, isOpen, onClose }: Props) {
+  const { fetchModelState } = useStore();
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    mass: '',
+  });
+
+  // Reset form when cargo changes
+  useEffect(() => {
+    if (cargo) {
+      setFormData({
+        name: cargo.name,
+        mass: cargo.mass.toString(),
+      });
+      setIsEditing(false);
+      setError(null);
+    }
+  }, [cargo]);
+
   if (!cargo) return null;
+
+  const hasChanges =
+    formData.name !== cargo.name ||
+    parseFloat(formData.mass) !== cargo.mass;
+
+  const handleSave = async () => {
+    if (!hasChanges) {
+      setIsEditing(false);
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const newName = formData.name !== cargo.name ? formData.name : undefined;
+      const newMass = parseFloat(formData.mass) !== cargo.mass ? parseFloat(formData.mass) : undefined;
+
+      const response = await api.tools.updateCargo(cargo.id, newName, newMass);
+
+      if (response.success) {
+        await fetchModelState();
+        setIsEditing(false);
+      } else {
+        setError(response.error || 'Failed to update cargo');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setFormData({
+      name: cargo.name,
+      mass: cargo.mass.toString(),
+    });
+    setIsEditing(false);
+    setError(null);
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(`Are you sure you want to delete cargo "${cargo.name}"?`)) {
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const response = await api.tools.deleteCargo(cargo.id);
+      if (response.success) {
+        await fetchModelState();
+        onClose();
+      } else {
+        setError(response.error || 'Failed to delete cargo');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <Dialog title={`Cargo: ${cargo.name}`} isOpen={isOpen} onClose={onClose}>
       <div className="space-y-4">
-        {/* Cargo ID and Name */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Cargo ID
-            </label>
-            <div className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded border">
-              {cargo.id}
-            </div>
+        {/* Error message */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
+            {error}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Name
-            </label>
+        )}
+
+        {/* Cargo ID */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Cargo ID
+          </label>
+          <div className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded border">
+            {cargo.id}
+          </div>
+        </div>
+
+        {/* Name */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Name
+          </label>
+          {isEditing ? (
+            <Input
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              disabled={isSaving}
+            />
+          ) : (
             <div className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded border">
               {cargo.name}
             </div>
-          </div>
+          )}
         </div>
 
         {/* Mass */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Mass
+            Mass (mT)
           </label>
-          <div className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded border">
-            {cargo.mass.toFixed(2)} mT
-          </div>
+          {isEditing ? (
+            <Input
+              type="number"
+              step="0.01"
+              value={formData.mass}
+              onChange={(e) => setFormData({ ...formData, mass: e.target.value })}
+              disabled={isSaving}
+            />
+          ) : (
+            <div className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded border">
+              {cargo.mass.toFixed(2)}
+            </div>
+          )}
         </div>
 
-        {/* CoG Position */}
+        {/* CoG Position (read-only) */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Center of Gravity Position (m)
@@ -59,9 +172,14 @@ export default function CargoPropertiesDialog({ cargo, isOpen, onClose }: Props)
               <span className="text-gray-500">Z:</span> {cargo.cogPosition[2].toFixed(3)}
             </div>
           </div>
+          {isEditing && (
+            <p className="text-xs text-gray-500 mt-1">
+              Note: CoG position cannot be changed after creation.
+            </p>
+          )}
         </div>
 
-        {/* Dimensions */}
+        {/* Dimensions (read-only) */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Dimensions (m)
@@ -103,10 +221,45 @@ export default function CargoPropertiesDialog({ cargo, isOpen, onClose }: Props)
           </div>
         )}
 
-        <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" onClick={onClose}>
-            Close
-          </Button>
+        <div className="flex justify-between pt-2">
+          <div>
+            {isEditing && (
+              <Button
+                type="button"
+                variant="danger"
+                onClick={handleDelete}
+                disabled={isSaving}
+              >
+                Delete
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {isEditing ? (
+              <>
+                <Button type="button" variant="secondary" onClick={handleCancel} disabled={isSaving}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={handleSave}
+                  disabled={isSaving || !hasChanges}
+                >
+                  {isSaving ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button type="button" variant="secondary" onClick={onClose}>
+                  Close
+                </Button>
+                <Button type="button" variant="primary" onClick={() => setIsEditing(true)}>
+                  Edit
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </Dialog>

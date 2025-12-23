@@ -59,10 +59,45 @@ export const toolsApi = {
   list: () => request<{ tools: unknown[] }>('/tools'),
 
   execute: (name: string, params: Record<string, unknown>) =>
-    request<{ success: boolean; result?: unknown; error?: string }>('/tools/execute', {
-      method: 'POST',
-      body: JSON.stringify({ name, params }),
-    }),
+    request<{ success: boolean; result?: unknown; error?: string; suggestion?: string }>(
+      `/tools/${name}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }
+    ),
+
+  // Material tools
+  updateMaterial: (name: string, E?: number, nu?: number, rho?: number) =>
+    toolsApi.execute('update_material', { name, E, nu, rho }),
+
+  deleteMaterial: (name: string) =>
+    toolsApi.execute('delete_material', { name }),
+
+  // Section tools
+  updateSection: (name: string, A?: number, Iy?: number, Iz?: number, J?: number) =>
+    toolsApi.execute('update_section', { name, A, Iy, Iz, J }),
+
+  deleteSection: (name: string) =>
+    toolsApi.execute('delete_section', { name }),
+
+  // Beam tools
+  updateBeam: (beamId: number, material?: string, section?: string) =>
+    toolsApi.execute('update_beam', { beam_id: beamId, material, section }),
+
+  deleteBeam: (beamId: number) =>
+    toolsApi.execute('delete_beam', { beam_id: beamId }),
+
+  // Boundary condition tools
+  removeBoundaryCondition: (position: [number, number, number], dof: string) =>
+    toolsApi.execute('remove_boundary_condition', { position, dof }),
+
+  // Cargo tools
+  updateCargo: (cargoId: number, name?: string, mass?: number) =>
+    toolsApi.execute('update_cargo', { cargo_id: cargoId, name, mass }),
+
+  deleteCargo: (cargoId: number) =>
+    toolsApi.execute('delete_cargo', { cargo_id: cargoId }),
 };
 
 // Chat endpoints

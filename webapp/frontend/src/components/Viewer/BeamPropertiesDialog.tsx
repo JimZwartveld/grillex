@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Dialog, Button, Input, Select } from '../common';
 import useStore from '../../stores/modelStore';
+import api from '../../api/client';
 import type { Beam } from '../../types/model';
 
 interface Props {
@@ -10,7 +11,7 @@ interface Props {
 }
 
 export default function BeamPropertiesDialog({ beam, isOpen, onClose }: Props) {
-  const { materials, sections } = useStore();
+  const { materials, sections, fetchModelState } = useStore();
   const [formData, setFormData] = useState({
     startX: '0',
     startY: '0',
@@ -21,6 +22,9 @@ export default function BeamPropertiesDialog({ beam, isOpen, onClose }: Props) {
     material: '',
     section: '',
   });
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Populate form when beam changes
   useEffect(() => {
@@ -35,6 +39,8 @@ export default function BeamPropertiesDialog({ beam, isOpen, onClose }: Props) {
         material: beam.material,
         section: beam.section,
       });
+      setIsEditing(false);
+      setError(null);
     }
   }, [beam]);
 
@@ -43,9 +49,65 @@ export default function BeamPropertiesDialog({ beam, isOpen, onClose }: Props) {
   const materialOptions = materials.map((m) => ({ value: m.name, label: m.name }));
   const sectionOptions = sections.map((s) => ({ value: s.name, label: s.name }));
 
+  const hasChanges =
+    formData.material !== beam.material || formData.section !== beam.section;
+
+  const handleSave = async () => {
+    if (!hasChanges) {
+      setIsEditing(false);
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const response = await api.tools.updateBeam(
+        beam.id,
+        formData.material !== beam.material ? formData.material : undefined,
+        formData.section !== beam.section ? formData.section : undefined
+      );
+
+      if (response.success) {
+        // Refresh model state to get updated data
+        await fetchModelState();
+        setIsEditing(false);
+      } else {
+        setError(response.error || 'Failed to update beam');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    // Reset form to original values
+    setFormData({
+      startX: beam.start[0].toString(),
+      startY: beam.start[1].toString(),
+      startZ: beam.start[2].toString(),
+      endX: beam.end[0].toString(),
+      endY: beam.end[1].toString(),
+      endZ: beam.end[2].toString(),
+      material: beam.material,
+      section: beam.section,
+    });
+    setIsEditing(false);
+    setError(null);
+  };
+
   return (
     <Dialog title={`Beam ${beam.id} Properties`} isOpen={isOpen} onClose={onClose}>
       <div className="space-y-4">
+        {/* Error message */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
+            {error}
+          </div>
+        )}
+
         {/* Read-only beam ID */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -138,7 +200,7 @@ export default function BeamPropertiesDialog({ beam, isOpen, onClose }: Props) {
           options={materialOptions}
           value={formData.material}
           onChange={(e) => setFormData({ ...formData, material: e.target.value })}
-          disabled
+          disabled={!isEditing || isSaving}
         />
 
         {/* Section */}
@@ -147,7 +209,7 @@ export default function BeamPropertiesDialog({ beam, isOpen, onClose }: Props) {
           options={sectionOptions}
           value={formData.section}
           onChange={(e) => setFormData({ ...formData, section: e.target.value })}
-          disabled
+          disabled={!isEditing || isSaving}
         />
 
         {/* Section Properties (read-only) */}
@@ -201,9 +263,30 @@ export default function BeamPropertiesDialog({ beam, isOpen, onClose }: Props) {
         )}
 
         <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" onClick={onClose}>
-            Close
-          </Button>
+          {isEditing ? (
+            <>
+              <Button type="button" variant="secondary" onClick={handleCancel} disabled={isSaving}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={handleSave}
+                disabled={isSaving || !hasChanges}
+              >
+                {isSaving ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button type="button" variant="secondary" onClick={onClose}>
+                Close
+              </Button>
+              <Button type="button" variant="primary" onClick={() => setIsEditing(true)}>
+                Edit
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </Dialog>
