@@ -12,9 +12,10 @@ interface Props {
 }
 
 export default function MaterialEditDialog({ material, beamId, isOpen, onClose }: Props) {
-  const { materials, fetchModelState } = useStore();
-  const [mode, setMode] = useState<'select' | 'edit'>('select');
+  const { materials, beams, fetchModelState } = useStore();
+  const [mode, setMode] = useState<'select' | 'create' | 'edit'>('select');
   const [selectedMaterial, setSelectedMaterial] = useState('');
+  const [newMaterialName, setNewMaterialName] = useState('');
   const [formData, setFormData] = useState({
     E: '',
     nu: '',
@@ -26,6 +27,7 @@ export default function MaterialEditDialog({ material, beamId, isOpen, onClose }
   useEffect(() => {
     if (material && isOpen) {
       setSelectedMaterial(material.name);
+      setNewMaterialName('');
       setFormData({
         E: material.E.toExponential(4),
         nu: material.nu.toString(),
@@ -39,6 +41,9 @@ export default function MaterialEditDialog({ material, beamId, isOpen, onClose }
   if (!material) return null;
 
   const materialOptions = materials.map((m) => ({ value: m.name, label: m.name }));
+
+  // Count how many beams use the current material
+  const beamsUsingMaterial = beams.filter((b) => b.material === material.name).length;
 
   const handleChangeMaterial = async () => {
     if (beamId === null || selectedMaterial === material.name) return;
@@ -54,6 +59,53 @@ export default function MaterialEditDialog({ material, beamId, isOpen, onClose }
       } else {
         setError(response.error || 'Failed to update beam material');
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCreateMaterial = async () => {
+    if (!newMaterialName.trim()) {
+      setError('Please enter a material name');
+      return;
+    }
+
+    if (materials.some((m) => m.name === newMaterialName.trim())) {
+      setError('A material with this name already exists');
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      // Create new material
+      const createResponse = await api.tools.execute('add_material', {
+        name: newMaterialName.trim(),
+        E: parseFloat(formData.E) || 210e6,
+        nu: parseFloat(formData.nu) || 0.3,
+        rho: parseFloat(formData.rho) || 7.85e-3,
+      });
+
+      if (!createResponse.success) {
+        setError(createResponse.error || 'Failed to create material');
+        return;
+      }
+
+      // Assign to beam if beamId is provided
+      if (beamId !== null) {
+        const updateResponse = await api.tools.updateBeam(beamId, newMaterialName.trim(), undefined);
+        if (!updateResponse.success) {
+          setError(updateResponse.error || 'Material created but failed to assign to beam');
+          await fetchModelState();
+          return;
+        }
+      }
+
+      await fetchModelState();
+      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -87,7 +139,7 @@ export default function MaterialEditDialog({ material, beamId, isOpen, onClose }
   };
 
   return (
-    <Dialog title={`Edit Material: ${material.name}`} isOpen={isOpen} onClose={onClose}>
+    <Dialog title={`Material: ${material.name}`} isOpen={isOpen} onClose={onClose}>
       <div className="space-y-4">
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
@@ -105,7 +157,17 @@ export default function MaterialEditDialog({ material, beamId, isOpen, onClose }
             }`}
             onClick={() => setMode('select')}
           >
-            Change Material
+            Change
+          </button>
+          <button
+            className={`px-4 py-2 text-sm font-medium ${
+              mode === 'create'
+                ? 'border-b-2 border-blue-500 text-blue-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+            onClick={() => setMode('create')}
+          >
+            Create New
           </button>
           <button
             className={`px-4 py-2 text-sm font-medium ${
@@ -119,7 +181,7 @@ export default function MaterialEditDialog({ material, beamId, isOpen, onClose }
           </button>
         </div>
 
-        {mode === 'select' ? (
+        {mode === 'select' && (
           <>
             <Select
               label="Select Material"
@@ -129,7 +191,7 @@ export default function MaterialEditDialog({ material, beamId, isOpen, onClose }
               disabled={isSaving}
             />
             <p className="text-xs text-gray-500">
-              Change the material assigned to this beam. All beams using this material will remain unchanged.
+              Assign a different material to this beam. Other beams keep their current material.
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={onClose} disabled={isSaving}>
@@ -144,10 +206,80 @@ export default function MaterialEditDialog({ material, beamId, isOpen, onClose }
               </Button>
             </div>
           </>
-        ) : (
+        )}
+
+        {mode === 'create' && (
+          <>
+            <p className="text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded">
+              Create a new material and assign it to this beam only.
+            </p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                New Material Name
+              </label>
+              <Input
+                type="text"
+                value={newMaterialName}
+                onChange={(e) => setNewMaterialName(e.target.value)}
+                placeholder="e.g., Steel-Custom"
+                disabled={isSaving}
+              />
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Young's Modulus (E) [kN/m²]
+                </label>
+                <Input
+                  type="text"
+                  value={formData.E}
+                  onChange={(e) => setFormData({ ...formData, E: e.target.value })}
+                  disabled={isSaving}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Poisson's Ratio (ν) [-]
+                </label>
+                <Input
+                  type="text"
+                  value={formData.nu}
+                  onChange={(e) => setFormData({ ...formData, nu: e.target.value })}
+                  disabled={isSaving}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Density (ρ) [mT/m³]
+                </label>
+                <Input
+                  type="text"
+                  value={formData.rho}
+                  onChange={(e) => setFormData({ ...formData, rho: e.target.value })}
+                  disabled={isSaving}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="secondary" onClick={onClose} disabled={isSaving}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleCreateMaterial}
+                disabled={isSaving || !newMaterialName.trim()}
+              >
+                {isSaving ? 'Creating...' : 'Create & Assign'}
+              </Button>
+            </div>
+          </>
+        )}
+
+        {mode === 'edit' && (
           <>
             <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded">
-              Warning: Editing material properties will affect ALL beams using "{material.name}"
+              Warning: This will modify "{material.name}" for all {beamsUsingMaterial} beam{beamsUsingMaterial !== 1 ? 's' : ''} using it.
+              Use "Create New" if you want a unique material for this beam.
             </p>
             <div className="space-y-4">
               <div>
