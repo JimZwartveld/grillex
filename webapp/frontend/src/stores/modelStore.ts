@@ -21,6 +21,7 @@ interface UIState {
   rightPanelCollapsed: boolean;
   activeRightTab: 'results' | 'chat';
   viewMode: 'fem' | 'results' | 'realistic';
+  selectedBeamId: number | null;
   isLoading: boolean;
   error: string | null;
 }
@@ -35,6 +36,7 @@ interface Store extends ModelState, UIState {
   toggleRightPanel: () => void;
   setActiveRightTab: (tab: 'results' | 'chat') => void;
   setViewMode: (mode: 'fem' | 'results' | 'realistic') => void;
+  selectBeam: (beamId: number | null) => void;
   setError: (error: string | null) => void;
 
   // Model actions
@@ -68,6 +70,7 @@ export const useStore = create<Store>((set, get) => ({
   rightPanelCollapsed: false,
   activeRightTab: 'chat',
   viewMode: 'fem',
+  selectedBeamId: null,
   isLoading: false,
   error: null,
 
@@ -85,6 +88,8 @@ export const useStore = create<Store>((set, get) => ({
   setActiveRightTab: (tab) => set({ activeRightTab: tab }),
 
   setViewMode: (mode) => set({ viewMode: mode }),
+
+  selectBeam: (beamId) => set({ selectedBeamId: beamId }),
 
   setError: (error) => set({ error }),
 
