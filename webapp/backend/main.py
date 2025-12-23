@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routes import tools_router, events_router
+from .routes import tools_router, events_router, chat_router
 
 
 def create_app() -> FastAPI:
@@ -43,6 +43,7 @@ def create_app() -> FastAPI:
     # Include routers
     app.include_router(tools_router)
     app.include_router(events_router)
+    app.include_router(chat_router)
 
     @app.get("/")
     async def root():
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
                 "tools": "/api/tools/{tool_name}",
                 "model_state": "/api/model/state",
                 "events": "/api/events",
+                "chat": "/api/chat",
                 "health": "/api/health",
             },
         }
