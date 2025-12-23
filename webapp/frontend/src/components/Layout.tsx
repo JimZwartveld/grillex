@@ -1,22 +1,8 @@
-import { ChevronLeft, ChevronRight, Layers } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import useStore from '../stores/modelStore';
 import LeftPanel from './LeftPanel';
 import RightPanel from './RightPanel';
-
-const Viewer = () => {
-  const { viewMode } = useStore();
-
-  return (
-    <div className="h-full flex items-center justify-center bg-gray-100">
-      <div className="text-center text-gray-500">
-        <Layers className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-        <p className="text-lg">3D Viewer</p>
-        <p className="text-sm">Mode: {viewMode}</p>
-        <p className="text-sm mt-2">Three.js viewer will be implemented in Task 17.6</p>
-      </div>
-    </div>
-  );
-};
+import Viewer from './Viewer';
 
 export default function Layout() {
   const { leftPanelCollapsed, rightPanelCollapsed, toggleLeftPanel, toggleRightPanel, error, setError } = useStore();
