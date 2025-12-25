@@ -26,7 +26,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 15 | Nonlinear Springs | 79 | 79 | 0 | 100% |
 | 16 | Eigenvalue Analysis | 78 | 75 | 3 | 96% |
 | 17 | Web Application Interface | 68 | 65 | 3 | 96% |
-| **Total** | | **467** | **427** | **40** | **91%** |
+| 19 | Spectral Loads (Response Spectrum) | 100 | 0 | 100 | 0% |
+| **Total** | | **567** | **427** | **140** | **75%** |
 
 ---
 
@@ -868,6 +869,142 @@ This document provides a comprehensive overview of all acceptance criteria acros
 
 ---
 
+## Phase 19: Spectral Loads (Response Spectrum Analysis)
+
+### Task 19.1: Response Spectrum Data Structures
+- [ ] ResponseSpectrum can be created from tabular (T, Sa) points
+- [ ] Eurocode 8 Type 1 spectrum matches code formulas (within 0.1%)
+- [ ] Eurocode 8 Type 2 spectrum matches code formulas (within 0.1%)
+- [ ] get_acceleration() interpolates correctly between points
+- [ ] Log-log interpolation available for smoother spectra
+- [ ] ZPA (zero period acceleration) correctly identified
+- [ ] SpectralAnalysisSettings has all required configuration options
+- [ ] Default 5% damping ratio applied
+
+### Task 19.2: Eurocode 8 Spectrum Implementation
+- [ ] EC8 Type 1 spectrum for Ground Type A matches tabulated values
+- [ ] EC8 Type 1 spectrum for Ground Type C matches tabulated values
+- [ ] Damping correction factor η computed correctly
+- [ ] Spectrum is continuous at corner periods (TB, TC, TD)
+- [ ] ZPA equals ag × S at T = 0
+- [ ] Peak plateau equals ag × S × η × 2.5
+
+### Task 19.3: Modal Response Calculation
+- [ ] Modal displacement computed as Γ × φ × Sd
+- [ ] Modal acceleration computed as Γ × φ × Sa
+- [ ] Spectral displacement Sd = Sa / ω² relationship correct
+- [ ] Base shear per mode equals Γ² × Sa (effective mass × acceleration)
+- [ ] Rigid body modes (ω ≈ 0) are excluded from spectral analysis
+- [ ] Participation factor correctly selected based on direction
+
+### Task 19.4: Modal Combination Implementation
+- [ ] SRSS combination: R = √(Σ Rn²) computed correctly
+- [ ] CQC correlation coefficient matches published formulas (within 0.1%)
+- [ ] CQC for identical modes (r = 1) gives ρ = 1.0
+- [ ] CQC for well-separated modes approaches SRSS result
+- [ ] Absolute Sum is conservative (larger than SRSS/CQC)
+- [ ] Combination preserves DOF structure (result has correct size)
+
+### Task 19.5: Directional Combination
+- [ ] SRSS directional combination: E = √(Ex² + Ey² + Ez²)
+- [ ] 100-30-30 rule correctly evaluates all three combinations
+- [ ] 100-30-30 takes maximum of the three combinations
+- [ ] Single-direction analysis (Y=Z=0) gives same result as X alone
+- [ ] Symmetric structure with equal X/Y spectra gives symmetric response
+
+### Task 19.6: Missing Mass Correction
+- [ ] Missing mass computed as (total - sum of effective modal masses)
+- [ ] Warning issued when cumulative mass < 90% threshold
+- [ ] ZPA (zero-period acceleration) correctly identified from spectrum
+- [ ] Static correction uses K⁻¹ × M × r × ZPA formulation
+- [ ] Combined response includes missing mass correction (via SRSS with modal)
+- [ ] Correction can be disabled via settings
+
+### Task 19.7: Spectral Internal Forces
+- [ ] Element end forces computed from f = K × u
+- [ ] Local/global transformation applied correctly
+- [ ] Maximum internal actions (axial, shear, moment, torsion) extracted
+- [ ] Forces at both ends (i and j) available
+- [ ] Works with 12-DOF and 14-DOF beam elements
+- [ ] Sign convention consistent with Phase 7 internal actions
+
+### Task 19.8: Spectral Reactions
+- [ ] Reactions computed at all fixed DOFs
+- [ ] Reactions grouped by node for convenience
+- [ ] Total base shear equals sum of horizontal reactions
+- [ ] Reactions satisfy equilibrium with applied spectral forces
+- [ ] Works with partial fixity (some DOFs free, some fixed)
+
+### Task 19.9: Model Integration
+- [ ] analyze_spectral() returns true on success
+- [ ] Automatically runs eigenvalue analysis if not done
+- [ ] Uses all computed modes by default (or n_modes from settings)
+- [ ] Results accessible via get_spectral_result()
+- [ ] Error handling for missing mass warning
+- [ ] Single-direction and multi-direction APIs both work
+- [ ] Results cleared when model is modified
+
+### Task 19.10: Python Bindings
+- [ ] All C++ types exported to Python
+- [ ] ResponseSpectrum factory methods accessible (eurocode8_type1, etc.)
+- [ ] SpectralAnalysisSettings configurable from Python
+- [ ] Results accessible with all fields
+- [ ] Displacements returned as numpy arrays
+- [ ] Element forces accessible as list of structs
+
+### Task 19.11: Python API Wrapper
+- [ ] analyze_spectral() provides clean interface
+- [ ] Helper method for Eurocode 8 spectrum creation
+- [ ] Displacement queries work at arbitrary positions
+- [ ] DataFrame outputs for forces and reactions
+- [ ] Summary method for quick overview
+- [ ] Docstrings complete with examples and units
+- [ ] Type hints for all public methods
+
+### Task 19.12: Analytical Benchmarks
+- [ ] SDOF spectral response within 1% of analytical
+- [ ] Cantilever tip displacement within 5% of hand calculation
+- [ ] Base shear equals effective mass × spectral acceleration
+- [ ] SRSS ≈ CQC for well-separated modes (within 5%)
+- [ ] CQC correlation matches published values
+- [ ] Eurocode 8 spectrum matches code tables (within 0.5%)
+- [ ] Missing mass correction increases conservative response
+
+### Task 19.13: Code Compliance Tests
+- [ ] Warning issued when mass participation < 90%
+- [ ] Missing mass correction automatically applied when needed
+- [ ] Correction skipped when participation is sufficient
+- [ ] Mode count limit properly enforced
+- [ ] Rigid body modes excluded from spectral analysis
+- [ ] Damping ratio correctly affects spectrum interpolation
+
+### Task 19.14: Integration Tests
+- [ ] Multi-story frame produces reasonable story drifts
+- [ ] Grillage works with vertical spectrum
+- [ ] Static + spectral load combination supported
+- [ ] Point masses included in modal participation
+- [ ] YAML workflow end-to-end verified
+- [ ] Performance acceptable for 500+ DOF models
+- [ ] Three-directional analysis produces correct combined response
+
+### Task 19.15: Documentation
+- [ ] Clear explanation of response spectrum method
+- [ ] Step-by-step examples with code
+- [ ] Eurocode 8 spectrum creation guide
+- [ ] Interpretation guide for results
+- [ ] Troubleshooting section
+- [ ] All examples are doctests that pass
+
+### Task 19.16: LLM Tool Schema
+- [ ] Tool schema for create_eurocode8_spectrum
+- [ ] Tool schema for analyze_spectral
+- [ ] Tool schema for get_spectral_summary
+- [ ] Tool schema for check_seismic_drift
+- [ ] Handler implementations in ToolExecutor
+- [ ] Error suggestions for common spectral analysis issues
+
+---
+
 ## Maintenance Notes
 
 ### Updating This Document
@@ -892,5 +1029,7 @@ Each acceptance criterion should be verified by:
 - `implementation_plan_overview.md` - Phase overview
 - `implementation_plan_phase*.md` - Detailed phase implementation plans
 - `implementation_plan_phase15.md` - Nonlinear springs (tension/compression-only, gap springs)
+- `implementation_plan_phase16_eigenvalue.md` - Eigenvalue analysis (natural frequencies, mode shapes)
 - `implementation_plan_phase17.md` - Web application interface (React, Three.js, FastAPI)
+- `implementation_plan_phase19.md` - Spectral loads (response spectrum analysis)
 - `CLAUDE.md` - AI assistant guidelines

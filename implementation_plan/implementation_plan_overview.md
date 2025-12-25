@@ -15,7 +15,7 @@ This document provides a detailed, step-by-step implementation plan for building
 
 ## Phases Overview
 
-The implementation plan is organized into 18 phases:
+The implementation plan is organized into 19 phases:
 
 ### Phase 0: Project Setup & Infrastructure
 **Requirements:** R-ARCH-001, R-DEV-001, R-DEV-003 **Dependencies:** None **Difficulty:** Low **Description:** Create the basic project directory structure.
@@ -130,4 +130,9 @@ The implementation plan is organized into 18 phases:
 **Requirements:** User feedback from Phase 17 **Dependencies:** Phase 17 **Difficulty:** High **Description:** UX improvements based on user testing feedback. Key changes include: Z-up coordinate system, right-click context menus for all element creation/editing, cargo and load combination support, active load case selection, flexible support DOF configuration, model invalidation on changes, searchable settings panel, and aligning frontend types directly with C++ Model class structure.
 
 → [See full Phase 18 details](implementation_plan_phase18.md)
+
+### Phase 19: Spectral Loads (Response Spectrum Analysis)
+**Requirements:** R-LOAD (extended), R-ASM-006 **Dependencies:** Phase 16 (Eigenvalue Analysis) **Difficulty:** High **Description:** Implement response spectrum analysis for seismic and dynamic design. Features include Eurocode 8 and user-defined spectra, modal combination rules (SRSS, CQC), directional combination (100-30-30, SRSS), missing mass correction, and complete spectral results (displacements, forces, reactions, base shear).
+
+→ [See full Phase 19 details](implementation_plan_phase19.md)
 
