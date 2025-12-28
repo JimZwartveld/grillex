@@ -7,6 +7,10 @@ target_include_directories(grillex_core INTERFACE
 )
 target_link_libraries(grillex_core INTERFACE Eigen3::Eigen)
 
+# Define _USE_MATH_DEFINES for M_PI on Windows/MSVC
+# Must be defined before <cmath> is included
+target_compile_definitions(grillex_core INTERFACE _USE_MATH_DEFINES)
+
 # Create the pybind11 module
 pybind11_add_module(_grillex_cpp
     bindings/bindings.cpp

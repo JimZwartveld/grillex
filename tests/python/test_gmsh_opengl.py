@@ -12,6 +12,9 @@ import tempfile
 
 import pytest
 
+# Skip all tests in this module if gmsh is not installed
+gmsh = pytest.importorskip("gmsh", reason="gmsh is not installed")
+
 
 def test_gmsh_import():
     """Test that gmsh can be imported successfully."""

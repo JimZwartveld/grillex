@@ -54,12 +54,11 @@ jobs:
           cmake --build build -j$(nproc)
 
       - name: Install package in development mode
-        run: pip install -e .[testing]
+        run: pip install -e .[testing,meshing]
 
       - name: Run tests
         run: |
-          pytest tests/python -v --cov=grillex --cov-report=xml --cov-report=term-missing \
-            --ignore=tests/python/test_gmsh*.py
+          pytest tests/python -v --cov=grillex --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage to Codecov
         if: matrix.python == '3.11'
@@ -100,11 +99,11 @@ jobs:
           cmake --build build -j$(sysctl -n hw.ncpu)
 
       - name: Install package in development mode
-        run: pip install -e .[testing]
+        run: pip install -e .[testing,meshing]
 
       - name: Run tests
         run: |
-          pytest tests/python -v --ignore=tests/python/test_gmsh*.py
+          pytest tests/python -v
 
   # =============================================================================
   # Build and test on Windows
@@ -135,11 +134,11 @@ jobs:
           cmake --build build --config Release -j $env:NUMBER_OF_PROCESSORS
 
       - name: Install package in development mode
-        run: pip install -e .[testing]
+        run: pip install -e .[testing,meshing]
 
       - name: Run tests
         run: |
-          pytest tests/python -v --ignore=tests/python/test_gmsh*.py
+          pytest tests/python -v
 
   # =============================================================================
   # Code quality checks
