@@ -37,6 +37,8 @@ This module provides Python-friendly access to the C++ core data structures:
 - SpringElement: Spring element with 6-DOF stiffness
 - PointMass: Point mass element with inertia tensor
 - PlateElement: 4-node Mindlin plate element (MITC4)
+- PlateElement8: 8-node serendipity Mindlin plate element (MITC8)
+- PlateElement9: 9-node Lagrangian Mindlin plate element (MITC9)
 - LoadingCondition: Enum for spring loading conditions (All, Static, Dynamic)
 - ErrorCode: Enum for machine-readable error codes
 - GrillexError: Error information with context (DOFs, elements, nodes)
@@ -101,6 +103,8 @@ from grillex._grillex_cpp import (
     SpringElement,
     PointMass,
     PlateElement,
+    PlateElement8,
+    PlateElement9,
     LoadingCondition,
     # Phase 15: Nonlinear Springs
     SpringBehavior,
@@ -148,7 +152,7 @@ __all__ = [
     'EndForces', 'InternalActions', 'WarpingInternalActions', 'ActionExtreme',
     'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine',
     # Phase 8: Additional Element Types
-    'SpringElement', 'PointMass', 'PlateElement', 'LoadingCondition',
+    'SpringElement', 'PointMass', 'PlateElement', 'PlateElement8', 'PlateElement9', 'LoadingCondition',
     # Phase 15: Nonlinear Springs
     'SpringBehavior', 'NonlinearSolverResult', 'NonlinearInitialState',
     'NonlinearSolverSettings', 'NonlinearSolver',
