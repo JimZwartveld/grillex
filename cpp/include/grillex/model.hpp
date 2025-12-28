@@ -7,6 +7,9 @@
 #include "grillex/spring_element.hpp"
 #include "grillex/point_mass.hpp"
 #include "grillex/plate_element.hpp"
+#include "grillex/plate_element_8.hpp"
+#include "grillex/plate_element_9.hpp"
+#include "grillex/plate_element_tri.hpp"
 #include "grillex/dof_handler.hpp"
 #include "grillex/assembler.hpp"
 #include "grillex/boundary_condition.hpp"
@@ -64,7 +67,10 @@ public:
     std::vector<std::unique_ptr<BeamElement>> elements;    ///< Beam elements
     std::vector<std::unique_ptr<SpringElement>> spring_elements;  ///< Spring elements
     std::vector<std::unique_ptr<PointMass>> point_masses;  ///< Point mass elements
-    std::vector<std::unique_ptr<PlateElement>> plate_elements;  ///< Plate elements
+    std::vector<std::unique_ptr<PlateElement>> plate_elements;  ///< 4-node plate elements (MITC4)
+    std::vector<std::unique_ptr<PlateElement8>> plate_elements_8;  ///< 8-node plate elements (MITC8)
+    std::vector<std::unique_ptr<PlateElement9>> plate_elements_9;  ///< 9-node plate elements (MITC9)
+    std::vector<std::unique_ptr<PlateElementTri>> plate_elements_tri;  ///< 3-node triangular plate elements (DKT)
     BCHandler boundary_conditions;                         ///< Boundary conditions
     ConstraintHandler constraints;                         ///< MPC and rigid link constraints
 
@@ -158,6 +164,41 @@ public:
      */
     PlateElement* create_plate(Node* n1, Node* n2, Node* n3, Node* n4,
                                double thickness, Material* material);
+
+    /**
+     * @brief Create an 8-node plate element (MITC8) and add to model
+     * @param n1-n4 Corner nodes (in counter-clockwise order)
+     * @param n5-n8 Mid-edge nodes (n5 between n1-n2, n6 between n2-n3, etc.)
+     * @param thickness Plate thickness [m]
+     * @param material Material pointer
+     * @return Pointer to created plate element (owned by model)
+     */
+    PlateElement8* create_plate_8(Node* n1, Node* n2, Node* n3, Node* n4,
+                                   Node* n5, Node* n6, Node* n7, Node* n8,
+                                   double thickness, Material* material);
+
+    /**
+     * @brief Create a 9-node plate element (MITC9) and add to model
+     * @param n1-n4 Corner nodes (in counter-clockwise order)
+     * @param n5-n8 Mid-edge nodes
+     * @param n9 Center node
+     * @param thickness Plate thickness [m]
+     * @param material Material pointer
+     * @return Pointer to created plate element (owned by model)
+     */
+    PlateElement9* create_plate_9(Node* n1, Node* n2, Node* n3, Node* n4,
+                                   Node* n5, Node* n6, Node* n7, Node* n8, Node* n9,
+                                   double thickness, Material* material);
+
+    /**
+     * @brief Create a 3-node triangular plate element (DKT) and add to model
+     * @param n1, n2, n3 Corner nodes (in counter-clockwise order)
+     * @param thickness Plate thickness [m]
+     * @param material Material pointer
+     * @return Pointer to created plate element (owned by model)
+     */
+    PlateElementTri* create_plate_tri(Node* n1, Node* n2, Node* n3,
+                                       double thickness, Material* material);
 
     /**
      * @brief Add a rigid link constraint between two nodes

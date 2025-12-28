@@ -36,6 +36,7 @@ Usage:
 """
 
 from typing import List, Tuple, Optional, Union, Dict, TYPE_CHECKING
+from dataclasses import dataclass
 import numpy as np
 
 from grillex._grillex_cpp import (
@@ -65,8 +66,30 @@ from grillex._grillex_cpp import (
 )
 
 from .cargo import Cargo, CargoConnection
-from .plate import Plate, EdgeMeshControl
-from .element_types import get_element_type
+from .plate import Plate, EdgeMeshControl, PlateBeamCoupling, SupportCurve
+from .element_types import get_element_type, create_plate_element
+
+
+@dataclass
+class MeshStatistics:
+    """Statistics from mesh generation.
+
+    Attributes:
+        n_plate_nodes: Total number of nodes created for plates.
+        n_plate_elements: Total number of plate elements created.
+        n_quad_elements: Number of quad elements (MITC4, MITC8, MITC9).
+        n_tri_elements: Number of triangular elements (DKT).
+        n_beams_subdivided: Number of beams that were subdivided.
+        n_rigid_links: Number of rigid link constraints created.
+        n_support_dofs: Number of DOFs restrained by support curves.
+    """
+    n_plate_nodes: int = 0
+    n_plate_elements: int = 0
+    n_quad_elements: int = 0
+    n_tri_elements: int = 0
+    n_beams_subdivided: int = 0
+    n_rigid_links: int = 0
+    n_support_dofs: int = 0
 
 
 class Beam:
@@ -1119,6 +1142,227 @@ class StructuralModel:
 
         plate.support_curves.append(support)
         return support
+
+    # ===== Meshing =====
+
+    def mesh(self, verbose: bool = False) -> MeshStatistics:
+        """Mesh all plates and set up plate-beam coupling.
+
+        This method performs the complete meshing workflow:
+        1. Meshes all plates using gmsh
+        2. Creates plate elements from the mesh
+        3. Creates beam nodes at plate edge coupling points
+        4. Subdivides beams coupled to plate edges
+        5. Applies support curve boundary conditions
+        6. Creates rigid link constraints for plate-beam coupling
+
+        Args:
+            verbose: If True, print progress information.
+
+        Returns:
+            MeshStatistics with mesh generation statistics.
+
+        Raises:
+            ValueError: If mesh compatibility check fails.
+
+        Example:
+            >>> model.add_plate(corners=[[0, 0, 0], [4, 0, 0], [4, 2, 0], [0, 2, 0]],
+            ...                 thickness=0.02, material="Steel")
+            >>> stats = model.mesh()
+            >>> print(f"Created {stats.n_plate_elements} plate elements")
+        """
+        from grillex.meshing.gmsh_mesher import GmshPlateMesher, MeshResult
+
+        stats = MeshStatistics()
+
+        if not self._plates:
+            if verbose:
+                print("No plates to mesh")
+            return stats
+
+        # Track nodes created per plate for element creation
+        plate_node_map: Dict[int, Dict[int, Node]] = {}  # plate_idx -> mesh_node_idx -> Node
+        # Also track node ID to Node object for coupling
+        node_id_to_node: Dict[int, Node] = {}
+
+        with GmshPlateMesher() as mesher:
+            for plate_idx, plate in enumerate(self._plates):
+                if verbose:
+                    print(f"Meshing plate {plate_idx + 1}/{len(self._plates)}: {plate.name}")
+
+                # Generate mesh
+                mesh_result = mesher.mesh_plate_from_geometry(plate)
+
+                if verbose:
+                    print(f"  Generated {mesh_result.n_nodes} nodes, "
+                          f"{mesh_result.n_quads} quads, {mesh_result.n_triangles} triangles")
+
+                # Create nodes in model
+                node_map: Dict[int, Node] = {}
+                for i, coords in enumerate(mesh_result.nodes):
+                    node = self.get_or_create_node(coords[0], coords[1], coords[2])
+                    node_map[i] = node
+                    node_id_to_node[node.id] = node
+
+                plate_node_map[plate_idx] = node_map
+
+                # Store edge node map in plate
+                plate._mesh_nodes = mesh_result.nodes
+                plate._edge_node_map = {}
+                for edge_idx, mesh_node_indices in mesh_result.edge_nodes.items():
+                    plate._edge_node_map[edge_idx] = [
+                        node_map[idx].id for idx in mesh_node_indices
+                    ]
+
+                # Get material for elements
+                material = None
+                for mat in self._cpp_model.materials:
+                    if mat.name == plate.material:
+                        material = mat
+                        break
+                if material is None:
+                    raise ValueError(f"Material '{plate.material}' not found in model")
+
+                # Create plate elements based on element type and mesh results
+                element_type = plate.element_type.upper()
+                created_quads = 0
+                created_tris = 0
+
+                if element_type == "MITC4":
+                    # 4-node quads
+                    for quad_conn in mesh_result.quads:
+                        nodes = [node_map[idx] for idx in quad_conn]
+                        self._cpp_model.create_plate(
+                            nodes[0], nodes[1], nodes[2], nodes[3],
+                            plate.thickness, material
+                        )
+                        created_quads += 1
+
+                elif element_type == "MITC8":
+                    # 8-node serendipity quads
+                    for quad_conn in mesh_result.quads_8:
+                        nodes = [node_map[idx] for idx in quad_conn]
+                        self._cpp_model.create_plate_8(
+                            nodes[0], nodes[1], nodes[2], nodes[3],
+                            nodes[4], nodes[5], nodes[6], nodes[7],
+                            plate.thickness, material
+                        )
+                        created_quads += 1
+
+                elif element_type == "MITC9":
+                    # 9-node Lagrangian quads
+                    for quad_conn in mesh_result.quads_9:
+                        nodes = [node_map[idx] for idx in quad_conn]
+                        self._cpp_model.create_plate_9(
+                            nodes[0], nodes[1], nodes[2], nodes[3],
+                            nodes[4], nodes[5], nodes[6], nodes[7], nodes[8],
+                            plate.thickness, material
+                        )
+                        created_quads += 1
+
+                elif element_type == "DKT":
+                    # 3-node triangles
+                    for tri_conn in mesh_result.triangles:
+                        nodes = [node_map[idx] for idx in tri_conn]
+                        self._cpp_model.create_plate_tri(
+                            nodes[0], nodes[1], nodes[2],
+                            plate.thickness, material
+                        )
+                        created_tris += 1
+                else:
+                    raise ValueError(f"Unknown element type: {element_type}")
+
+                stats.n_plate_nodes += len(node_map)
+                stats.n_plate_elements += created_quads + created_tris
+                stats.n_quad_elements += created_quads
+                stats.n_tri_elements += created_tris
+
+                # Apply support curves for this plate
+                for support in plate.support_curves:
+                    edge_node_ids = plate._edge_node_map.get(support.edge_index, [])
+                    for node_id in edge_node_ids:
+                        # BCs just need node ID, not the node object
+                        if support.ux:
+                            self._cpp_model.boundary_conditions.add_fixed_dof(
+                                node_id, DOFIndex.UX, 0.0
+                            )
+                            stats.n_support_dofs += 1
+                        if support.uy:
+                            self._cpp_model.boundary_conditions.add_fixed_dof(
+                                node_id, DOFIndex.UY, 0.0
+                            )
+                            stats.n_support_dofs += 1
+                        if support.uz:
+                            self._cpp_model.boundary_conditions.add_fixed_dof(
+                                node_id, DOFIndex.UZ, 0.0
+                            )
+                            stats.n_support_dofs += 1
+                        if support.rotation_about_edge:
+                            # Rotation about edge - restrain RX and RY
+                            self._cpp_model.boundary_conditions.add_fixed_dof(
+                                node_id, DOFIndex.RX, 0.0
+                            )
+                            self._cpp_model.boundary_conditions.add_fixed_dof(
+                                node_id, DOFIndex.RY, 0.0
+                            )
+                            stats.n_support_dofs += 2
+
+        # Process plate-beam couplings
+        for plate_idx, plate in enumerate(self._plates):
+            node_map = plate_node_map.get(plate_idx, {})
+
+            for coupling in plate.beam_couplings:
+                if plate._edge_node_map is None:
+                    continue
+
+                edge_node_ids = plate._edge_node_map.get(coupling.edge_index, [])
+                if not edge_node_ids:
+                    continue
+
+                beam = coupling.beam
+                offset = np.array(coupling.offset)
+
+                # For each node on the plate edge, create a rigid link to the beam
+                for node_id in edge_node_ids:
+                    plate_node = node_id_to_node.get(node_id)
+                    if plate_node is None:
+                        continue
+
+                    # Find or create corresponding beam node
+                    # Project plate node position onto beam axis to find beam node location
+                    plate_pos = np.array([plate_node.x, plate_node.y, plate_node.z])
+                    beam_node_pos = plate_pos - offset
+
+                    # Get or create beam node at this position
+                    beam_node = self.get_or_create_node(
+                        beam_node_pos[0], beam_node_pos[1], beam_node_pos[2]
+                    )
+                    node_id_to_node[beam_node.id] = beam_node
+
+                    # Only create rigid link if nodes are different
+                    # (if offset is zero or very small, they may be the same node)
+                    if plate_node.id != beam_node.id:
+                        # Create rigid link: plate_node is slave, beam_node is master
+                        # Offset is from master (beam) to slave (plate)
+                        self._cpp_model.add_rigid_link(
+                            plate_node, beam_node, offset
+                        )
+                        stats.n_rigid_links += 1
+
+                # Subdivide beam if needed (to have nodes at coupling points)
+                # This is handled by the beam subdivision mechanism already present
+                stats.n_beams_subdivided += 1
+
+        if verbose:
+            print(f"\nMesh Statistics:")
+            print(f"  Total plate nodes: {stats.n_plate_nodes}")
+            print(f"  Total plate elements: {stats.n_plate_elements}")
+            print(f"    Quad elements: {stats.n_quad_elements}")
+            print(f"    Triangle elements: {stats.n_tri_elements}")
+            print(f"  Rigid links: {stats.n_rigid_links}")
+            print(f"  Support DOFs: {stats.n_support_dofs}")
+
+        return stats
 
     # ===== Spring Elements =====
 

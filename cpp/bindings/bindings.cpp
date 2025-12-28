@@ -1303,7 +1303,28 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                 result.append(plate.get());
             }
             return result;
-        }, "List of plate elements in the model")
+        }, "List of 4-node plate elements (MITC4) in the model")
+        .def_property_readonly("plate_elements_8", [](const grillex::Model &m) {
+            py::list result;
+            for (const auto& plate : m.plate_elements_8) {
+                result.append(plate.get());
+            }
+            return result;
+        }, "List of 8-node plate elements (MITC8) in the model")
+        .def_property_readonly("plate_elements_9", [](const grillex::Model &m) {
+            py::list result;
+            for (const auto& plate : m.plate_elements_9) {
+                result.append(plate.get());
+            }
+            return result;
+        }, "List of 9-node plate elements (MITC9) in the model")
+        .def_property_readonly("plate_elements_tri", [](const grillex::Model &m) {
+            py::list result;
+            for (const auto& plate : m.plate_elements_tri) {
+                result.append(plate.get());
+            }
+            return result;
+        }, "List of 3-node triangular plate elements (DKT) in the model")
         .def_readwrite("boundary_conditions", &grillex::Model::boundary_conditions,
                       "BCHandler for managing boundary conditions")
         .def("create_material", &grillex::Model::create_material,
@@ -1360,6 +1381,38 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Example:\n"
              "    plate = model.create_plate(n1, n2, n3, n4, 0.01, steel)\n\n"
              "Uses Mindlin plate theory with MITC4 formulation for locking-free behavior.",
+             py::return_value_policy::reference_internal)
+        .def("create_plate_8", &grillex::Model::create_plate_8,
+             py::arg("n1"), py::arg("n2"), py::arg("n3"), py::arg("n4"),
+             py::arg("n5"), py::arg("n6"), py::arg("n7"), py::arg("n8"),
+             py::arg("thickness"), py::arg("material"),
+             "Create an 8-node plate element (MITC8) and add to model.\n\n"
+             "Parameters:\n"
+             "    n1-n4: Corner nodes (counter-clockwise)\n"
+             "    n5-n8: Mid-edge nodes\n"
+             "    thickness: Plate thickness [m]\n"
+             "    material: Material properties",
+             py::return_value_policy::reference_internal)
+        .def("create_plate_9", &grillex::Model::create_plate_9,
+             py::arg("n1"), py::arg("n2"), py::arg("n3"), py::arg("n4"),
+             py::arg("n5"), py::arg("n6"), py::arg("n7"), py::arg("n8"), py::arg("n9"),
+             py::arg("thickness"), py::arg("material"),
+             "Create a 9-node plate element (MITC9) and add to model.\n\n"
+             "Parameters:\n"
+             "    n1-n4: Corner nodes (counter-clockwise)\n"
+             "    n5-n8: Mid-edge nodes\n"
+             "    n9: Center node\n"
+             "    thickness: Plate thickness [m]\n"
+             "    material: Material properties",
+             py::return_value_policy::reference_internal)
+        .def("create_plate_tri", &grillex::Model::create_plate_tri,
+             py::arg("n1"), py::arg("n2"), py::arg("n3"),
+             py::arg("thickness"), py::arg("material"),
+             "Create a 3-node triangular plate element (DKT) and add to model.\n\n"
+             "Parameters:\n"
+             "    n1, n2, n3: Corner nodes (counter-clockwise)\n"
+             "    thickness: Plate thickness [m]\n"
+             "    material: Material properties",
              py::return_value_policy::reference_internal)
         .def("add_rigid_link", &grillex::Model::add_rigid_link,
              py::arg("slave_node"), py::arg("master_node"), py::arg("offset"),

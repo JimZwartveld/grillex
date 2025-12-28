@@ -62,6 +62,43 @@ PlateElement* Model::create_plate(Node* n1, Node* n2, Node* n3, Node* n4,
     return ptr;
 }
 
+PlateElement8* Model::create_plate_8(Node* n1, Node* n2, Node* n3, Node* n4,
+                                      Node* n5, Node* n6, Node* n7, Node* n8,
+                                      double thickness, Material* material) {
+    auto plate = std::make_unique<PlateElement8>(next_plate_id_++,
+                                                  n1, n2, n3, n4, n5, n6, n7, n8,
+                                                  thickness, material);
+    PlateElement8* ptr = plate.get();
+    plate_elements_8.push_back(std::move(plate));
+    // Mark as not analyzed
+    analyzed_ = false;
+    return ptr;
+}
+
+PlateElement9* Model::create_plate_9(Node* n1, Node* n2, Node* n3, Node* n4,
+                                      Node* n5, Node* n6, Node* n7, Node* n8, Node* n9,
+                                      double thickness, Material* material) {
+    auto plate = std::make_unique<PlateElement9>(next_plate_id_++,
+                                                  n1, n2, n3, n4, n5, n6, n7, n8, n9,
+                                                  thickness, material);
+    PlateElement9* ptr = plate.get();
+    plate_elements_9.push_back(std::move(plate));
+    // Mark as not analyzed
+    analyzed_ = false;
+    return ptr;
+}
+
+PlateElementTri* Model::create_plate_tri(Node* n1, Node* n2, Node* n3,
+                                          double thickness, Material* material) {
+    auto plate = std::make_unique<PlateElementTri>(next_plate_id_++, n1, n2, n3,
+                                                    thickness, material);
+    PlateElementTri* ptr = plate.get();
+    plate_elements_tri.push_back(std::move(plate));
+    // Mark as not analyzed
+    analyzed_ = false;
+    return ptr;
+}
+
 void Model::add_rigid_link(Node* slave_node, Node* master_node,
                             const Eigen::Vector3d& offset) {
     if (!slave_node || !master_node) {
