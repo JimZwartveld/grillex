@@ -683,6 +683,52 @@ load_cases:
         value: -10.0
 ```
 
+### Creating a Plate Model
+
+```python
+from grillex.core import StructuralModel
+
+# Create model
+model = StructuralModel(name="Plate Example")
+model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+
+# Add a 4m x 2m horizontal plate
+plate = model.add_plate(
+    corners=[[0, 0, 0], [4, 0, 0], [4, 2, 0], [0, 2, 0]],
+    thickness=0.02,  # 20mm
+    material="Steel",
+    mesh_size=0.5,
+    element_type="MITC4"  # or "MITC8", "MITC9", "DKT"
+)
+
+# Set structured mesh divisions on opposite edges
+model.set_edge_divisions(plate, edge_index=0, n_elements=8)
+model.set_edge_divisions(plate, edge_index=2, n_elements=8)
+
+# Add supports along edges
+model.add_support_curve(plate, edge_index=0, uz=True)  # Simply supported
+model.add_support_curve(plate, edge_index=2, ux=True, uy=True, uz=True)  # Fixed
+
+# Generate mesh
+stats = model.mesh()
+print(f"Created {stats.n_plate_elements} plate elements")
+
+# Analyze and get results
+model.analyze()
+
+# Query plate element results
+element = model.get_plate_elements()[0]
+disp = model.get_plate_displacement(element, xi=0.0, eta=0.0)
+moments = model.get_plate_moments(element, xi=0.0, eta=0.0)
+stress = model.get_plate_stress(element, surface="top", xi=0.0, eta=0.0)
+```
+
+**Important notes for plate meshing:**
+- Plate elements only have bending stiffness (UZ, RX, RY). In-plane DOFs must be restrained.
+- Edge indices are 0-based and follow corner order.
+- Use `mesh_size` for automatic meshing or `set_edge_divisions` for structured meshes.
+- Natural coordinates (xi, eta) range from -1 to +1 for quad elements.
+
 ## Requirements Traceability
 
 All features trace back to requirements in `grillex_requirements.md`:

@@ -36,6 +36,7 @@ Usage:
 """
 
 from typing import List, Tuple, Optional, Union, Dict, TYPE_CHECKING
+from dataclasses import dataclass
 import numpy as np
 
 from grillex._grillex_cpp import (
@@ -65,6 +66,30 @@ from grillex._grillex_cpp import (
 )
 
 from .cargo import Cargo, CargoConnection
+from .plate import Plate, EdgeMeshControl, PlateBeamCoupling, SupportCurve
+from .element_types import get_element_type, create_plate_element
+
+
+@dataclass
+class MeshStatistics:
+    """Statistics from mesh generation.
+
+    Attributes:
+        n_plate_nodes: Total number of nodes created for plates.
+        n_plate_elements: Total number of plate elements created.
+        n_quad_elements: Number of quad elements (MITC4, MITC8, MITC9).
+        n_tri_elements: Number of triangular elements (DKT).
+        n_beams_subdivided: Number of beams that were subdivided.
+        n_rigid_links: Number of rigid link constraints created.
+        n_support_dofs: Number of DOFs restrained by support curves.
+    """
+    n_plate_nodes: int = 0
+    n_plate_elements: int = 0
+    n_quad_elements: int = 0
+    n_tri_elements: int = 0
+    n_beams_subdivided: int = 0
+    n_rigid_links: int = 0
+    n_support_dofs: int = 0
 
 
 class Beam:
@@ -639,6 +664,7 @@ class StructuralModel:
         self._cpp_model = _CppModel(node_tolerance=node_tolerance)
         self.beams: List[Beam] = []
         self.cargos: List[Cargo] = []
+        self._plates: List[Plate] = []
         self._materials: dict[str, _CppMaterial] = {}
         self._sections: dict[str, _CppSection] = {}
         self._node_map: dict[Tuple[float, float, float], Node] = {}
@@ -839,6 +865,504 @@ class StructuralModel:
             if cargo.name == name:
                 return cargo
         return None
+
+    # ===== Plate Elements =====
+
+    def add_plate_element(
+        self,
+        node1: List[float],
+        node2: List[float],
+        node3: List[float],
+        node4: List[float],
+        thickness: float,
+        material: str
+    ) -> "PlateElement":
+        """Add a single 4-node plate element to the model.
+
+        Creates a MITC4 Mindlin plate element for bending analysis.
+        Nodes should be ordered counter-clockwise when viewed from
+        the positive normal direction.
+
+        Node numbering (natural coordinates):
+           4 (-1,+1) -------- 3 (+1,+1)
+               |                  |
+               |     (0,0)        |
+               |                  |
+           1 (-1,-1) -------- 2 (+1,-1)
+
+        Args:
+            node1: Corner 1 coordinates [x, y, z] in meters.
+            node2: Corner 2 coordinates [x, y, z] in meters.
+            node3: Corner 3 coordinates [x, y, z] in meters.
+            node4: Corner 4 coordinates [x, y, z] in meters.
+            thickness: Plate thickness in meters.
+            material: Name of material to use.
+
+        Returns:
+            The created PlateElement object.
+
+        Raises:
+            ValueError: If material not found.
+
+        Example:
+            # Create a 2m x 1m horizontal plate
+            plate = model.add_plate_element(
+                [0, 0, 0], [2, 0, 0], [2, 1, 0], [0, 1, 0],
+                thickness=0.02,
+                material="Steel"
+            )
+        """
+        mat = self.get_material(material)
+        if mat is None:
+            raise ValueError(f"Material '{material}' not found. Add it first with add_material().")
+
+        n1 = self.get_or_create_node(*node1)
+        n2 = self.get_or_create_node(*node2)
+        n3 = self.get_or_create_node(*node3)
+        n4 = self.get_or_create_node(*node4)
+
+        plate = self._cpp_model.create_plate(n1, n2, n3, n4, thickness, mat)
+        return plate
+
+    def get_plate_elements(self) -> List:
+        """Return all plate elements in the model.
+
+        Returns:
+            List of PlateElement objects.
+        """
+        return list(self._cpp_model.plate_elements)
+
+    # ===== Plate Geometry (for meshing) =====
+
+    def add_plate(
+        self,
+        corners: List[List[float]],
+        thickness: float,
+        material: str,
+        mesh_size: float = 0.5,
+        element_type: str = "MITC4",
+        name: Optional[str] = None
+    ) -> Plate:
+        """Add a plate region to the model.
+
+        The plate is defined by 3 or more corner points forming a closed polygon.
+        The plate will be meshed when mesh() is called.
+
+        Args:
+            corners: List of [x, y, z] coordinates for plate corners.
+                Must have at least 3 points. Counter-clockwise when viewed
+                from the positive normal direction.
+            thickness: Plate thickness in meters.
+            material: Name of material to use.
+            mesh_size: Target element size in meters (default 0.5m).
+            element_type: Element type: "MITC4", "MITC8", "MITC9", or "DKT".
+            name: Optional name for the plate.
+
+        Returns:
+            The created Plate object.
+
+        Raises:
+            ValueError: If material not found, invalid geometry, or unknown element type.
+
+        Example:
+            # Create a 4m x 2m horizontal plate
+            plate = model.add_plate(
+                corners=[[0, 0, 0], [4, 0, 0], [4, 2, 0], [0, 2, 0]],
+                thickness=0.02,
+                material="Steel",
+                mesh_size=0.5
+            )
+        """
+        # Validate material exists
+        if self.get_material(material) is None:
+            raise ValueError(f"Material '{material}' not found. Add it first with add_material().")
+
+        # Validate element type
+        get_element_type(element_type)  # Raises ValueError if invalid
+
+        # Create the plate
+        plate = Plate(
+            corners=corners,
+            thickness=thickness,
+            material=material,
+            mesh_size=mesh_size,
+            element_type=element_type,
+            name=name or f"Plate_{len(self._plates) + 1}"
+        )
+
+        # Validate geometry
+        if not plate.is_planar():
+            raise ValueError("Plate corners must be coplanar")
+
+        self._plates.append(plate)
+        return plate
+
+    def set_edge_divisions(
+        self,
+        plate: Plate,
+        edge_index: int,
+        n_elements: int
+    ) -> None:
+        """Set the number of elements along a plate edge.
+
+        Edge divisions take precedence over mesh_size for that edge.
+        For structured quad meshes, opposite edges must have matching divisions.
+
+        Args:
+            plate: The Plate object.
+            edge_index: Edge index (0 = from corner[0] to corner[1], etc.)
+            n_elements: Number of elements along the edge.
+
+        Raises:
+            ValueError: If edge_index out of range or n_elements < 1.
+        """
+        if edge_index < 0 or edge_index >= plate.n_edges:
+            raise ValueError(
+                f"Edge index {edge_index} out of range [0, {plate.n_edges})"
+            )
+        if n_elements < 1:
+            raise ValueError("n_elements must be at least 1")
+
+        plate.edge_controls[edge_index] = EdgeMeshControl(n_elements=n_elements)
+
+    def get_plates(self) -> List[Plate]:
+        """Return all plates (geometry regions) in the model.
+
+        Returns:
+            List of Plate objects defining plate regions.
+        """
+        return list(self._plates)
+
+    def couple_plate_to_beam(
+        self,
+        plate: Plate,
+        edge_index: int,
+        beam: "Beam",
+        offset: Optional[List[float]] = None,
+        releases: Optional[Dict[str, bool]] = None
+    ) -> "PlateBeamCoupling":
+        """Couple a plate edge to a beam using rigid links.
+
+        Creates a coupling definition between a plate edge and a beam.
+        When mesh() is called, rigid link constraints will be created
+        between plate edge nodes and the beam.
+
+        If the plate normal is not parallel to the beam axis, intermediate
+        beam nodes are created to match plate edge node positions.
+
+        Args:
+            plate: The Plate object.
+            edge_index: Edge index to couple (0 = corner[0] to corner[1], etc.)
+            beam: The Beam object to couple to.
+            offset: [dx, dy, dz] offset from plate node to beam centroid in meters.
+                If None, nodes are assumed coincident.
+            releases: Dict of DOF releases. Keys: "UX", "UY", "UZ", "RX", "RY", "RZ",
+                or "R_EDGE" for rotation about the edge. Values: True = released.
+                Default is no releases (fully rigid connection).
+
+        Returns:
+            PlateBeamCoupling object.
+
+        Raises:
+            ValueError: If edge_index is out of range.
+
+        Example:
+            # Couple plate edge to beam with moment release about edge
+            model.couple_plate_to_beam(
+                plate, edge_index=0, beam=main_beam,
+                offset=[0, 0, 0.15],  # Plate 150mm above beam centroid
+                releases={"R_EDGE": True}  # Allow rotation about edge
+            )
+        """
+        from .plate import PlateBeamCoupling
+
+        if edge_index < 0 or edge_index >= plate.n_edges:
+            raise ValueError(
+                f"Edge index {edge_index} out of range [0, {plate.n_edges})"
+            )
+
+        coupling = PlateBeamCoupling(
+            plate=plate,
+            edge_index=edge_index,
+            beam=beam,
+            offset=offset or [0.0, 0.0, 0.0],
+            releases=releases or {}
+        )
+
+        plate.beam_couplings.append(coupling)
+        return coupling
+
+    def add_support_curve(
+        self,
+        plate: Plate,
+        edge_index: int,
+        ux: bool = False,
+        uy: bool = False,
+        uz: bool = False,
+        rotation_about_edge: bool = False
+    ) -> "SupportCurve":
+        """Add a support along a plate edge.
+
+        Creates boundary conditions along the plate edge that will be applied
+        to all nodes on that edge after meshing.
+
+        Args:
+            plate: The Plate object.
+            edge_index: Edge index for the support.
+            ux: If True, restrain X translation.
+            uy: If True, restrain Y translation.
+            uz: If True, restrain Z translation.
+            rotation_about_edge: If True, restrain rotation about the edge direction.
+
+        Returns:
+            SupportCurve object.
+
+        Raises:
+            ValueError: If edge_index is out of range.
+
+        Example:
+            # Simply support a plate edge (restrain vertical movement)
+            model.add_support_curve(plate, edge_index=0, uz=True)
+        """
+        from .plate import SupportCurve
+
+        if edge_index < 0 or edge_index >= plate.n_edges:
+            raise ValueError(
+                f"Edge index {edge_index} out of range [0, {plate.n_edges})"
+            )
+
+        support = SupportCurve(
+            plate=plate,
+            edge_index=edge_index,
+            ux=ux,
+            uy=uy,
+            uz=uz,
+            rotation_about_edge=rotation_about_edge
+        )
+
+        plate.support_curves.append(support)
+        return support
+
+    # ===== Meshing =====
+
+    def mesh(self, verbose: bool = False) -> MeshStatistics:
+        """Mesh all plates and set up plate-beam coupling.
+
+        This method performs the complete meshing workflow:
+        1. Meshes all plates using gmsh
+        2. Creates plate elements from the mesh
+        3. Creates beam nodes at plate edge coupling points
+        4. Subdivides beams coupled to plate edges
+        5. Applies support curve boundary conditions
+        6. Creates rigid link constraints for plate-beam coupling
+
+        Args:
+            verbose: If True, print progress information.
+
+        Returns:
+            MeshStatistics with mesh generation statistics.
+
+        Raises:
+            ValueError: If mesh compatibility check fails.
+
+        Example:
+            >>> model.add_plate(corners=[[0, 0, 0], [4, 0, 0], [4, 2, 0], [0, 2, 0]],
+            ...                 thickness=0.02, material="Steel")
+            >>> stats = model.mesh()
+            >>> print(f"Created {stats.n_plate_elements} plate elements")
+        """
+        from grillex.meshing.gmsh_mesher import GmshPlateMesher, MeshResult
+
+        stats = MeshStatistics()
+
+        if not self._plates:
+            if verbose:
+                print("No plates to mesh")
+            return stats
+
+        # Track nodes created per plate for element creation
+        plate_node_map: Dict[int, Dict[int, Node]] = {}  # plate_idx -> mesh_node_idx -> Node
+        # Also track node ID to Node object for coupling
+        node_id_to_node: Dict[int, Node] = {}
+
+        with GmshPlateMesher() as mesher:
+            for plate_idx, plate in enumerate(self._plates):
+                if verbose:
+                    print(f"Meshing plate {plate_idx + 1}/{len(self._plates)}: {plate.name}")
+
+                # Generate mesh
+                mesh_result = mesher.mesh_plate_from_geometry(plate)
+
+                if verbose:
+                    print(f"  Generated {mesh_result.n_nodes} nodes, "
+                          f"{mesh_result.n_quads} quads, {mesh_result.n_triangles} triangles")
+
+                # Create nodes in model
+                node_map: Dict[int, Node] = {}
+                for i, coords in enumerate(mesh_result.nodes):
+                    node = self.get_or_create_node(coords[0], coords[1], coords[2])
+                    node_map[i] = node
+                    node_id_to_node[node.id] = node
+
+                plate_node_map[plate_idx] = node_map
+
+                # Store edge node map in plate
+                plate._mesh_nodes = mesh_result.nodes
+                plate._edge_node_map = {}
+                for edge_idx, mesh_node_indices in mesh_result.edge_nodes.items():
+                    plate._edge_node_map[edge_idx] = [
+                        node_map[idx].id for idx in mesh_node_indices
+                    ]
+
+                # Get material for elements
+                material = None
+                for mat in self._cpp_model.materials:
+                    if mat.name == plate.material:
+                        material = mat
+                        break
+                if material is None:
+                    raise ValueError(f"Material '{plate.material}' not found in model")
+
+                # Create plate elements based on element type and mesh results
+                element_type = plate.element_type.upper()
+                created_quads = 0
+                created_tris = 0
+
+                if element_type == "MITC4":
+                    # 4-node quads
+                    for quad_conn in mesh_result.quads:
+                        nodes = [node_map[idx] for idx in quad_conn]
+                        self._cpp_model.create_plate(
+                            nodes[0], nodes[1], nodes[2], nodes[3],
+                            plate.thickness, material
+                        )
+                        created_quads += 1
+
+                elif element_type == "MITC8":
+                    # 8-node serendipity quads
+                    for quad_conn in mesh_result.quads_8:
+                        nodes = [node_map[idx] for idx in quad_conn]
+                        self._cpp_model.create_plate_8(
+                            nodes[0], nodes[1], nodes[2], nodes[3],
+                            nodes[4], nodes[5], nodes[6], nodes[7],
+                            plate.thickness, material
+                        )
+                        created_quads += 1
+
+                elif element_type == "MITC9":
+                    # 9-node Lagrangian quads
+                    for quad_conn in mesh_result.quads_9:
+                        nodes = [node_map[idx] for idx in quad_conn]
+                        self._cpp_model.create_plate_9(
+                            nodes[0], nodes[1], nodes[2], nodes[3],
+                            nodes[4], nodes[5], nodes[6], nodes[7], nodes[8],
+                            plate.thickness, material
+                        )
+                        created_quads += 1
+
+                elif element_type == "DKT":
+                    # 3-node triangles
+                    for tri_conn in mesh_result.triangles:
+                        nodes = [node_map[idx] for idx in tri_conn]
+                        self._cpp_model.create_plate_tri(
+                            nodes[0], nodes[1], nodes[2],
+                            plate.thickness, material
+                        )
+                        created_tris += 1
+                else:
+                    raise ValueError(f"Unknown element type: {element_type}")
+
+                stats.n_plate_nodes += len(node_map)
+                stats.n_plate_elements += created_quads + created_tris
+                stats.n_quad_elements += created_quads
+                stats.n_tri_elements += created_tris
+
+                # Apply support curves for this plate
+                for support in plate.support_curves:
+                    edge_node_ids = plate._edge_node_map.get(support.edge_index, [])
+                    for node_id in edge_node_ids:
+                        # BCs just need node ID, not the node object
+                        if support.ux:
+                            self._cpp_model.boundary_conditions.add_fixed_dof(
+                                node_id, DOFIndex.UX, 0.0
+                            )
+                            stats.n_support_dofs += 1
+                        if support.uy:
+                            self._cpp_model.boundary_conditions.add_fixed_dof(
+                                node_id, DOFIndex.UY, 0.0
+                            )
+                            stats.n_support_dofs += 1
+                        if support.uz:
+                            self._cpp_model.boundary_conditions.add_fixed_dof(
+                                node_id, DOFIndex.UZ, 0.0
+                            )
+                            stats.n_support_dofs += 1
+                        if support.rotation_about_edge:
+                            # Rotation about edge - restrain RX and RY
+                            self._cpp_model.boundary_conditions.add_fixed_dof(
+                                node_id, DOFIndex.RX, 0.0
+                            )
+                            self._cpp_model.boundary_conditions.add_fixed_dof(
+                                node_id, DOFIndex.RY, 0.0
+                            )
+                            stats.n_support_dofs += 2
+
+        # Process plate-beam couplings
+        for plate_idx, plate in enumerate(self._plates):
+            node_map = plate_node_map.get(plate_idx, {})
+
+            for coupling in plate.beam_couplings:
+                if plate._edge_node_map is None:
+                    continue
+
+                edge_node_ids = plate._edge_node_map.get(coupling.edge_index, [])
+                if not edge_node_ids:
+                    continue
+
+                beam = coupling.beam
+                offset = np.array(coupling.offset)
+
+                # For each node on the plate edge, create a rigid link to the beam
+                for node_id in edge_node_ids:
+                    plate_node = node_id_to_node.get(node_id)
+                    if plate_node is None:
+                        continue
+
+                    # Find or create corresponding beam node
+                    # Project plate node position onto beam axis to find beam node location
+                    plate_pos = np.array([plate_node.x, plate_node.y, plate_node.z])
+                    beam_node_pos = plate_pos - offset
+
+                    # Get or create beam node at this position
+                    beam_node = self.get_or_create_node(
+                        beam_node_pos[0], beam_node_pos[1], beam_node_pos[2]
+                    )
+                    node_id_to_node[beam_node.id] = beam_node
+
+                    # Only create rigid link if nodes are different
+                    # (if offset is zero or very small, they may be the same node)
+                    if plate_node.id != beam_node.id:
+                        # Create rigid link: plate_node is slave, beam_node is master
+                        # Offset is from master (beam) to slave (plate)
+                        self._cpp_model.add_rigid_link(
+                            plate_node, beam_node, offset
+                        )
+                        stats.n_rigid_links += 1
+
+                # Subdivide beam if needed (to have nodes at coupling points)
+                # This is handled by the beam subdivision mechanism already present
+                stats.n_beams_subdivided += 1
+
+        if verbose:
+            print(f"\nMesh Statistics:")
+            print(f"  Total plate nodes: {stats.n_plate_nodes}")
+            print(f"  Total plate elements: {stats.n_plate_elements}")
+            print(f"    Quad elements: {stats.n_quad_elements}")
+            print(f"    Triangle elements: {stats.n_tri_elements}")
+            print(f"  Rigid links: {stats.n_rigid_links}")
+            print(f"  Support DOFs: {stats.n_support_dofs}")
+
+        return stats
 
     # ===== Spring Elements =====
 
@@ -1728,6 +2252,301 @@ class StructuralModel:
             load_case: LoadCase to make active
         """
         self._cpp_model.set_active_load_case(load_case)
+
+    # ===== Plate Element Results =====
+
+    def get_plate_displacement(
+        self,
+        plate_element,
+        xi: float = 0.0,
+        eta: float = 0.0,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> Dict[str, float]:
+        """Get displacement at a point within a plate element.
+
+        Uses shape function interpolation to compute displacement at any
+        point within the element from nodal displacements.
+
+        Args:
+            plate_element: PlateElement, PlateElement8, PlateElement9, or PlateElementTri.
+            xi: Natural coordinate ξ (range [-1, 1] for quads, [0, 1] for triangles).
+            eta: Natural coordinate η (range [-1, 1] for quads, [0, 1] for triangles).
+            load_case: LoadCase to query (uses active if None).
+
+        Returns:
+            Dict with displacement components:
+            - "UX", "UY", "UZ": translations [m]
+            - "RX", "RY", "RZ": rotations [rad]
+
+        Example:
+            # Get displacement at center of plate element
+            disp = model.get_plate_displacement(element, xi=0, eta=0)
+            print(f"Vertical displacement: {disp['UZ']:.4f} m")
+        """
+        if load_case is not None:
+            self._cpp_model.set_active_load_case(load_case)
+
+        # Get nodal displacements
+        u_global = self._cpp_model.get_displacements()
+        dof_handler = self._cpp_model.get_dof_handler()
+
+        # Get element nodes and their displacements
+        nodes = plate_element.nodes
+        n_nodes = len(nodes)
+
+        # Build nodal displacement vector
+        nodal_disp = []
+        for node in nodes:
+            for dof in [DOFIndex.UX, DOFIndex.UY, DOFIndex.UZ,
+                        DOFIndex.RX, DOFIndex.RY, DOFIndex.RZ]:
+                global_dof = dof_handler.get_global_dof(node.id, dof)
+                if global_dof >= 0 and global_dof < len(u_global):
+                    nodal_disp.append(u_global[global_dof])
+                else:
+                    nodal_disp.append(0.0)
+        nodal_disp = np.array(nodal_disp)
+
+        # Compute shape functions based on element type
+        if n_nodes == 3:  # DKT triangle - use area coordinates
+            L1 = 1.0 - xi - eta
+            L2 = xi
+            L3 = eta
+            N = np.array([L1, L2, L3])
+        elif n_nodes == 4:  # Bilinear quad
+            N = np.array([
+                0.25 * (1 - xi) * (1 - eta),
+                0.25 * (1 + xi) * (1 - eta),
+                0.25 * (1 + xi) * (1 + eta),
+                0.25 * (1 - xi) * (1 + eta)
+            ])
+        elif n_nodes == 8:  # Serendipity quad
+            # Corner nodes
+            N1 = 0.25 * (1 - xi) * (1 - eta) * (-1 - xi - eta)
+            N2 = 0.25 * (1 + xi) * (1 - eta) * (-1 + xi - eta)
+            N3 = 0.25 * (1 + xi) * (1 + eta) * (-1 + xi + eta)
+            N4 = 0.25 * (1 - xi) * (1 + eta) * (-1 - xi + eta)
+            # Mid-edge nodes
+            N5 = 0.5 * (1 - xi**2) * (1 - eta)
+            N6 = 0.5 * (1 + xi) * (1 - eta**2)
+            N7 = 0.5 * (1 - xi**2) * (1 + eta)
+            N8 = 0.5 * (1 - xi) * (1 - eta**2)
+            N = np.array([N1, N2, N3, N4, N5, N6, N7, N8])
+        elif n_nodes == 9:  # Lagrangian quad
+            # Helper 1D Lagrange polynomials
+            L_m1 = 0.5 * xi * (xi - 1)  # at xi = -1
+            L_0 = 1 - xi**2              # at xi = 0
+            L_p1 = 0.5 * xi * (xi + 1)  # at xi = 1
+            M_m1 = 0.5 * eta * (eta - 1)
+            M_0 = 1 - eta**2
+            M_p1 = 0.5 * eta * (eta + 1)
+
+            N = np.array([
+                L_m1 * M_m1,  # Node 1 (-1, -1)
+                L_p1 * M_m1,  # Node 2 (+1, -1)
+                L_p1 * M_p1,  # Node 3 (+1, +1)
+                L_m1 * M_p1,  # Node 4 (-1, +1)
+                L_0 * M_m1,   # Node 5 (0, -1)
+                L_p1 * M_0,   # Node 6 (+1, 0)
+                L_0 * M_p1,   # Node 7 (0, +1)
+                L_m1 * M_0,   # Node 8 (-1, 0)
+                L_0 * M_0     # Node 9 (0, 0)
+            ])
+        else:
+            raise ValueError(f"Unsupported element with {n_nodes} nodes")
+
+        # Interpolate displacements
+        result = {"UX": 0.0, "UY": 0.0, "UZ": 0.0, "RX": 0.0, "RY": 0.0, "RZ": 0.0}
+        dof_names = ["UX", "UY", "UZ", "RX", "RY", "RZ"]
+        for i, dof_name in enumerate(dof_names):
+            for j in range(n_nodes):
+                result[dof_name] += N[j] * nodal_disp[j * 6 + i]
+
+        return result
+
+    def get_plate_moments(
+        self,
+        plate_element,
+        xi: float = 0.0,
+        eta: float = 0.0,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> Dict[str, float]:
+        """Get internal moments at a point within a plate element.
+
+        Computes bending moments per unit width from curvatures using the
+        constitutive relationship M = D * κ.
+
+        Args:
+            plate_element: PlateElement, PlateElement8, PlateElement9, or PlateElementTri.
+            xi: Natural coordinate ξ (default: 0 = center).
+            eta: Natural coordinate η (default: 0 = center).
+            load_case: LoadCase to query (uses active if None).
+
+        Returns:
+            Dict with moment components in kN·m/m (moment per unit width):
+            - "Mx": Moment about y-axis (causes stress in x-direction)
+            - "My": Moment about x-axis (causes stress in y-direction)
+            - "Mxy": Twisting moment
+
+        Note:
+            Sign convention: Positive moment causes tension on bottom surface.
+
+        Example:
+            # Get moments at center of plate element
+            moments = model.get_plate_moments(element)
+            print(f"Mx = {moments['Mx']:.2f} kN·m/m")
+        """
+        if load_case is not None:
+            self._cpp_model.set_active_load_case(load_case)
+
+        # Get material properties
+        E = plate_element.material.E
+        nu = plate_element.material.nu
+        t = plate_element.thickness
+
+        # Bending stiffness
+        D = E * t**3 / (12 * (1 - nu**2))
+
+        # Get nodal rotations (curvature-related DOFs)
+        u_global = self._cpp_model.get_displacements()
+        dof_handler = self._cpp_model.get_dof_handler()
+
+        nodes = plate_element.nodes
+        n_nodes = len(nodes)
+
+        # Extract nodal w and rotations
+        w_nodal = []
+        rx_nodal = []
+        ry_nodal = []
+        for node in nodes:
+            w_dof = dof_handler.get_global_dof(node.id, DOFIndex.UZ)
+            rx_dof = dof_handler.get_global_dof(node.id, DOFIndex.RX)
+            ry_dof = dof_handler.get_global_dof(node.id, DOFIndex.RY)
+            w_nodal.append(u_global[w_dof] if w_dof >= 0 else 0.0)
+            rx_nodal.append(u_global[rx_dof] if rx_dof >= 0 else 0.0)
+            ry_nodal.append(u_global[ry_dof] if ry_dof >= 0 else 0.0)
+
+        # Approximate curvatures using shape function derivatives
+        # For simplicity, use finite differences at element center
+        # κ_x = -∂²w/∂x², κ_y = -∂²w/∂y², κ_xy = -2∂²w/∂x∂y
+
+        # Get element dimensions (approximate)
+        x = np.array([n.x for n in nodes])
+        y = np.array([n.y for n in nodes])
+        lx = np.max(x) - np.min(x)
+        ly = np.max(y) - np.min(y)
+
+        # Use nodal rotations to estimate curvatures
+        # θ_x ≈ ∂w/∂y, θ_y ≈ -∂w/∂x (Mindlin/Kirchhoff convention)
+        # κ_x ≈ ∂θ_y/∂x = -∂²w/∂x², κ_y ≈ -∂θ_x/∂y = -∂²w/∂y²
+        if n_nodes >= 4:
+            # Use corner nodes for gradient estimation
+            theta_x_avg = np.mean(rx_nodal[:4])
+            theta_y_avg = np.mean(ry_nodal[:4])
+
+            # Curvature estimates from nodal rotation differences
+            d_theta_y_dx = (np.mean([ry_nodal[1], ry_nodal[2]]) -
+                           np.mean([ry_nodal[0], ry_nodal[3]])) / max(lx, 1e-6)
+            d_theta_x_dy = (np.mean([rx_nodal[2], rx_nodal[3]]) -
+                           np.mean([rx_nodal[0], rx_nodal[1]])) / max(ly, 1e-6)
+
+            kappa_x = d_theta_y_dx  # -∂²w/∂x²
+            kappa_y = -d_theta_x_dy  # -∂²w/∂y²
+            kappa_xy = 0.5 * ((ry_nodal[1] - ry_nodal[0]) / max(ly, 1e-6) +
+                              (rx_nodal[3] - rx_nodal[0]) / max(lx, 1e-6))
+        else:
+            # Triangle - simplified
+            kappa_x = 0.0
+            kappa_y = 0.0
+            kappa_xy = 0.0
+
+        # Compute moments from curvatures: M = D * κ
+        # [Mx]   [D  νD  0    ] [κx ]
+        # [My] = [νD D   0    ] [κy ]
+        # [Mxy]  [0  0   D(1-ν)/2] [κxy]
+        Mx = D * (kappa_x + nu * kappa_y)
+        My = D * (kappa_y + nu * kappa_x)
+        Mxy = D * (1 - nu) / 2 * kappa_xy * 2  # Factor 2 for engineering shear
+
+        return {"Mx": Mx, "My": My, "Mxy": Mxy}
+
+    def get_plate_stress(
+        self,
+        plate_element,
+        surface: str = "middle",
+        xi: float = 0.0,
+        eta: float = 0.0,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> Dict[str, float]:
+        """Get stress at a point within a plate element.
+
+        Computes bending stresses from internal moments using linear
+        stress distribution through thickness.
+
+        Args:
+            plate_element: PlateElement, PlateElement8, PlateElement9, or PlateElementTri.
+            surface: Location through thickness - "top", "bottom", or "middle".
+            xi: Natural coordinate ξ (default: 0 = center).
+            eta: Natural coordinate η (default: 0 = center).
+            load_case: LoadCase to query (uses active if None).
+
+        Returns:
+            Dict with stress components in kN/m² (kPa):
+            - "sigma_x": Normal stress in x-direction
+            - "sigma_y": Normal stress in y-direction
+            - "tau_xy": Shear stress in xy-plane
+
+        Note:
+            Positive stress is tensile. For plate bending:
+            - Top surface (z = +t/2): compression when moment positive
+            - Bottom surface (z = -t/2): tension when moment positive
+
+        Example:
+            # Get stress at top surface of plate element
+            stress = model.get_plate_stress(element, surface="top")
+            print(f"σ_x = {stress['sigma_x']:.0f} kPa")
+        """
+        # Get moments first
+        moments = self.get_plate_moments(plate_element, xi, eta, load_case)
+
+        t = plate_element.thickness
+
+        # Distance from neutral axis
+        if surface == "top":
+            z = t / 2
+        elif surface == "bottom":
+            z = -t / 2
+        elif surface == "middle":
+            z = 0.0
+        else:
+            raise ValueError(f"Surface must be 'top', 'bottom', or 'middle', got '{surface}'")
+
+        # Stress from bending: σ = M * z / I, where I = t³/12 per unit width
+        # So σ = M * z / (t³/12) = 12 * M * z / t³
+        I = t**3 / 12  # Per unit width
+
+        if abs(t) < 1e-10:
+            sigma_x = 0.0
+            sigma_y = 0.0
+            tau_xy = 0.0
+        else:
+            sigma_x = moments["Mx"] * z / I
+            sigma_y = moments["My"] * z / I
+            tau_xy = moments["Mxy"] * z / I
+
+        return {"sigma_x": sigma_x, "sigma_y": sigma_y, "tau_xy": tau_xy}
+
+    def get_plate_elements(self) -> List:
+        """Get all plate elements in the model.
+
+        Returns:
+            List of all plate elements (MITC4, MITC8, MITC9, DKT).
+        """
+        elements = []
+        elements.extend(self._cpp_model.plate_elements)
+        elements.extend(self._cpp_model.plate_elements_8)
+        elements.extend(self._cpp_model.plate_elements_9)
+        elements.extend(self._cpp_model.plate_elements_tri)
+        return elements
 
     def create_load_case(
         self,

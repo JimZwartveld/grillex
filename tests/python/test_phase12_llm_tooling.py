@@ -552,3 +552,162 @@ class TestIntegration:
             "rho": 7.85e-3
         })
         assert result.success
+
+
+# Skip plate tests if gmsh is not installed
+gmsh = pytest.importorskip("gmsh")
+
+
+class TestPlateMeshingTools:
+    """Tests for plate meshing LLM tools."""
+
+    def test_plate_meshing_tools_exist(self):
+        """All plate meshing tools should be defined."""
+        tool_names = [t["name"] for t in TOOLS]
+
+        expected = [
+            "add_plate",
+            "set_edge_divisions",
+            "couple_plate_to_beam",
+            "add_support_curve",
+            "mesh_model",
+            "get_plate_displacement",
+            "get_plate_moments",
+            "get_plate_stress"
+        ]
+
+        for name in expected:
+            assert name in tool_names, f"Missing tool: {name}"
+
+    def test_add_plate_tool(self):
+        """Test add_plate tool."""
+        executor = ToolExecutor()
+
+        # Create model and add material
+        executor.execute("create_model", {"name": "PlateTest"})
+        executor.execute("add_material", {
+            "name": "Steel",
+            "E": 210e6,
+            "nu": 0.3,
+            "rho": 7.85e-3
+        })
+
+        # Add a plate
+        result = executor.execute("add_plate", {
+            "corners": [[0, 0, 0], [2, 0, 0], [2, 2, 0], [0, 2, 0]],
+            "thickness": 0.02,
+            "material": "Steel",
+            "mesh_size": 0.5,
+            "element_type": "MITC4"
+        })
+
+        assert result.success
+        assert "plate_name" in result.result
+        assert result.result["n_corners"] == 4
+        assert result.result["element_type"] == "MITC4"
+
+    def test_add_plate_invalid_material(self):
+        """Test add_plate with invalid material."""
+        executor = ToolExecutor()
+        executor.execute("create_model", {"name": "PlateTest"})
+
+        result = executor.execute("add_plate", {
+            "corners": [[0, 0, 0], [2, 0, 0], [2, 2, 0], [0, 2, 0]],
+            "thickness": 0.02,
+            "material": "NonExistent"
+        })
+
+        assert not result.success
+        assert "not found" in result.error.lower()
+
+    def test_set_edge_divisions_tool(self):
+        """Test set_edge_divisions tool."""
+        executor = ToolExecutor()
+
+        # Create model with plate
+        executor.execute("create_model", {"name": "EdgeDivTest"})
+        executor.execute("add_material", {
+            "name": "Steel", "E": 210e6, "nu": 0.3, "rho": 7.85e-3
+        })
+        plate_result = executor.execute("add_plate", {
+            "corners": [[0, 0, 0], [4, 0, 0], [4, 2, 0], [0, 2, 0]],
+            "thickness": 0.02,
+            "material": "Steel",
+            "name": "TestPlate"
+        })
+        plate_name = plate_result.result["plate_name"]
+
+        # Set edge divisions
+        result = executor.execute("set_edge_divisions", {
+            "plate_name": plate_name,
+            "edge_index": 0,
+            "n_elements": 4
+        })
+
+        assert result.success
+        assert result.result["n_elements"] == 4
+
+    def test_add_support_curve_tool(self):
+        """Test add_support_curve tool."""
+        executor = ToolExecutor()
+
+        # Create model with plate
+        executor.execute("create_model", {"name": "SupportTest"})
+        executor.execute("add_material", {
+            "name": "Steel", "E": 210e6, "nu": 0.3, "rho": 7.85e-3
+        })
+        plate_result = executor.execute("add_plate", {
+            "corners": [[0, 0, 0], [2, 0, 0], [2, 2, 0], [0, 2, 0]],
+            "thickness": 0.02,
+            "material": "Steel",
+            "name": "SupportPlate"
+        })
+        plate_name = plate_result.result["plate_name"]
+
+        # Add support on edge
+        result = executor.execute("add_support_curve", {
+            "plate_name": plate_name,
+            "edge_index": 0,
+            "uz": True
+        })
+
+        assert result.success
+        assert "UZ" in result.result["restrained_dofs"]
+
+    def test_mesh_model_tool(self):
+        """Test mesh_model tool."""
+        executor = ToolExecutor()
+
+        # Create model with plate
+        executor.execute("create_model", {"name": "MeshTest"})
+        executor.execute("add_material", {
+            "name": "Steel", "E": 210e6, "nu": 0.3, "rho": 7.85e-3
+        })
+        executor.execute("add_plate", {
+            "corners": [[0, 0, 0], [2, 0, 0], [2, 2, 0], [0, 2, 0]],
+            "thickness": 0.02,
+            "material": "Steel"
+        })
+
+        # Mesh the model
+        result = executor.execute("mesh_model", {})
+
+        assert result.success
+        assert result.result["n_plate_elements"] > 0
+        assert "n_quad_elements" in result.result
+        assert "n_tri_elements" in result.result
+
+    def test_plate_not_found_error(self):
+        """Test error when plate not found."""
+        executor = ToolExecutor()
+        executor.execute("create_model", {"name": "NotFoundTest"})
+
+        result = executor.execute("set_edge_divisions", {
+            "plate_name": "NonExistentPlate",
+            "edge_index": 0,
+            "n_elements": 4
+        })
+
+        assert not result.success
+        assert "not found" in result.error.lower()
+        assert result.suggestion is not None

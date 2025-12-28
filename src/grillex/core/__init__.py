@@ -18,7 +18,7 @@ from .data_types import (
     EndForces, InternalActions, WarpingInternalActions, ActionExtreme,
     ReleaseCombo4DOF, ReleaseCombo2DOF, ReleaseComboWarping, DisplacementLine,
     # Phase 8: Additional Element Types
-    SpringElement, PointMass, PlateElement, LoadingCondition,
+    SpringElement, PointMass, PlateElement, PlateElement8, PlateElement9, PlateElementTri, LoadingCondition,
     # Phase 15: Nonlinear Springs
     SpringBehavior, NonlinearSolverResult, NonlinearInitialState,
     NonlinearSolverSettings, NonlinearSolver,
@@ -35,12 +35,32 @@ from .data_types import (
 
 from .model_wrapper import (
     Beam,
-    StructuralModel
+    StructuralModel,
+    MeshStatistics
 )
 
 from .cargo import (
     Cargo,
     CargoConnection
+)
+
+from .plate import (
+    Plate,
+    EdgeMeshControl,
+    PlateBeamCoupling,
+    SupportCurve
+)
+
+from .element_types import (
+    PlateElementType,
+    ELEMENT_TYPE_INFO,
+    get_element_type,
+    get_element_info,
+    get_available_element_types,
+    create_plate_element,
+    is_quad_element,
+    is_triangle_element,
+    supports_shear_deformation,
 )
 
 __all__ = [
@@ -61,7 +81,7 @@ __all__ = [
     'EndForces', 'InternalActions', 'WarpingInternalActions', 'ActionExtreme',
     'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine',
     # Phase 8: Additional Element Types
-    'SpringElement', 'PointMass', 'PlateElement', 'LoadingCondition',
+    'SpringElement', 'PointMass', 'PlateElement', 'PlateElement8', 'PlateElement9', 'PlateElementTri', 'LoadingCondition',
     # Phase 15: Nonlinear Springs
     'SpringBehavior', 'NonlinearSolverResult', 'NonlinearInitialState',
     'NonlinearSolverSettings', 'NonlinearSolver',
@@ -76,5 +96,12 @@ __all__ = [
     # Phase 16: Eigenvalue Analysis
     'EigensolverMethod', 'EigensolverSettings', 'ModeResult',
     'EigensolverResult', 'EigenvalueSolver',
-    'Beam', 'StructuralModel'
+    # Phase 19: Plate Meshing
+    'Plate', 'EdgeMeshControl', 'PlateBeamCoupling', 'SupportCurve',
+    'Beam', 'StructuralModel', 'MeshStatistics',
+    # Phase 19 (Task 19.6): Element Type Infrastructure
+    'PlateElementType', 'ELEMENT_TYPE_INFO',
+    'get_element_type', 'get_element_info', 'get_available_element_types',
+    'create_plate_element', 'is_quad_element', 'is_triangle_element',
+    'supports_shear_deformation',
 ]

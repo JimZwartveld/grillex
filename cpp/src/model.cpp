@@ -62,6 +62,43 @@ PlateElement* Model::create_plate(Node* n1, Node* n2, Node* n3, Node* n4,
     return ptr;
 }
 
+PlateElement8* Model::create_plate_8(Node* n1, Node* n2, Node* n3, Node* n4,
+                                      Node* n5, Node* n6, Node* n7, Node* n8,
+                                      double thickness, Material* material) {
+    auto plate = std::make_unique<PlateElement8>(next_plate_id_++,
+                                                  n1, n2, n3, n4, n5, n6, n7, n8,
+                                                  thickness, material);
+    PlateElement8* ptr = plate.get();
+    plate_elements_8.push_back(std::move(plate));
+    // Mark as not analyzed
+    analyzed_ = false;
+    return ptr;
+}
+
+PlateElement9* Model::create_plate_9(Node* n1, Node* n2, Node* n3, Node* n4,
+                                      Node* n5, Node* n6, Node* n7, Node* n8, Node* n9,
+                                      double thickness, Material* material) {
+    auto plate = std::make_unique<PlateElement9>(next_plate_id_++,
+                                                  n1, n2, n3, n4, n5, n6, n7, n8, n9,
+                                                  thickness, material);
+    PlateElement9* ptr = plate.get();
+    plate_elements_9.push_back(std::move(plate));
+    // Mark as not analyzed
+    analyzed_ = false;
+    return ptr;
+}
+
+PlateElementTri* Model::create_plate_tri(Node* n1, Node* n2, Node* n3,
+                                          double thickness, Material* material) {
+    auto plate = std::make_unique<PlateElementTri>(next_plate_id_++, n1, n2, n3,
+                                                    thickness, material);
+    PlateElementTri* ptr = plate.get();
+    plate_elements_tri.push_back(std::move(plate));
+    // Mark as not analyzed
+    analyzed_ = false;
+    return ptr;
+}
+
 void Model::add_rigid_link(Node* slave_node, Node* master_node,
                             const Eigen::Vector3d& offset) {
     if (!slave_node || !master_node) {
@@ -169,8 +206,14 @@ bool Model::analyze() {
     total_dofs_ = 0;
 
     try {
-        // Validation
-        if (elements.empty() && spring_elements.empty() && plate_elements.empty()) {
+        // Validation - check all element types
+        bool has_elements = !elements.empty() ||
+                            !spring_elements.empty() ||
+                            !plate_elements.empty() ||
+                            !plate_elements_8.empty() ||
+                            !plate_elements_9.empty() ||
+                            !plate_elements_tri.empty();
+        if (!has_elements) {
             error_msg_ = "Model has no elements";
             return false;
         }
@@ -286,6 +329,7 @@ bool Model::analyze() {
         }
 
         // Add plate element stiffness contributions (to both matrices)
+        // MITC4 (4-node) plate elements
         for (const auto& plate : plate_elements) {
             auto K_plate = plate->global_stiffness_matrix();
 
@@ -312,6 +356,105 @@ bool Model::analyze() {
             }
 
             // Add triplets to both K matrices (plates are always active)
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K_static += K_add;
+            if (has_conditional_springs) {
+                K_dynamic += K_add;
+            }
+        }
+
+        // MITC8 (8-node) plate elements
+        for (const auto& plate : plate_elements_8) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            // Build location array for 48-DOF plate (6 DOFs per node × 8 nodes)
+            std::vector<int> loc(48);
+            for (int node_idx = 0; node_idx < 8; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 48; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 48; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K_static += K_add;
+            if (has_conditional_springs) {
+                K_dynamic += K_add;
+            }
+        }
+
+        // MITC9 (9-node) plate elements
+        for (const auto& plate : plate_elements_9) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            // Build location array for 54-DOF plate (6 DOFs per node × 9 nodes)
+            std::vector<int> loc(54);
+            for (int node_idx = 0; node_idx < 9; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 54; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 54; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K_static += K_add;
+            if (has_conditional_springs) {
+                K_dynamic += K_add;
+            }
+        }
+
+        // DKT (3-node triangular) plate elements
+        for (const auto& plate : plate_elements_tri) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            // Build location array for 18-DOF plate (6 DOFs per node × 3 nodes)
+            std::vector<int> loc(18);
+            for (int node_idx = 0; node_idx < 3; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 18; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 18; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
             Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
             K_add.setFromTriplets(triplets.begin(), triplets.end());
             K_static += K_add;
@@ -493,8 +636,14 @@ bool Model::analyze_nonlinear() {
     total_dofs_ = 0;
 
     try {
-        // Validation
-        if (elements.empty() && spring_elements.empty() && plate_elements.empty()) {
+        // Validation - check all element types
+        bool has_elements = !elements.empty() ||
+                            !spring_elements.empty() ||
+                            !plate_elements.empty() ||
+                            !plate_elements_8.empty() ||
+                            !plate_elements_9.empty() ||
+                            !plate_elements_tri.empty();
+        if (!has_elements) {
             error_msg_ = "Model has no elements";
             return false;
         }
@@ -537,6 +686,7 @@ bool Model::analyze_nonlinear() {
         Eigen::SparseMatrix<double> K_base = assembler_->assemble_stiffness(elem_ptrs);
 
         // Add plate element stiffness to base
+        // MITC4 (4-node) plate elements
         for (const auto& plate : plate_elements) {
             auto K_plate = plate->global_stiffness_matrix();
 
@@ -552,6 +702,93 @@ bool Model::analyze_nonlinear() {
             for (int i = 0; i < 24; ++i) {
                 if (loc[i] < 0) continue;
                 for (int j = 0; j < 24; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K_base += K_add;
+        }
+
+        // MITC8 (8-node) plate elements
+        for (const auto& plate : plate_elements_8) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            std::vector<int> loc(48);
+            for (int node_idx = 0; node_idx < 8; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 48; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 48; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K_base += K_add;
+        }
+
+        // MITC9 (9-node) plate elements
+        for (const auto& plate : plate_elements_9) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            std::vector<int> loc(54);
+            for (int node_idx = 0; node_idx < 9; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 54; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 54; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K_base += K_add;
+        }
+
+        // DKT (3-node triangular) plate elements
+        for (const auto& plate : plate_elements_tri) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            std::vector<int> loc(18);
+            for (int node_idx = 0; node_idx < 3; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 18; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 18; ++j) {
                     if (loc[j] < 0) continue;
                     double val = K_plate(i, j);
                     if (std::abs(val) > 1e-20) {
@@ -672,8 +909,14 @@ LoadCombinationResult Model::analyze_combination(
     LoadCombinationResult result;
 
     try {
-        // Validation
-        if (elements.empty() && spring_elements.empty() && plate_elements.empty()) {
+        // Validation - check all element types
+        bool has_elements = !elements.empty() ||
+                            !spring_elements.empty() ||
+                            !plate_elements.empty() ||
+                            !plate_elements_8.empty() ||
+                            !plate_elements_9.empty() ||
+                            !plate_elements_tri.empty();
+        if (!has_elements) {
             result.message = "Model has no elements";
             return result;
         }
@@ -718,6 +961,7 @@ LoadCombinationResult Model::analyze_combination(
         Eigen::SparseMatrix<double> K_base = assembler_->assemble_stiffness(elem_ptrs);
 
         // Add plate element stiffness to base
+        // MITC4 (4-node) plate elements
         for (const auto& plate : plate_elements) {
             auto K_plate = plate->global_stiffness_matrix();
 
@@ -733,6 +977,93 @@ LoadCombinationResult Model::analyze_combination(
             for (int i = 0; i < 24; ++i) {
                 if (loc[i] < 0) continue;
                 for (int j = 0; j < 24; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K_base += K_add;
+        }
+
+        // MITC8 (8-node) plate elements
+        for (const auto& plate : plate_elements_8) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            std::vector<int> loc(48);
+            for (int node_idx = 0; node_idx < 8; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 48; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 48; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K_base += K_add;
+        }
+
+        // MITC9 (9-node) plate elements
+        for (const auto& plate : plate_elements_9) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            std::vector<int> loc(54);
+            for (int node_idx = 0; node_idx < 9; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 54; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 54; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K_base += K_add;
+        }
+
+        // DKT (3-node triangular) plate elements
+        for (const auto& plate : plate_elements_tri) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            std::vector<int> loc(18);
+            for (int node_idx = 0; node_idx < 3; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 18; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 18; ++j) {
                     if (loc[j] < 0) continue;
                     double val = K_plate(i, j);
                     if (std::abs(val) > 1e-20) {
@@ -947,6 +1278,9 @@ void Model::clear() {
     spring_elements.clear();
     point_masses.clear();
     plate_elements.clear();
+    plate_elements_8.clear();
+    plate_elements_9.clear();
+    plate_elements_tri.clear();
     load_cases_.clear();
     boundary_conditions.clear();
 
@@ -977,8 +1311,13 @@ bool Model::analyze_eigenvalues(const EigensolverSettings& settings) {
     error_msg_ = "";
 
     try {
-        // Validation
-        if (elements.empty() && plate_elements.empty()) {
+        // Validation - check all element types
+        bool has_structural_elements = !elements.empty() ||
+                                       !plate_elements.empty() ||
+                                       !plate_elements_8.empty() ||
+                                       !plate_elements_9.empty() ||
+                                       !plate_elements_tri.empty();
+        if (!has_structural_elements) {
             error_msg_ = "Model has no structural elements for eigenvalue analysis";
             return false;
         }
@@ -1048,6 +1387,7 @@ bool Model::analyze_eigenvalues(const EigensolverSettings& settings) {
         }
 
         // Add plate element stiffness
+        // MITC4 (4-node) plate elements
         for (const auto& plate : plate_elements) {
             auto K_plate = plate->global_stiffness_matrix();
 
@@ -1063,6 +1403,93 @@ bool Model::analyze_eigenvalues(const EigensolverSettings& settings) {
             for (int i = 0; i < 24; ++i) {
                 if (loc[i] < 0) continue;
                 for (int j = 0; j < 24; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K += K_add;
+        }
+
+        // MITC8 (8-node) plate elements
+        for (const auto& plate : plate_elements_8) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            std::vector<int> loc(48);
+            for (int node_idx = 0; node_idx < 8; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 48; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 48; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K += K_add;
+        }
+
+        // MITC9 (9-node) plate elements
+        for (const auto& plate : plate_elements_9) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            std::vector<int> loc(54);
+            for (int node_idx = 0; node_idx < 9; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 54; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 54; ++j) {
+                    if (loc[j] < 0) continue;
+                    double val = K_plate(i, j);
+                    if (std::abs(val) > 1e-20) {
+                        triplets.emplace_back(loc[i], loc[j], val);
+                    }
+                }
+            }
+
+            Eigen::SparseMatrix<double> K_add(total_dofs_, total_dofs_);
+            K_add.setFromTriplets(triplets.begin(), triplets.end());
+            K += K_add;
+        }
+
+        // DKT (3-node triangular) plate elements
+        for (const auto& plate : plate_elements_tri) {
+            auto K_plate = plate->global_stiffness_matrix();
+
+            std::vector<int> loc(18);
+            for (int node_idx = 0; node_idx < 3; ++node_idx) {
+                for (int dof = 0; dof < 6; ++dof) {
+                    loc[node_idx * 6 + dof] = dof_handler_.get_global_dof(
+                        plate->nodes[node_idx]->id, dof);
+                }
+            }
+
+            std::vector<Eigen::Triplet<double>> triplets;
+            for (int i = 0; i < 18; ++i) {
+                if (loc[i] < 0) continue;
+                for (int j = 0; j < 18; ++j) {
                     if (loc[j] < 0) continue;
                     double val = K_plate(i, j);
                     if (std::abs(val) > 1e-20) {

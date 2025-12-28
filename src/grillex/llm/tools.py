@@ -756,6 +756,214 @@ TOOLS: List[Dict[str, Any]] = [
             "required": []
         }
     },
+
+    # =========================================================================
+    # Plate Meshing (Phase 19)
+    # =========================================================================
+    {
+        "name": "add_plate",
+        "description": "Add a plate region to the model defined by corner points. The plate will be meshed when mesh() is called. Requires gmsh to be installed.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "corners": {
+                    "type": "array",
+                    "items": {"type": "array", "items": {"type": "number"}},
+                    "description": "List of [x, y, z] corner coordinates in meters. At least 3 corners for triangular plate, 4 for quadrilateral."
+                },
+                "thickness": {
+                    "type": "number",
+                    "description": "Plate thickness in meters"
+                },
+                "material": {
+                    "type": "string",
+                    "description": "Name of material to use (must already exist in model)"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Optional name for the plate"
+                },
+                "mesh_size": {
+                    "type": "number",
+                    "description": "Target element size in meters (default 0.5)"
+                },
+                "element_type": {
+                    "type": "string",
+                    "enum": ["MITC4", "MITC8", "MITC9", "DKT"],
+                    "description": "Plate element type. MITC4 (default) is a 4-node Mindlin plate. DKT is a 3-node thin plate (Kirchhoff)."
+                }
+            },
+            "required": ["corners", "thickness", "material"]
+        }
+    },
+    {
+        "name": "set_edge_divisions",
+        "description": "Set number of elements along a plate edge for structured meshing. Takes precedence over mesh_size.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "plate_name": {
+                    "type": "string",
+                    "description": "Name of the plate"
+                },
+                "edge_index": {
+                    "type": "integer",
+                    "description": "Edge index (0-based, edge i goes from corner i to corner i+1)"
+                },
+                "n_elements": {
+                    "type": "integer",
+                    "description": "Number of elements along this edge"
+                }
+            },
+            "required": ["plate_name", "edge_index", "n_elements"]
+        }
+    },
+    {
+        "name": "couple_plate_to_beam",
+        "description": "Couple a plate edge to a beam using rigid links. Use when plate edge is offset from beam centroid.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "plate_name": {
+                    "type": "string",
+                    "description": "Name of the plate"
+                },
+                "edge_index": {
+                    "type": "integer",
+                    "description": "Edge index (0-based)"
+                },
+                "beam_name": {
+                    "type": "string",
+                    "description": "Name of the beam to couple to"
+                },
+                "offset": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "description": "[dx, dy, dz] offset from plate edge to beam centroid in meters"
+                }
+            },
+            "required": ["plate_name", "edge_index", "beam_name"]
+        }
+    },
+    {
+        "name": "add_support_curve",
+        "description": "Add boundary condition support along a plate edge. Apply after meshing or during mesh.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "plate_name": {
+                    "type": "string",
+                    "description": "Name of the plate"
+                },
+                "edge_index": {
+                    "type": "integer",
+                    "description": "Edge index (0-based)"
+                },
+                "ux": {
+                    "type": "boolean",
+                    "description": "Restrain X translation (default false)"
+                },
+                "uy": {
+                    "type": "boolean",
+                    "description": "Restrain Y translation (default false)"
+                },
+                "uz": {
+                    "type": "boolean",
+                    "description": "Restrain Z translation (default false)"
+                },
+                "rotation_about_edge": {
+                    "type": "boolean",
+                    "description": "Restrain rotation about the edge (default false)"
+                }
+            },
+            "required": ["plate_name", "edge_index"]
+        }
+    },
+    {
+        "name": "mesh_model",
+        "description": "Generate mesh for all plates and apply boundary conditions. Call after defining plates and supports, before analysis.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "verbose": {
+                    "type": "boolean",
+                    "description": "Print meshing progress (default false)"
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_plate_displacement",
+        "description": "Get displacement at a point within a plate element after analysis.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "element_id": {
+                    "type": "integer",
+                    "description": "Plate element ID"
+                },
+                "xi": {
+                    "type": "number",
+                    "description": "Natural coordinate xi (-1 to 1 for quads, 0 to 1 for triangles). Default 0."
+                },
+                "eta": {
+                    "type": "number",
+                    "description": "Natural coordinate eta (-1 to 1 for quads, 0 to 1 for triangles). Default 0."
+                }
+            },
+            "required": ["element_id"]
+        }
+    },
+    {
+        "name": "get_plate_moments",
+        "description": "Get internal bending moments at a point within a plate element after analysis.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "element_id": {
+                    "type": "integer",
+                    "description": "Plate element ID"
+                },
+                "xi": {
+                    "type": "number",
+                    "description": "Natural coordinate xi. Default 0."
+                },
+                "eta": {
+                    "type": "number",
+                    "description": "Natural coordinate eta. Default 0."
+                }
+            },
+            "required": ["element_id"]
+        }
+    },
+    {
+        "name": "get_plate_stress",
+        "description": "Get stress at a point within a plate element after analysis.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "element_id": {
+                    "type": "integer",
+                    "description": "Plate element ID"
+                },
+                "surface": {
+                    "type": "string",
+                    "enum": ["top", "bottom", "middle"],
+                    "description": "Surface to evaluate stress at (default 'top')"
+                },
+                "xi": {
+                    "type": "number",
+                    "description": "Natural coordinate xi. Default 0."
+                },
+                "eta": {
+                    "type": "number",
+                    "description": "Natural coordinate eta. Default 0."
+                }
+            },
+            "required": ["element_id"]
+        }
+    },
 ]
 
 
@@ -854,6 +1062,18 @@ class ToolExecutor:
                 return "Run analyze_modes first to compute natural frequencies and mode shapes."
         if "mode" in error_str and "not found" in error_str:
             return "The requested mode number is out of range. Check how many modes were computed."
+
+        # Plate meshing errors
+        if "plate" in error_str and "not found" in error_str:
+            return "Use add_plate tool first to create a plate, then refer to it by the returned plate_name."
+        if "edge" in error_str and ("index" in error_str or "out of range" in error_str):
+            return "Edge index is 0-based. For a quad plate, use 0-3; for a triangle, use 0-2."
+        if "coplanar" in error_str:
+            return "Plate corner points must all lie in the same plane. Check the z-coordinates."
+        if "mesh" in error_str and ("fail" in error_str or "error" in error_str):
+            return "Mesh generation failed. Try using a coarser mesh_size or check that the plate geometry is valid."
+        if "gmsh" in error_str:
+            return "Gmsh meshing error. Ensure gmsh is installed (pip install gmsh) and plate geometry is valid."
 
         return None
 
@@ -1841,6 +2061,332 @@ class ToolExecutor:
                 "cargo_id": cargo_id,
                 "name": removed_cargo.name,
                 "message": f"Cargo '{removed_cargo.name}' removed from model. Note: underlying elements may remain. Re-analysis required."
+            }
+        )
+
+    # ===== Plate Meshing Tools =====
+
+    def _tool_add_plate(self, params: Dict[str, Any]) -> ToolResult:
+        """Add a plate region to the model."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        plate = self.model.add_plate(
+            corners=params["corners"],
+            thickness=params["thickness"],
+            material=params["material"],
+            mesh_size=params.get("mesh_size", 0.5),
+            element_type=params.get("element_type", "MITC4"),
+            name=params.get("name")
+        )
+
+        return ToolResult(
+            success=True,
+            result={
+                "plate_name": plate.name,
+                "n_corners": len(plate.corners),
+                "element_type": plate.element_type,
+                "thickness": plate.thickness,
+                "message": f"Plate '{plate.name}' created with {len(plate.corners)} corners"
+            }
+        )
+
+    def _tool_set_edge_divisions(self, params: Dict[str, Any]) -> ToolResult:
+        """Set edge divisions for structured meshing."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        plate_name = params["plate_name"]
+        plates = self.model.get_plates()
+        plate = None
+        for p in plates:
+            if p.name == plate_name:
+                plate = p
+                break
+
+        if plate is None:
+            return ToolResult(
+                success=False,
+                error=f"Plate '{plate_name}' not found",
+                suggestion=f"Available plates: {[p.name for p in plates]}"
+            )
+
+        self.model.set_edge_divisions(
+            plate=plate,
+            edge_index=params["edge_index"],
+            n_elements=params["n_elements"]
+        )
+
+        return ToolResult(
+            success=True,
+            result={
+                "plate_name": plate_name,
+                "edge_index": params["edge_index"],
+                "n_elements": params["n_elements"],
+                "message": f"Edge {params['edge_index']} set to {params['n_elements']} elements"
+            }
+        )
+
+    def _tool_couple_plate_to_beam(self, params: Dict[str, Any]) -> ToolResult:
+        """Couple a plate edge to a beam."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        # Find plate
+        plate_name = params["plate_name"]
+        plates = self.model.get_plates()
+        plate = None
+        for p in plates:
+            if p.name == plate_name:
+                plate = p
+                break
+
+        if plate is None:
+            return ToolResult(
+                success=False,
+                error=f"Plate '{plate_name}' not found",
+                suggestion=f"Available plates: {[p.name for p in plates]}"
+            )
+
+        # Find beam
+        beam_id = params["beam_id"]
+        beam = None
+        for b in self.model.beams:
+            if b.beam_id == beam_id:
+                beam = b
+                break
+
+        if beam is None:
+            return ToolResult(
+                success=False,
+                error=f"Beam with ID {beam_id} not found",
+                suggestion=f"Available beam IDs: {[b.beam_id for b in self.model.beams]}"
+            )
+
+        offset = params.get("offset")
+        releases = params.get("releases")
+
+        coupling = self.model.couple_plate_to_beam(
+            plate=plate,
+            edge_index=params["edge_index"],
+            beam=beam,
+            offset=offset,
+            releases=releases
+        )
+
+        return ToolResult(
+            success=True,
+            result={
+                "plate_name": plate_name,
+                "edge_index": params["edge_index"],
+                "beam_id": beam_id,
+                "has_offset": offset is not None,
+                "message": f"Plate edge {params['edge_index']} coupled to beam {beam_id}"
+            }
+        )
+
+    def _tool_add_support_curve(self, params: Dict[str, Any]) -> ToolResult:
+        """Add a support along a plate edge."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        plate_name = params["plate_name"]
+        plates = self.model.get_plates()
+        plate = None
+        for p in plates:
+            if p.name == plate_name:
+                plate = p
+                break
+
+        if plate is None:
+            return ToolResult(
+                success=False,
+                error=f"Plate '{plate_name}' not found",
+                suggestion=f"Available plates: {[p.name for p in plates]}"
+            )
+
+        support = self.model.add_support_curve(
+            plate=plate,
+            edge_index=params["edge_index"],
+            ux=params.get("ux", False),
+            uy=params.get("uy", False),
+            uz=params.get("uz", False),
+            rotation_about_edge=params.get("rotation_about_edge", False)
+        )
+
+        restrained = []
+        if params.get("ux", False):
+            restrained.append("UX")
+        if params.get("uy", False):
+            restrained.append("UY")
+        if params.get("uz", False):
+            restrained.append("UZ")
+        if params.get("rotation_about_edge", False):
+            restrained.append("R_EDGE")
+
+        return ToolResult(
+            success=True,
+            result={
+                "plate_name": plate_name,
+                "edge_index": params["edge_index"],
+                "restrained_dofs": restrained,
+                "message": f"Support added to edge {params['edge_index']}: {', '.join(restrained) or 'none'}"
+            }
+        )
+
+    def _tool_mesh_model(self, params: Dict[str, Any]) -> ToolResult:
+        """Mesh all plates in the model."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        verbose = params.get("verbose", False)
+
+        stats = self.model.mesh(verbose=verbose)
+
+        return ToolResult(
+            success=True,
+            result={
+                "n_plate_nodes": stats.n_plate_nodes,
+                "n_plate_elements": stats.n_plate_elements,
+                "n_quad_elements": stats.n_quad_elements,
+                "n_tri_elements": stats.n_tri_elements,
+                "n_support_dofs": stats.n_support_dofs,
+                "n_rigid_links": stats.n_rigid_links,
+                "message": f"Meshed {stats.n_plate_elements} plate elements ({stats.n_quad_elements} quad, {stats.n_tri_elements} tri)"
+            }
+        )
+
+    def _tool_get_plate_displacement(self, params: Dict[str, Any]) -> ToolResult:
+        """Get displacement at a point within a plate element."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+        if not self.model.is_analyzed():
+            return ToolResult(success=False, error="Model not analyzed. Call analyze first.")
+
+        element_id = params["element_id"]
+        xi = params.get("xi", 0.0)
+        eta = params.get("eta", 0.0)
+
+        # Find element by ID
+        element = None
+        for elem in self.model.get_plate_elements():
+            if elem.id == element_id:
+                element = elem
+                break
+
+        if element is None:
+            elements = self.model.get_plate_elements()
+            return ToolResult(
+                success=False,
+                error=f"Plate element with ID {element_id} not found",
+                suggestion=f"Available element IDs: {[e.id for e in elements[:10]]}{'...' if len(elements) > 10 else ''}"
+            )
+
+        disp = self.model.get_plate_displacement(element, xi=xi, eta=eta)
+
+        return ToolResult(
+            success=True,
+            result={
+                "element_id": element_id,
+                "xi": xi,
+                "eta": eta,
+                "displacements": {
+                    "UX": float(disp["UX"]),
+                    "UY": float(disp["UY"]),
+                    "UZ": float(disp["UZ"]),
+                    "RX": float(disp["RX"]),
+                    "RY": float(disp["RY"]),
+                    "RZ": float(disp["RZ"])
+                },
+                "units": {"translations": "m", "rotations": "rad"}
+            }
+        )
+
+    def _tool_get_plate_moments(self, params: Dict[str, Any]) -> ToolResult:
+        """Get bending moments at a point within a plate element."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+        if not self.model.is_analyzed():
+            return ToolResult(success=False, error="Model not analyzed. Call analyze first.")
+
+        element_id = params["element_id"]
+        xi = params.get("xi", 0.0)
+        eta = params.get("eta", 0.0)
+
+        # Find element by ID
+        element = None
+        for elem in self.model.get_plate_elements():
+            if elem.id == element_id:
+                element = elem
+                break
+
+        if element is None:
+            elements = self.model.get_plate_elements()
+            return ToolResult(
+                success=False,
+                error=f"Plate element with ID {element_id} not found",
+                suggestion=f"Available element IDs: {[e.id for e in elements[:10]]}{'...' if len(elements) > 10 else ''}"
+            )
+
+        moments = self.model.get_plate_moments(element, xi=xi, eta=eta)
+
+        return ToolResult(
+            success=True,
+            result={
+                "element_id": element_id,
+                "xi": xi,
+                "eta": eta,
+                "moments": {
+                    "Mx": float(moments["Mx"]),
+                    "My": float(moments["My"]),
+                    "Mxy": float(moments["Mxy"])
+                },
+                "units": "kN·m/m"
+            }
+        )
+
+    def _tool_get_plate_stress(self, params: Dict[str, Any]) -> ToolResult:
+        """Get stress at a point within a plate element."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+        if not self.model.is_analyzed():
+            return ToolResult(success=False, error="Model not analyzed. Call analyze first.")
+
+        element_id = params["element_id"]
+        surface = params.get("surface", "top")
+        xi = params.get("xi", 0.0)
+        eta = params.get("eta", 0.0)
+
+        # Find element by ID
+        element = None
+        for elem in self.model.get_plate_elements():
+            if elem.id == element_id:
+                element = elem
+                break
+
+        if element is None:
+            elements = self.model.get_plate_elements()
+            return ToolResult(
+                success=False,
+                error=f"Plate element with ID {element_id} not found",
+                suggestion=f"Available element IDs: {[e.id for e in elements[:10]]}{'...' if len(elements) > 10 else ''}"
+            )
+
+        stress = self.model.get_plate_stress(element, surface=surface, xi=xi, eta=eta)
+
+        return ToolResult(
+            success=True,
+            result={
+                "element_id": element_id,
+                "surface": surface,
+                "xi": xi,
+                "eta": eta,
+                "stress": {
+                    "sigma_x": float(stress["sigma_x"]),
+                    "sigma_y": float(stress["sigma_y"]),
+                    "tau_xy": float(stress["tau_xy"])
+                },
+                "units": "kN/m²"
             }
         )
 
