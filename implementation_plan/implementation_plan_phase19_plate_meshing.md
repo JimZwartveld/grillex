@@ -1881,6 +1881,76 @@ Implement functions to convert beam elements into plate representations. This en
 
 ---
 
+### Task 19.15: I-Section to Plates Conversion (Future)
+
+**Requirements:** R-MOD-009
+**Dependencies:** Task 19.14, sectionbuilder package integration
+**Difficulty:** Medium
+**Status:** Planned (awaiting sectionbuilder integration)
+
+**Description:**
+Extend beam-to-plate conversion to automatically create web and flange plates from I-section geometry. This requires integration with the `sectionbuilder` package which provides section geometry (h, b, tw, tf) in addition to section properties (A, Iy, Iz, J).
+
+**Planned Features:**
+
+1. `convert_beam_to_i_section_plates()` method:
+   ```python
+   def convert_beam_to_i_section_plates(
+       self,
+       beam: Beam,
+       mesh_size: float = 0.5,
+       couple_plates: bool = True
+   ) -> List[Plate]:
+       """Convert beam with I-section to web + flange plates.
+
+       Creates 3 plates:
+       - Web (vertical plate, height = h - 2*tf, thickness = tw)
+       - Top flange (horizontal plate at top, width = b, thickness = tf)
+       - Bottom flange (horizontal plate at bottom, width = b, thickness = tf)
+
+       Requires section geometry from sectionbuilder package.
+       """
+   ```
+
+2. Support for other section types:
+   - Box sections → 4 plates (top, bottom, 2 webs)
+   - C-sections → 3 plates (web + 2 flanges)
+   - Custom sections → user-defined plate decomposition
+
+3. Automatic plate coupling at junctions (web-flange connections)
+
+4. Integration with sectionbuilder:
+   ```python
+   from sectionbuilder import ISection
+   from grillex.core import StructuralModel, section_from_builder
+
+   # Create section with full geometry
+   ipe300 = ISection(name="IPE300", h=0.300, b=0.150, tw=0.0071, tf=0.0107)
+   model.add_section(section_from_builder(ipe300))
+
+   # Create beam and convert to plates
+   beam = model.add_beam_by_coords([0,0,0], [10,0,0], "IPE300", "Steel")
+   plates = model.convert_beam_to_i_section_plates(beam)
+   # Returns [web_plate, top_flange_plate, bottom_flange_plate]
+   ```
+
+**Acceptance Criteria:**
+- [ ] `section_from_builder()` creates grillex Section from sectionbuilder section
+- [ ] Section stores geometry reference for plate conversion
+- [ ] `convert_beam_to_i_section_plates()` creates correct web and flange plates
+- [ ] Plates are correctly positioned relative to beam centroid
+- [ ] Optional coupling between plates at junctions
+- [ ] Support for I, Box, and C sections
+- [ ] LLM tool schema for I-section conversion
+- [ ] Unit tests with geometry verification
+
+**Notes:**
+- Requires `sectionbuilder` package as optional dependency
+- sectionbuilder provides dashboard interface and MCP server for section design
+- Integration approach: import as dependency (not merged repos) for modularity
+
+---
+
 ## Summary
 
 Phase 19 introduces comprehensive plate meshing capabilities:
@@ -1897,6 +1967,7 @@ Phase 19 introduces comprehensive plate meshing capabilities:
 | Support Curves | Boundary conditions along edges |
 | Unified Meshing | Single mesh() for plates and beams |
 | Beam-to-Plate Conversion | Convert beams to plate representations |
+| I-Section to Plates (Planned) | Auto-create web + flanges from section geometry (requires sectionbuilder) |
 
 **Key Design Decisions:**
 1. **Gmsh for meshing** - Proven library with quad recombination
