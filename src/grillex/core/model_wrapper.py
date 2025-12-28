@@ -65,6 +65,8 @@ from grillex._grillex_cpp import (
 )
 
 from .cargo import Cargo, CargoConnection
+from .plate import Plate, EdgeMeshControl
+from .element_types import get_element_type
 
 
 class Beam:
@@ -639,6 +641,7 @@ class StructuralModel:
         self._cpp_model = _CppModel(node_tolerance=node_tolerance)
         self.beams: List[Beam] = []
         self.cargos: List[Cargo] = []
+        self._plates: List[Plate] = []
         self._materials: dict[str, _CppMaterial] = {}
         self._sections: dict[str, _CppSection] = {}
         self._node_map: dict[Tuple[float, float, float], Node] = {}
@@ -905,6 +908,107 @@ class StructuralModel:
             List of PlateElement objects.
         """
         return list(self._cpp_model.plate_elements)
+
+    # ===== Plate Geometry (for meshing) =====
+
+    def add_plate(
+        self,
+        corners: List[List[float]],
+        thickness: float,
+        material: str,
+        mesh_size: float = 0.5,
+        element_type: str = "MITC4",
+        name: Optional[str] = None
+    ) -> Plate:
+        """Add a plate region to the model.
+
+        The plate is defined by 3 or more corner points forming a closed polygon.
+        The plate will be meshed when mesh() is called.
+
+        Args:
+            corners: List of [x, y, z] coordinates for plate corners.
+                Must have at least 3 points. Counter-clockwise when viewed
+                from the positive normal direction.
+            thickness: Plate thickness in meters.
+            material: Name of material to use.
+            mesh_size: Target element size in meters (default 0.5m).
+            element_type: Element type: "MITC4", "MITC8", "MITC9", or "DKT".
+            name: Optional name for the plate.
+
+        Returns:
+            The created Plate object.
+
+        Raises:
+            ValueError: If material not found, invalid geometry, or unknown element type.
+
+        Example:
+            # Create a 4m x 2m horizontal plate
+            plate = model.add_plate(
+                corners=[[0, 0, 0], [4, 0, 0], [4, 2, 0], [0, 2, 0]],
+                thickness=0.02,
+                material="Steel",
+                mesh_size=0.5
+            )
+        """
+        # Validate material exists
+        if self.get_material(material) is None:
+            raise ValueError(f"Material '{material}' not found. Add it first with add_material().")
+
+        # Validate element type
+        get_element_type(element_type)  # Raises ValueError if invalid
+
+        # Create the plate
+        plate = Plate(
+            corners=corners,
+            thickness=thickness,
+            material=material,
+            mesh_size=mesh_size,
+            element_type=element_type,
+            name=name or f"Plate_{len(self._plates) + 1}"
+        )
+
+        # Validate geometry
+        if not plate.is_planar():
+            raise ValueError("Plate corners must be coplanar")
+
+        self._plates.append(plate)
+        return plate
+
+    def set_edge_divisions(
+        self,
+        plate: Plate,
+        edge_index: int,
+        n_elements: int
+    ) -> None:
+        """Set the number of elements along a plate edge.
+
+        Edge divisions take precedence over mesh_size for that edge.
+        For structured quad meshes, opposite edges must have matching divisions.
+
+        Args:
+            plate: The Plate object.
+            edge_index: Edge index (0 = from corner[0] to corner[1], etc.)
+            n_elements: Number of elements along the edge.
+
+        Raises:
+            ValueError: If edge_index out of range or n_elements < 1.
+        """
+        if edge_index < 0 or edge_index >= plate.n_edges:
+            raise ValueError(
+                f"Edge index {edge_index} out of range [0, {plate.n_edges})"
+            )
+        if n_elements < 1:
+            raise ValueError("n_elements must be at least 1")
+
+        plate.edge_controls[edge_index] = EdgeMeshControl(n_elements=n_elements)
+
+    def get_plates(self) -> List[Plate]:
+        """Return all plates (geometry regions) in the model.
+
+        Returns:
+            List of Plate objects defining plate regions.
+        """
+        return list(self._plates)
 
     # ===== Spring Elements =====
 

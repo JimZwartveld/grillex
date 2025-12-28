@@ -1021,13 +1021,13 @@ Add methods to StructuralModel for creating plates (geometry) and controlling me
    ```
 
 **Acceptance Criteria:**
-- [ ] `add_plate()` creates Plate object and stores in model
-- [ ] Validates material exists
-- [ ] Validates plate is planar
-- [ ] `set_edge_divisions()` sets per-edge element count
-- [ ] Edge division validates edge index and n_elements
-- [ ] `get_plates()` returns all plates
-- [ ] Unit tests pass
+- [x] `add_plate()` creates Plate object and stores in model
+- [x] Validates material exists
+- [x] Validates plate is planar
+- [x] `set_edge_divisions()` sets per-edge element count
+- [x] Edge division validates edge index and n_elements
+- [x] `get_plates()` returns all plates
+- [x] Unit tests pass
 
 ---
 
