@@ -840,6 +840,72 @@ class StructuralModel:
                 return cargo
         return None
 
+    # ===== Plate Elements =====
+
+    def add_plate_element(
+        self,
+        node1: List[float],
+        node2: List[float],
+        node3: List[float],
+        node4: List[float],
+        thickness: float,
+        material: str
+    ) -> "PlateElement":
+        """Add a single 4-node plate element to the model.
+
+        Creates a MITC4 Mindlin plate element for bending analysis.
+        Nodes should be ordered counter-clockwise when viewed from
+        the positive normal direction.
+
+        Node numbering (natural coordinates):
+           4 (-1,+1) -------- 3 (+1,+1)
+               |                  |
+               |     (0,0)        |
+               |                  |
+           1 (-1,-1) -------- 2 (+1,-1)
+
+        Args:
+            node1: Corner 1 coordinates [x, y, z] in meters.
+            node2: Corner 2 coordinates [x, y, z] in meters.
+            node3: Corner 3 coordinates [x, y, z] in meters.
+            node4: Corner 4 coordinates [x, y, z] in meters.
+            thickness: Plate thickness in meters.
+            material: Name of material to use.
+
+        Returns:
+            The created PlateElement object.
+
+        Raises:
+            ValueError: If material not found.
+
+        Example:
+            # Create a 2m x 1m horizontal plate
+            plate = model.add_plate_element(
+                [0, 0, 0], [2, 0, 0], [2, 1, 0], [0, 1, 0],
+                thickness=0.02,
+                material="Steel"
+            )
+        """
+        mat = self.get_material(material)
+        if mat is None:
+            raise ValueError(f"Material '{material}' not found. Add it first with add_material().")
+
+        n1 = self.get_or_create_node(*node1)
+        n2 = self.get_or_create_node(*node2)
+        n3 = self.get_or_create_node(*node3)
+        n4 = self.get_or_create_node(*node4)
+
+        plate = self._cpp_model.create_plate(n1, n2, n3, n4, thickness, mat)
+        return plate
+
+    def get_plate_elements(self) -> List:
+        """Return all plate elements in the model.
+
+        Returns:
+            List of PlateElement objects.
+        """
+        return list(self._cpp_model.plate_elements)
+
     # ===== Spring Elements =====
 
     def add_spring(

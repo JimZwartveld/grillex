@@ -15,7 +15,7 @@ This document provides a detailed, step-by-step implementation plan for building
 
 ## Phases Overview
 
-The implementation plan is organized into 18 phases:
+The implementation plan is organized into 19 phases:
 
 ### Phase 0: Project Setup & Infrastructure
 **Requirements:** R-ARCH-001, R-DEV-001, R-DEV-003 **Dependencies:** None **Difficulty:** Low **Description:** Create the basic project directory structure.
@@ -130,4 +130,9 @@ The implementation plan is organized into 18 phases:
 **Requirements:** User feedback from Phase 17 **Dependencies:** Phase 17 **Difficulty:** High **Description:** UX improvements based on user testing feedback. Key changes include: Z-up coordinate system, right-click context menus for all element creation/editing, cargo and load combination support, active load case selection, flexible support DOF configuration, model invalidation on changes, searchable settings panel, and aligning frontend types directly with C++ Model class structure.
 
 → [See full Phase 18 details](implementation_plan_phase18.md)
+
+### Phase 19: Plate Meshing & Plate-Beam Coupling
+**Requirements:** R-ELEM-004, R-MESH-001, R-MPC-003 **Dependencies:** Phase 8, Phase 6 **Difficulty:** High **Description:** Comprehensive plate meshing using gmsh with quad preference. Supports general polygons (3+ corners), higher-order elements (MITC8, MITC9), triangular fallback (DKT), mesh size and per-edge division control, plate-beam coupling via rigid links with DOF releases and eccentric offsets, support curves along plate edges, and a unified mesh() function for plates and beams.
+
+→ [See full Phase 19 details](implementation_plan_phase19_plate_meshing.md)
 
