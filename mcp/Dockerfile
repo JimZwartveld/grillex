@@ -23,6 +23,9 @@
 # -----------------------------------------------------------------------------
 FROM python:3.11-slim AS builder
 
+# Build argument for version (required since we don't have git history)
+ARG GRILLEX_VERSION=0.0.0
+
 WORKDIR /build
 
 # Install build dependencies
@@ -30,7 +33,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     libeigen3-dev \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source files needed for build
@@ -38,14 +40,15 @@ COPY pyproject.toml setup.py setup.cfg CMakeLists.txt ./
 COPY src/ src/
 COPY cpp/ cpp/
 
-# Build the wheel
+# Install build tools
 RUN pip install --no-cache-dir build wheel setuptools setuptools_scm
 
 # Build C++ extension first
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
     && cmake --build build -j$(nproc)
 
-# Build Python wheel
+# Build Python wheel (use SETUPTOOLS_SCM_PRETEND_VERSION since no .git)
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=${GRILLEX_VERSION}
 RUN python -m build --wheel
 
 # Verify wheel was created
