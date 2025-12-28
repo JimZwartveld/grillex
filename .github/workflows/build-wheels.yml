@@ -1,0 +1,241 @@
+name: Build and Publish Wheels
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      publish_to_pypi:
+        description: 'Publish to PyPI (only for tags)'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # =============================================================================
+  # Build wheels for all platforms
+  # =============================================================================
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-13, macos-14]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed for setuptools_scm
+          submodules: true
+
+      - name: Set up QEMU (for Linux ARM64 builds)
+        if: runner.os == 'Linux'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.21
+        env:
+          # Platform-specific architecture settings
+          CIBW_ARCHS_LINUX: x86_64 aarch64
+          CIBW_ARCHS_MACOS: x86_64 arm64
+          CIBW_ARCHS_WINDOWS: AMD64
+          # Skip tests on emulated platforms (too slow)
+          CIBW_TEST_SKIP: "*-*linux_aarch64 *-macosx_arm64"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ./wheelhouse/*.whl
+          retention-days: 7
+
+  # =============================================================================
+  # Build source distribution
+  # =============================================================================
+  build_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: pip install build
+
+      - name: Build sdist
+        run: python -m build --sdist
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          retention-days: 7
+
+  # =============================================================================
+  # Test the built wheels
+  # =============================================================================
+  test_wheels:
+    name: Test wheel on ${{ matrix.os }} / Python ${{ matrix.python }}
+    needs: build_wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.11', '3.12', '3.13']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: wheelhouse
+          merge-multiple: true
+
+      - name: Install wheel
+        shell: bash
+        run: |
+          # Find and install the appropriate wheel for this platform
+          PYTHON_VERSION=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
+
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            PLATFORM="linux"
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            PLATFORM="macos"
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            PLATFORM="win"
+          fi
+
+          echo "Looking for wheel: Python=$PYTHON_VERSION, Platform=$PLATFORM"
+
+          # Find matching wheel
+          WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*${PLATFORM}*.whl" | head -1)
+
+          if [[ -z "$WHEEL" ]]; then
+            echo "No matching wheel found, trying any compatible wheel..."
+            WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*.whl" | head -1)
+          fi
+
+          if [[ -z "$WHEEL" ]]; then
+            echo "Error: No compatible wheel found"
+            ls -la wheelhouse/
+            exit 1
+          fi
+
+          echo "Installing: $WHEEL"
+          pip install "$WHEEL"[testing]
+
+      - name: Run tests
+        run: |
+          pytest tests/python -v -x --ignore=tests/python/test_gmsh*.py -k "not slow"
+
+  # =============================================================================
+  # Publish to PyPI
+  # =============================================================================
+  publish_pypi:
+    name: Publish to PyPI
+    needs: [build_wheels, build_sdist, test_wheels]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+
+    environment:
+      name: pypi
+      url: https://pypi.org/project/grillex/
+
+    permissions:
+      id-token: write  # Required for trusted publishing
+
+    steps:
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      - name: Download sdist
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+      - name: List distribution files
+        run: ls -la dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Uses trusted publishing - no API token needed if configured
+          # Alternatively, use: password: ${{ secrets.PYPI_API_TOKEN }}
+          verbose: true
+          print-hash: true
+
+  # =============================================================================
+  # Publish to TestPyPI (for testing)
+  # =============================================================================
+  publish_testpypi:
+    name: Publish to TestPyPI
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/grillex/
+
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      - name: Download sdist
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          verbose: true
+          skip-existing: true

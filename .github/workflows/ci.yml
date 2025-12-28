@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # =============================================================================
+  # Build and test on Linux (primary platform)
+  # =============================================================================
+  test-linux:
+    name: Test on Linux / Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libeigen3-dev cmake build-essential
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install build pytest pytest-cov numpy scipy pyyaml pydantic
+
+      - name: Build C++ extension
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(nproc)
+
+      - name: Install package in development mode
+        run: pip install -e .[testing]
+
+      - name: Run tests
+        run: |
+          pytest tests/python -v --cov=grillex --cov-report=xml --cov-report=term-missing \
+            --ignore=tests/python/test_gmsh*.py
+
+      - name: Upload coverage to Codecov
+        if: matrix.python == '3.11'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  # =============================================================================
+  # Build and test on macOS
+  # =============================================================================
+  test-macos:
+    name: Test on macOS
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: brew install eigen cmake
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install build pytest numpy scipy pyyaml pydantic
+
+      - name: Build C++ extension
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(sysctl -n hw.ncpu)
+
+      - name: Install package in development mode
+        run: pip install -e .[testing]
+
+      - name: Run tests
+        run: |
+          pytest tests/python -v --ignore=tests/python/test_gmsh*.py
+
+  # =============================================================================
+  # Build and test on Windows
+  # =============================================================================
+  test-windows:
+    name: Test on Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install build pytest numpy scipy pyyaml pydantic
+
+      - name: Build C++ extension
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j $env:NUMBER_OF_PROCESSORS
+
+      - name: Install package in development mode
+        run: pip install -e .[testing]
+
+      - name: Run tests
+        run: |
+          pytest tests/python -v --ignore=tests/python/test_gmsh*.py
+
+  # =============================================================================
+  # Code quality checks
+  # =============================================================================
+  lint:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install linting tools
+        run: pip install ruff black
+
+      - name: Run ruff
+        run: ruff check src/grillex --output-format=github
+        continue-on-error: true
+
+      - name: Check formatting with black
+        run: black --check --diff src/grillex
+        continue-on-error: true

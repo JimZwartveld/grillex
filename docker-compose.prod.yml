@@ -1,0 +1,240 @@
+# =============================================================================
+# Docker Compose configuration for Grillex Production Deployment
+# =============================================================================
+#
+# This configuration is optimized for production deployment with:
+# - Multi-stage builds for smaller images
+# - Resource limits and health checks
+# - Nginx reverse proxy with SSL/TLS support
+# - Proper security settings
+#
+# Usage:
+#   # Build all services
+#   docker-compose -f docker-compose.prod.yml build
+#
+#   # Start all services
+#   docker-compose -f docker-compose.prod.yml up -d
+#
+#   # View logs
+#   docker-compose -f docker-compose.prod.yml logs -f
+#
+#   # Stop all services
+#   docker-compose -f docker-compose.prod.yml down
+#
+# Environment variables (create .env.prod file):
+#   ANTHROPIC_API_KEY=your-api-key
+#   DOMAIN=your-domain.com
+#   SSL_EMAIL=admin@your-domain.com
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # Backend API Service
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: webapp/backend/Dockerfile
+      target: production
+    image: grillex-backend:${IMAGE_TAG:-latest}
+    container_name: grillex-backend
+    restart: always
+
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - WORKERS=4
+
+    expose:
+      - "8000"
+
+    networks:
+      - grillex-internal
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Security settings
+    security_opt:
+      - no-new-privileges:true
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    labels:
+      - "com.grillex.service=backend"
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`${DOMAIN:-localhost}`) && PathPrefix(`/api`)"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+
+  # ---------------------------------------------------------------------------
+  # Frontend Web Application
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./webapp/frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=/api
+        - NODE_ENV=production
+    image: grillex-frontend:${IMAGE_TAG:-latest}
+    container_name: grillex-frontend
+    restart: always
+
+    expose:
+      - "80"
+
+    networks:
+      - grillex-internal
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 64M
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    # Security settings
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:size=10M
+      - /var/run:size=1M
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    labels:
+      - "com.grillex.service=frontend"
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`${DOMAIN:-localhost}`)"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+
+  # ---------------------------------------------------------------------------
+  # Nginx Reverse Proxy (Alternative to Traefik)
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: grillex-nginx
+    restart: always
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+
+    networks:
+      - grillex-internal
+
+    depends_on:
+      - backend
+      - frontend
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 128M
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    # Security settings
+    security_opt:
+      - no-new-privileges:true
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    labels:
+      - "com.grillex.service=nginx"
+
+  # ---------------------------------------------------------------------------
+  # Certbot for SSL certificate management
+  # ---------------------------------------------------------------------------
+  certbot:
+    image: certbot/certbot:latest
+    container_name: grillex-certbot
+    restart: "no"
+
+    volumes:
+      - ./certbot/www:/var/www/certbot:rw
+      - ./certbot/conf:/etc/letsencrypt:rw
+
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+    depends_on:
+      - nginx
+
+    labels:
+      - "com.grillex.service=certbot"
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  grillex-internal:
+    driver: bridge
+    internal: false
+
+# =============================================================================
+# Volumes (for persistent data)
+# =============================================================================
+volumes:
+  certbot-www:
+  certbot-conf:
