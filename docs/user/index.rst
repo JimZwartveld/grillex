@@ -16,4 +16,5 @@ a structural analysis platform for offshore and heavy-lift structures.
    analysis_workflow
    eigenvalue_analysis
    nonlinear_springs
+   plate_meshing
    results_and_postprocessing
