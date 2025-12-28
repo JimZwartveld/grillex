@@ -47,13 +47,27 @@ pybind11_add_module(_grillex_cpp
 target_link_libraries(_grillex_cpp PRIVATE grillex_core)
 
 # Set output directory for the Python module
+# For single-config generators (Make, Ninja)
 set_target_properties(_grillex_cpp PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../src/grillex"
 )
 
-# On Windows, also set the runtime output directory
+# For multi-config generators (Visual Studio, Xcode), set per-config directories
+# This prevents the module from going into Release/Debug subdirectories
+set_target_properties(_grillex_cpp PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/../src/grillex"
+    LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/../src/grillex"
+    LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_CURRENT_SOURCE_DIR}/../src/grillex"
+    LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_CURRENT_SOURCE_DIR}/../src/grillex"
+)
+
+# On Windows, also set the runtime output directory (for .pyd files)
 if(WIN32)
     set_target_properties(_grillex_cpp PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../src/grillex"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/../src/grillex"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/../src/grillex"
+        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_CURRENT_SOURCE_DIR}/../src/grillex"
+        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_CURRENT_SOURCE_DIR}/../src/grillex"
     )
 endif()
