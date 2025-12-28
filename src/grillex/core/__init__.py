@@ -18,7 +18,7 @@ from .data_types import (
     EndForces, InternalActions, WarpingInternalActions, ActionExtreme,
     ReleaseCombo4DOF, ReleaseCombo2DOF, ReleaseComboWarping, DisplacementLine,
     # Phase 8: Additional Element Types
-    SpringElement, PointMass, PlateElement, PlateElement8, PlateElement9, LoadingCondition,
+    SpringElement, PointMass, PlateElement, PlateElement8, PlateElement9, PlateElementTri, LoadingCondition,
     # Phase 15: Nonlinear Springs
     SpringBehavior, NonlinearSolverResult, NonlinearInitialState,
     NonlinearSolverSettings, NonlinearSolver,
@@ -68,7 +68,7 @@ __all__ = [
     'EndForces', 'InternalActions', 'WarpingInternalActions', 'ActionExtreme',
     'ReleaseCombo4DOF', 'ReleaseCombo2DOF', 'ReleaseComboWarping', 'DisplacementLine',
     # Phase 8: Additional Element Types
-    'SpringElement', 'PointMass', 'PlateElement', 'PlateElement8', 'PlateElement9', 'LoadingCondition',
+    'SpringElement', 'PointMass', 'PlateElement', 'PlateElement8', 'PlateElement9', 'PlateElementTri', 'LoadingCondition',
     # Phase 15: Nonlinear Springs
     'SpringBehavior', 'NonlinearSolverResult', 'NonlinearInitialState',
     'NonlinearSolverSettings', 'NonlinearSolver',

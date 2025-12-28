@@ -22,6 +22,7 @@
 #include "grillex/plate_element.hpp"
 #include "grillex/plate_element_8.hpp"
 #include "grillex/plate_element_9.hpp"
+#include "grillex/plate_element_tri.hpp"
 #include "grillex/errors.hpp"
 #include "grillex/warnings.hpp"
 #include "grillex/nonlinear_solver.hpp"
@@ -2198,6 +2199,52 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Transform vector from local to global coordinates")
         .def("__repr__", [](const grillex::PlateElement9 &p) {
             return "<PlateElement9 id=" + std::to_string(p.id) +
+                   " thickness=" + std::to_string(p.thickness) +
+                   " area=" + std::to_string(p.area()) + ">";
+        });
+
+    // PlateElementTri class (3-node DKT triangular element)
+    py::class_<grillex::PlateElementTri>(m, "PlateElementTri",
+        R"pbdoc(
+        Triangular plate element using Discrete Kirchhoff Triangle (DKT) formulation.
+
+        This element is ideal for thin plate problems and unstructured meshes.
+        It has 3 corner nodes with 6 DOFs each (18 total DOFs):
+        [u, v, w, θx, θy, θz] per node.
+
+        The DKT formulation provides excellent bending behavior for thin plates
+        (thickness/span < 1/10) and is free from shear locking.
+
+        Uses 3-point Gauss quadrature over the triangular domain.
+        )pbdoc")
+        .def(py::init<int, grillex::Node*, grillex::Node*, grillex::Node*,
+                      double, grillex::Material*>(),
+             py::arg("id"), py::arg("n1"), py::arg("n2"), py::arg("n3"),
+             py::arg("thickness"), py::arg("material"),
+             "Construct a 3-node triangular plate element (DKT formulation)")
+        .def_readwrite("id", &grillex::PlateElementTri::id, "Element ID")
+        .def_readonly("nodes", &grillex::PlateElementTri::nodes, "Array of 3 nodes")
+        .def_readwrite("thickness", &grillex::PlateElementTri::thickness, "Plate thickness [m]")
+        .def_readonly("material", &grillex::PlateElementTri::material, "Material properties")
+        .def_readonly("x_axis", &grillex::PlateElementTri::x_axis, "Local x-axis")
+        .def_readonly("y_axis", &grillex::PlateElementTri::y_axis, "Local y-axis")
+        .def_readonly("z_axis", &grillex::PlateElementTri::z_axis, "Local z-axis (plate normal)")
+        .def("num_dofs", &grillex::PlateElementTri::num_dofs, "Get number of DOFs (always 18)")
+        .def("has_warping", &grillex::PlateElementTri::has_warping, "Check for warping DOF (always false)")
+        .def("global_stiffness_matrix", &grillex::PlateElementTri::global_stiffness_matrix,
+             "Get the 18x18 global stiffness matrix [kN/m]")
+        .def("global_mass_matrix", &grillex::PlateElementTri::global_mass_matrix,
+             "Get the 18x18 consistent mass matrix [mT]")
+        .def("area", &grillex::PlateElementTri::area, "Get plate element area [m²]")
+        .def("centroid", &grillex::PlateElementTri::centroid, "Get centroid position in global coordinates")
+        .def("to_local", &grillex::PlateElementTri::to_local,
+             py::arg("global_vec"),
+             "Transform vector from global to local coordinates")
+        .def("to_global", &grillex::PlateElementTri::to_global,
+             py::arg("local_vec"),
+             "Transform vector from local to global coordinates")
+        .def("__repr__", [](const grillex::PlateElementTri &p) {
+            return "<PlateElementTri id=" + std::to_string(p.id) +
                    " thickness=" + std::to_string(p.thickness) +
                    " area=" + std::to_string(p.area()) + ">";
         });

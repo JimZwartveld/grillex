@@ -791,12 +791,12 @@ Implement a 3-node triangular plate element (Discrete Kirchhoff Triangle) as fal
 5. Write unit tests
 
 **Acceptance Criteria:**
-- [ ] PlateElementTri class implemented
-- [ ] Area coordinate shape functions correct
-- [ ] Stiffness matrix symmetric and positive semi-definite
-- [ ] Constant strain patch test passes
-- [ ] Can mesh any polygon using triangles
-- [ ] Unit tests pass
+- [x] PlateElementTri class implemented
+- [x] Area coordinate shape functions correct
+- [x] Stiffness matrix symmetric and positive semi-definite
+- [ ] Constant strain patch test passes (deferred to Phase 13)
+- [ ] Can mesh any polygon using triangles (deferred to Task 19.10)
+- [x] Unit tests pass
 
 ---
 
