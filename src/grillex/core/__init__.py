@@ -43,6 +43,13 @@ from .cargo import (
     CargoConnection
 )
 
+from .plate import (
+    Plate,
+    EdgeMeshControl,
+    PlateBeamCoupling,
+    SupportCurve
+)
+
 __all__ = [
     'Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes',
     'BeamElement', 'BeamFormulation', 'EndRelease',
@@ -76,5 +83,7 @@ __all__ = [
     # Phase 16: Eigenvalue Analysis
     'EigensolverMethod', 'EigensolverSettings', 'ModeResult',
     'EigensolverResult', 'EigenvalueSolver',
+    # Phase 19: Plate Meshing
+    'Plate', 'EdgeMeshControl', 'PlateBeamCoupling', 'SupportCurve',
     'Beam', 'StructuralModel'
 ]
