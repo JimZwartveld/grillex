@@ -23,9 +23,18 @@ import subprocess
 import sys
 from pathlib import Path
 
-from setuptools import setup
+from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
+
+
+class CMakeExtension(Extension):
+    """A custom Extension class that doesn't require sources.
+
+    This is used to trigger the CMake build process.
+    """
+    def __init__(self, name):
+        super().__init__(name, sources=[])
 
 
 class CMakeBuild(build_ext):
@@ -42,12 +51,24 @@ class CMakeBuild(build_ext):
                 "Install it with: pip install cmake"
             )
 
+        # Build each extension
+        for ext in self.extensions:
+            self.build_extension(ext)
+
+    def build_extension(self, ext):
+        """Build a single extension using CMake."""
+        import shutil
+
         # Build directory
         build_dir = Path(self.build_temp).resolve()
         build_dir.mkdir(parents=True, exist_ok=True)
 
         # Source directory (project root)
         source_dir = Path(__file__).parent.resolve()
+
+        # Output directory where setuptools expects the extension
+        extdir = Path(self.get_ext_fullpath(ext.name)).parent.resolve()
+        extdir.mkdir(parents=True, exist_ok=True)
 
         # CMake configuration
         cmake_args = [
@@ -82,27 +103,34 @@ class CMakeBuild(build_ext):
             cwd=build_dir,
         )
 
-        # The built extension should now be in src/grillex/
+        # Find and copy the built extension to the output directory
         ext_suffix = self._get_extension_suffix()
-        ext_path = source_dir / "src" / "grillex" / f"_grillex_cpp{ext_suffix}"
+        ext_filename = f"_grillex_cpp{ext_suffix}"
 
-        if not ext_path.exists():
-            # Check alternative locations
-            for alt_path in [
-                build_dir / "cpp" / f"_grillex_cpp{ext_suffix}",
-                build_dir / f"_grillex_cpp{ext_suffix}",
-            ]:
-                if alt_path.exists():
-                    import shutil
-                    shutil.copy2(alt_path, ext_path)
-                    break
-            else:
-                raise RuntimeError(
-                    f"Could not find built extension. "
-                    f"Expected at: {ext_path}"
-                )
+        # Possible locations where CMake might have put the extension
+        possible_locations = [
+            source_dir / "src" / "grillex" / ext_filename,
+            build_dir / "cpp" / ext_filename,
+            build_dir / "cpp" / "Release" / ext_filename,
+            build_dir / ext_filename,
+        ]
 
-        print(f"Extension built: {ext_path}")
+        ext_path = None
+        for loc in possible_locations:
+            if loc.exists():
+                ext_path = loc
+                break
+
+        if ext_path is None:
+            raise RuntimeError(
+                f"Could not find built extension. Searched in:\n"
+                + "\n".join(f"  - {loc}" for loc in possible_locations)
+            )
+
+        # Copy to the setuptools output directory
+        dest_path = extdir / ext_filename
+        print(f"Copying extension: {ext_path} -> {dest_path}")
+        shutil.copy2(ext_path, dest_path)
 
     def _get_extension_suffix(self):
         """Get the platform-specific extension suffix."""
@@ -130,6 +158,7 @@ if __name__ == "__main__":
     try:
         setup(
             use_scm_version={"version_scheme": "no-guess-dev"},
+            ext_modules=[CMakeExtension("grillex._grillex_cpp")],
             cmdclass={
                 "build_ext": CMakeBuild,
                 "build_py": CustomBuildPy,
