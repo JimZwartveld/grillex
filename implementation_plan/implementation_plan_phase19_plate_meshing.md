@@ -714,15 +714,15 @@ Implement 8-node and 9-node quadrilateral plate elements for improved accuracy.
 7. Write unit tests comparing accuracy with MITC4
 
 **Acceptance Criteria:**
-- [ ] PlateElement8 class implemented with correct shape functions
-- [ ] PlateElement9 class implemented with correct shape functions
-- [ ] Stiffness matrices are symmetric and positive semi-definite
-- [ ] Mass matrices are consistent
-- [ ] 3x3 Gauss quadrature used for integration
-- [ ] pybind11 bindings expose new element types
-- [ ] Factory function selects element type by name
-- [ ] Patch test passes for both element types
-- [ ] Convergence better than MITC4 for same mesh density
+- [x] PlateElement8 class implemented with correct shape functions
+- [x] PlateElement9 class implemented with correct shape functions
+- [x] Stiffness matrices are symmetric and positive semi-definite
+- [x] Mass matrices are consistent
+- [x] 3x3 Gauss quadrature used for integration
+- [x] pybind11 bindings expose new element types
+- [ ] Factory function selects element type by name (deferred to Task 19.6)
+- [ ] Patch test passes for both element types (deferred to Phase 13)
+- [ ] Convergence better than MITC4 for same mesh density (deferred to Phase 13)
 
 ---
 
