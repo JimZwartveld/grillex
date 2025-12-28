@@ -1,9 +1,119 @@
 [build-system]
-# AVOID CHANGING REQUIRES: IT WILL BE UPDATED BY PYSCAFFOLD!
-requires = ["setuptools>=46.1.0", "setuptools_scm[toml]>=5"]
+requires = [
+    "setuptools>=61.0",
+    "setuptools_scm[toml]>=5",
+    "wheel",
+    "cmake>=3.20",
+    "pybind11>=2.13",
+]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
 # For smarter version schemes and other configuration options,
 # check out https://github.com/pypa/setuptools_scm
 version_scheme = "no-guess-dev"
+
+# =============================================================================
+# cibuildwheel configuration for multi-platform wheel building
+# =============================================================================
+
+[tool.cibuildwheel]
+# Build for CPython 3.11, 3.12, 3.13
+build = "cp311-* cp312-* cp313-*"
+
+# Skip builds we don't support
+skip = [
+    "*-musllinux_*",      # Skip musl Linux (Alpine) - Eigen issues
+    "pp*",                 # Skip PyPy
+    "*-win32",             # Skip 32-bit Windows
+    "*_i686",              # Skip 32-bit Linux
+]
+
+# Test each wheel after building
+test-requires = ["pytest", "numpy", "scipy"]
+test-command = "pytest {project}/tests/python -x -v --ignore={project}/tests/python/test_gmsh*.py -k 'not slow'"
+
+# Build in isolated environment
+build-verbosity = 1
+
+[tool.cibuildwheel.linux]
+# Install Eigen before building
+before-all = [
+    "yum install -y eigen3-devel || (apt-get update && apt-get install -y libeigen3-dev)",
+]
+
+# Use manylinux2014 for broader compatibility
+manylinux-x86_64-image = "manylinux2014"
+manylinux-aarch64-image = "manylinux2014"
+
+# Repair wheels to include shared libraries
+repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.macos]
+# Install Eigen via Homebrew
+before-all = "brew install eigen"
+
+# Build for both Intel and Apple Silicon
+archs = ["x86_64", "arm64"]
+
+# Set deployment target for compatibility
+environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }
+
+[tool.cibuildwheel.windows]
+# Use delvewheel to bundle DLLs
+before-build = "pip install delvewheel"
+repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel}"
+
+# Eigen is fetched via CMake FetchContent, no pre-install needed
+# but we need to ensure CMake can find Visual Studio
+environment = { CMAKE_GENERATOR = "Visual Studio 17 2022" }
+
+# =============================================================================
+# Project metadata (PEP 621)
+# =============================================================================
+
+[project]
+name = "grillex"
+dynamic = ["version"]
+description = "Structural analysis & design platform with C++ FE core, Python front-end, and LLM/agent control"
+readme = "README.rst"
+license = {text = "MIT"}
+authors = [
+    {name = "Jim Zwartveld", email = "jzwartveld@hes-heerema.com"}
+]
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: C++",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+meshing = ["gmsh>=4.11.0"]
+testing = ["pytest", "pytest-cov", "setuptools"]
+dev = ["black", "ruff", "mypy"]
+mcp = ["mcp>=1.0.0"]
+all = ["grillex[meshing,testing,dev,mcp]"]
+
+[project.urls]
+Homepage = "https://github.com/JimZwartveld/grillex"
+Documentation = "https://grillex.readthedocs.io"
+Repository = "https://github.com/JimZwartveld/grillex"
+Issues = "https://github.com/JimZwartveld/grillex/issues"
+
+[project.scripts]
+grillex-mcp = "grillex.mcp.server:main"

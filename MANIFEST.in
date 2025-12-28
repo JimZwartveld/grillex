@@ -1,0 +1,49 @@
+# =============================================================================
+# MANIFEST.in - Specifies files to include in source distributions
+# =============================================================================
+
+# Include documentation
+include README.rst
+include LICENSE.txt
+include CHANGELOG.md
+include CLAUDE.md
+
+# Include build configuration
+include pyproject.toml
+include setup.py
+include setup.cfg
+include CMakeLists.txt
+
+# Include C++ source files
+recursive-include cpp *.cpp *.hpp *.h CMakeLists.txt
+
+# Include Python source files
+recursive-include src *.py *.pyi
+
+# Include type stubs
+recursive-include src *.pyi
+
+# Include test files
+recursive-include tests *.py *.yaml *.yml
+
+# Include documentation source
+recursive-include docs *.rst *.py *.png *.svg
+
+# Exclude compiled files
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.so
+global-exclude *.pyd
+global-exclude __pycache__
+global-exclude *.egg-info
+
+# Exclude build directories
+prune build
+prune dist
+prune .eggs
+prune *.egg-info
+
+# Exclude IDE and editor files
+global-exclude .DS_Store
+global-exclude *.swp
+global-exclude *~

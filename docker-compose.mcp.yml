@@ -1,0 +1,89 @@
+# =============================================================================
+# Docker Compose configuration for Grillex MCP Server
+# =============================================================================
+#
+# Usage:
+#   docker-compose -f docker-compose.mcp.yml build
+#   docker-compose -f docker-compose.mcp.yml run --rm mcp-server
+#
+# For interactive use with Claude Desktop, use the docker run command instead:
+#   docker run -i --rm grillex-mcp
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # MCP Server
+  # ---------------------------------------------------------------------------
+  mcp-server:
+    build:
+      context: .
+      dockerfile: mcp/Dockerfile
+    image: grillex-mcp:latest
+    container_name: grillex-mcp
+    stdin_open: true
+    tty: true
+    restart: "no"
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+    # Security settings
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=100M,mode=1777
+
+    # Healthcheck
+    healthcheck:
+      test: ["CMD", "python", "-c", "from grillex.mcp import main; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # Labels for management
+    labels:
+      - "com.grillex.service=mcp-server"
+      - "com.grillex.description=MCP server for structural analysis"
+
+  # ---------------------------------------------------------------------------
+  # MCP Server with debug logging
+  # ---------------------------------------------------------------------------
+  mcp-server-debug:
+    build:
+      context: .
+      dockerfile: mcp/Dockerfile
+    image: grillex-mcp:latest
+    container_name: grillex-mcp-debug
+    stdin_open: true
+    tty: true
+    restart: "no"
+
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=DEBUG
+
+    # Mount for debugging (optional)
+    volumes:
+      - ./logs:/app/logs:rw
+
+    labels:
+      - "com.grillex.service=mcp-server-debug"
+      - "com.grillex.description=MCP server with debug logging"
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  default:
+    driver: bridge
