@@ -41,6 +41,7 @@ prune webapp
 # Exclude Docker configurations
 prune mcp
 prune nginx
+prune deployment
 exclude docker-compose*.yml
 exclude Dockerfile*
 exclude .dockerignore

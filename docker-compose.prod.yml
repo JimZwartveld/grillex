@@ -2,11 +2,14 @@
 # Docker Compose configuration for Grillex Production Deployment
 # =============================================================================
 #
-# This configuration is optimized for production deployment with:
-# - Multi-stage builds for smaller images
-# - Resource limits and health checks
-# - Nginx reverse proxy with SSL/TLS support
-# - Proper security settings
+# This configuration uses DECOUPLED deployment where the dashboard installs
+# grillex from PyPI (public or private) instead of building from source.
+#
+# Benefits:
+# - Dashboard can be updated without rebuilding grillex
+# - Grillex can be updated without touching dashboard code
+# - Faster Docker builds (no C++ compilation)
+# - Independent versioning and release cycles
 #
 # Usage:
 #   # Build all services
@@ -24,20 +27,29 @@
 # Environment variables (create .env.prod file):
 #   ANTHROPIC_API_KEY=your-api-key
 #   DOMAIN=your-domain.com
-#   SSL_EMAIL=admin@your-domain.com
+#   GRILLEX_VERSION=2.0.0  (optional, defaults to latest)
+#   PYPI_INDEX_URL=https://pypi.company.com/simple/  (optional, for private PyPI)
+#   PYPI_TRUSTED_HOST=pypi.company.com  (optional, for private PyPI)
 # =============================================================================
 
 version: '3.8'
 
 services:
   # ---------------------------------------------------------------------------
-  # Backend API Service
+  # Backend API Service (decoupled - installs grillex from PyPI)
   # ---------------------------------------------------------------------------
   backend:
     build:
       context: .
-      dockerfile: webapp/backend/Dockerfile
-      target: production
+      dockerfile: webapp/backend/Dockerfile.decoupled
+      args:
+        # Install specific version or latest
+        GRILLEX_VERSION: ${GRILLEX_VERSION:-}
+        # Use private PyPI if configured
+        PYPI_INDEX_URL: ${PYPI_INDEX_URL:-https://pypi.org/simple/}
+        PYPI_TRUSTED_HOST: ${PYPI_TRUSTED_HOST:-}
+        # Fall back to public PyPI for other packages
+        PYPI_EXTRA_INDEX_URL: ${PYPI_EXTRA_INDEX_URL:-https://pypi.org/simple/}
     image: grillex-backend:${IMAGE_TAG:-latest}
     container_name: grillex-backend
     restart: always
