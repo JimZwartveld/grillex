@@ -50,6 +50,18 @@ from .plate import (
     SupportCurve
 )
 
+from .element_types import (
+    PlateElementType,
+    ELEMENT_TYPE_INFO,
+    get_element_type,
+    get_element_info,
+    get_available_element_types,
+    create_plate_element,
+    is_quad_element,
+    is_triangle_element,
+    supports_shear_deformation,
+)
+
 __all__ = [
     'Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes',
     'BeamElement', 'BeamFormulation', 'EndRelease',
@@ -85,5 +97,10 @@ __all__ = [
     'EigensolverResult', 'EigenvalueSolver',
     # Phase 19: Plate Meshing
     'Plate', 'EdgeMeshControl', 'PlateBeamCoupling', 'SupportCurve',
-    'Beam', 'StructuralModel'
+    'Beam', 'StructuralModel',
+    # Phase 19 (Task 19.6): Element Type Infrastructure
+    'PlateElementType', 'ELEMENT_TYPE_INFO',
+    'get_element_type', 'get_element_info', 'get_available_element_types',
+    'create_plate_element', 'is_quad_element', 'is_triangle_element',
+    'supports_shear_deformation',
 ]
