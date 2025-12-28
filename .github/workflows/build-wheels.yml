@@ -53,10 +53,10 @@ jobs:
         env:
           # Platform-specific architecture settings
           CIBW_ARCHS_LINUX: x86_64 aarch64
-          CIBW_ARCHS_MACOS: x86_64 arm64
+          CIBW_ARCHS_MACOS: arm64
           CIBW_ARCHS_WINDOWS: AMD64
           # Skip tests on emulated platforms (too slow)
-          CIBW_TEST_SKIP: "*-*linux_aarch64 *-macosx_arm64"
+          CIBW_TEST_SKIP: "*-*linux_aarch64"
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4

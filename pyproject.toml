@@ -37,11 +37,7 @@ test-command = "pytest {project}/tests/python -x -v --ignore={project}/tests/pyt
 build-verbosity = 1
 
 [tool.cibuildwheel.linux]
-# Install Eigen before building
-before-all = [
-    "yum install -y eigen3-devel || (apt-get update && apt-get install -y libeigen3-dev)",
-]
-
+# Eigen is fetched via CMake FetchContent, no pre-install needed
 # Use manylinux2014 for broader compatibility
 manylinux-x86_64-image = "manylinux2014"
 manylinux-aarch64-image = "manylinux2014"
@@ -53,11 +49,11 @@ repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"
 # Install Eigen via Homebrew
 before-all = "brew install eigen"
 
-# Build for both Intel and Apple Silicon
-archs = ["x86_64", "arm64"]
+# Build only for the native architecture (macos-14 is ARM)
+archs = ["arm64"]
 
 # Set deployment target for compatibility
-environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }
+environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
 [tool.cibuildwheel.windows]
 # Use delvewheel to bundle DLLs
