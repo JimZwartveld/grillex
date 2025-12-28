@@ -1193,14 +1193,14 @@ Implement coupling between plate edges and beam elements using rigid links with 
 5. Write comprehensive tests
 
 **Acceptance Criteria:**
-- [ ] `couple_plate_to_beam()` stores coupling information
-- [ ] Coupling creates rigid links after meshing
-- [ ] Offset (eccentric connection) correctly transforms DOFs
-- [ ] DOF releases work for individual DOFs
-- [ ] "R_EDGE" release maps to correct rotation DOF based on edge direction
-- [ ] Beam nodes created at plate edge positions when needed
-- [ ] Works for horizontal and vertical plates connecting to beams
-- [ ] Unit tests pass
+- [x] `couple_plate_to_beam()` stores coupling information
+- [ ] Coupling creates rigid links after meshing (deferred to Task 19.10)
+- [ ] Offset (eccentric connection) correctly transforms DOFs (deferred to Task 19.10)
+- [ ] DOF releases work for individual DOFs (deferred to Task 19.10)
+- [ ] "R_EDGE" release maps to correct rotation DOF based on edge direction (deferred to Task 19.10)
+- [ ] Beam nodes created at plate edge positions when needed (deferred to Task 19.10)
+- [ ] Works for horizontal and vertical plates connecting to beams (deferred to Task 19.10)
+- [x] Unit tests pass
 
 ---
 
@@ -1308,12 +1308,12 @@ Implement boundary condition support along plate edges (support curves).
 4. Write unit tests
 
 **Acceptance Criteria:**
-- [ ] `add_support_curve()` stores support information on plate
-- [ ] Support applied to all nodes along edge after meshing
-- [ ] Individual DOFs (UX, UY, UZ) can be restrained independently
-- [ ] Rotation about edge direction correctly mapped to RX/RY/RZ
-- [ ] Multiple support curves can be applied to different edges
-- [ ] Unit tests pass
+- [x] `add_support_curve()` stores support information on plate
+- [ ] Support applied to all nodes along edge after meshing (deferred to Task 19.10)
+- [x] Individual DOFs (UX, UY, UZ) can be restrained independently
+- [ ] Rotation about edge direction correctly mapped to RX/RY/RZ (deferred to Task 19.10)
+- [x] Multiple support curves can be applied to different edges
+- [x] Unit tests pass
 
 ---
 

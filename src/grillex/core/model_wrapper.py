@@ -1010,6 +1010,116 @@ class StructuralModel:
         """
         return list(self._plates)
 
+    def couple_plate_to_beam(
+        self,
+        plate: Plate,
+        edge_index: int,
+        beam: "Beam",
+        offset: Optional[List[float]] = None,
+        releases: Optional[Dict[str, bool]] = None
+    ) -> "PlateBeamCoupling":
+        """Couple a plate edge to a beam using rigid links.
+
+        Creates a coupling definition between a plate edge and a beam.
+        When mesh() is called, rigid link constraints will be created
+        between plate edge nodes and the beam.
+
+        If the plate normal is not parallel to the beam axis, intermediate
+        beam nodes are created to match plate edge node positions.
+
+        Args:
+            plate: The Plate object.
+            edge_index: Edge index to couple (0 = corner[0] to corner[1], etc.)
+            beam: The Beam object to couple to.
+            offset: [dx, dy, dz] offset from plate node to beam centroid in meters.
+                If None, nodes are assumed coincident.
+            releases: Dict of DOF releases. Keys: "UX", "UY", "UZ", "RX", "RY", "RZ",
+                or "R_EDGE" for rotation about the edge. Values: True = released.
+                Default is no releases (fully rigid connection).
+
+        Returns:
+            PlateBeamCoupling object.
+
+        Raises:
+            ValueError: If edge_index is out of range.
+
+        Example:
+            # Couple plate edge to beam with moment release about edge
+            model.couple_plate_to_beam(
+                plate, edge_index=0, beam=main_beam,
+                offset=[0, 0, 0.15],  # Plate 150mm above beam centroid
+                releases={"R_EDGE": True}  # Allow rotation about edge
+            )
+        """
+        from .plate import PlateBeamCoupling
+
+        if edge_index < 0 or edge_index >= plate.n_edges:
+            raise ValueError(
+                f"Edge index {edge_index} out of range [0, {plate.n_edges})"
+            )
+
+        coupling = PlateBeamCoupling(
+            plate=plate,
+            edge_index=edge_index,
+            beam=beam,
+            offset=offset or [0.0, 0.0, 0.0],
+            releases=releases or {}
+        )
+
+        plate.beam_couplings.append(coupling)
+        return coupling
+
+    def add_support_curve(
+        self,
+        plate: Plate,
+        edge_index: int,
+        ux: bool = False,
+        uy: bool = False,
+        uz: bool = False,
+        rotation_about_edge: bool = False
+    ) -> "SupportCurve":
+        """Add a support along a plate edge.
+
+        Creates boundary conditions along the plate edge that will be applied
+        to all nodes on that edge after meshing.
+
+        Args:
+            plate: The Plate object.
+            edge_index: Edge index for the support.
+            ux: If True, restrain X translation.
+            uy: If True, restrain Y translation.
+            uz: If True, restrain Z translation.
+            rotation_about_edge: If True, restrain rotation about the edge direction.
+
+        Returns:
+            SupportCurve object.
+
+        Raises:
+            ValueError: If edge_index is out of range.
+
+        Example:
+            # Simply support a plate edge (restrain vertical movement)
+            model.add_support_curve(plate, edge_index=0, uz=True)
+        """
+        from .plate import SupportCurve
+
+        if edge_index < 0 or edge_index >= plate.n_edges:
+            raise ValueError(
+                f"Edge index {edge_index} out of range [0, {plate.n_edges})"
+            )
+
+        support = SupportCurve(
+            plate=plate,
+            edge_index=edge_index,
+            ux=ux,
+            uy=uy,
+            uz=uz,
+            rotation_about_edge=rotation_about_edge
+        )
+
+        plate.support_curves.append(support)
+        return support
+
     # ===== Spring Elements =====
 
     def add_spring(
