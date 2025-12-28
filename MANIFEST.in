@@ -1,33 +1,73 @@
 # =============================================================================
 # MANIFEST.in - Specifies files to include in source distributions
 # =============================================================================
+# This file controls what gets included in the Python package (sdist/wheel).
+# The webapp, Docker configs, and deployment files are explicitly excluded.
+# =============================================================================
 
 # Include documentation
 include README.rst
 include LICENSE.txt
-include CHANGELOG.md
-include CLAUDE.md
+include CHANGELOG.rst
+include AUTHORS.rst
 
 # Include build configuration
 include pyproject.toml
 include setup.py
 include setup.cfg
 include CMakeLists.txt
+include tox.ini
 
-# Include C++ source files
+# Include C++ source files (required for building the extension)
 recursive-include cpp *.cpp *.hpp *.h CMakeLists.txt
 
 # Include Python source files
 recursive-include src *.py *.pyi
 
-# Include type stubs
-recursive-include src *.pyi
-
-# Include test files
+# Include test files (optional, but useful for installed package testing)
 recursive-include tests *.py *.yaml *.yml
 
-# Include documentation source
+# Include Sphinx documentation source
 recursive-include docs *.rst *.py *.png *.svg
+include docs/Makefile
+
+# =============================================================================
+# EXCLUDE deployment and webapp files (NOT part of the Python package)
+# =============================================================================
+
+# Exclude webapp (dashboard) - separate deployment
+prune webapp
+
+# Exclude Docker configurations
+prune mcp
+prune nginx
+exclude docker-compose*.yml
+exclude Dockerfile*
+exclude .dockerignore
+
+# Exclude GitHub workflows and CI
+prune .github
+
+# Exclude implementation planning docs (internal only)
+prune implementation_plan
+
+# Exclude notebooks (not part of package)
+prune notebooks
+
+# Exclude example files (can be included in docs instead)
+prune examples
+
+# Exclude development/project files
+exclude CLAUDE.md
+exclude .env*
+exclude .coveragerc
+exclude .readthedocs.yml
+exclude grillex_requirements.md
+exclude grillex-webapp-requirements.md
+
+# =============================================================================
+# EXCLUDE compiled and temporary files
+# =============================================================================
 
 # Exclude compiled files
 global-exclude *.pyc
@@ -42,8 +82,11 @@ prune build
 prune dist
 prune .eggs
 prune *.egg-info
+prune .tox
 
 # Exclude IDE and editor files
 global-exclude .DS_Store
 global-exclude *.swp
 global-exclude *~
+global-exclude .idea
+global-exclude .vscode
