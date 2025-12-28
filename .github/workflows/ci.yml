@@ -72,7 +72,7 @@ jobs:
   # =============================================================================
   test-macos:
     name: Test on macOS
-    runs-on: macos-latest
+    runs-on: macos-14
 
     steps:
       - name: Checkout repository
