@@ -154,26 +154,25 @@ class CustomBuildPy(build_py):
         super().run()
 
 
-if __name__ == "__main__":
-    try:
-        setup(
-            use_scm_version={"version_scheme": "no-guess-dev"},
-            ext_modules=[CMakeExtension("grillex._grillex_cpp")],
-            cmdclass={
-                "build_ext": CMakeBuild,
-                "build_py": CustomBuildPy,
-            },
-        )
-    except Exception as e:
-        print(
-            f"\nAn error occurred while building the project:\n{e}\n\n"
-            "Please ensure you have the most updated version of setuptools, "
-            "setuptools_scm, wheel, and cmake:\n"
-            "   pip install -U setuptools setuptools_scm wheel cmake\n\n"
-            "Also ensure you have a C++ compiler installed:\n"
-            "   - Linux: apt-get install build-essential\n"
-            "   - macOS: xcode-select --install\n"
-            "   - Windows: Install Visual Studio Build Tools\n",
-            file=sys.stderr,
-        )
-        raise
+try:
+    setup(
+        use_scm_version={"version_scheme": "no-guess-dev"},
+        ext_modules=[CMakeExtension("grillex._grillex_cpp")],
+        cmdclass={
+            "build_ext": CMakeBuild,
+            "build_py": CustomBuildPy,
+        },
+    )
+except Exception as e:
+    print(
+        f"\nAn error occurred while building the project:\n{e}\n\n"
+        "Please ensure you have the most updated version of setuptools, "
+        "setuptools_scm, wheel, and cmake:\n"
+        "   pip install -U setuptools setuptools_scm wheel cmake\n\n"
+        "Also ensure you have a C++ compiler installed:\n"
+        "   - Linux: apt-get install build-essential\n"
+        "   - macOS: xcode-select --install\n"
+        "   - Windows: Install Visual Studio Build Tools\n",
+        file=sys.stderr,
+    )
+    raise
