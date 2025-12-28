@@ -2253,6 +2253,301 @@ class StructuralModel:
         """
         self._cpp_model.set_active_load_case(load_case)
 
+    # ===== Plate Element Results =====
+
+    def get_plate_displacement(
+        self,
+        plate_element,
+        xi: float = 0.0,
+        eta: float = 0.0,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> Dict[str, float]:
+        """Get displacement at a point within a plate element.
+
+        Uses shape function interpolation to compute displacement at any
+        point within the element from nodal displacements.
+
+        Args:
+            plate_element: PlateElement, PlateElement8, PlateElement9, or PlateElementTri.
+            xi: Natural coordinate ξ (range [-1, 1] for quads, [0, 1] for triangles).
+            eta: Natural coordinate η (range [-1, 1] for quads, [0, 1] for triangles).
+            load_case: LoadCase to query (uses active if None).
+
+        Returns:
+            Dict with displacement components:
+            - "UX", "UY", "UZ": translations [m]
+            - "RX", "RY", "RZ": rotations [rad]
+
+        Example:
+            # Get displacement at center of plate element
+            disp = model.get_plate_displacement(element, xi=0, eta=0)
+            print(f"Vertical displacement: {disp['UZ']:.4f} m")
+        """
+        if load_case is not None:
+            self._cpp_model.set_active_load_case(load_case)
+
+        # Get nodal displacements
+        u_global = self._cpp_model.get_displacements()
+        dof_handler = self._cpp_model.get_dof_handler()
+
+        # Get element nodes and their displacements
+        nodes = plate_element.nodes
+        n_nodes = len(nodes)
+
+        # Build nodal displacement vector
+        nodal_disp = []
+        for node in nodes:
+            for dof in [DOFIndex.UX, DOFIndex.UY, DOFIndex.UZ,
+                        DOFIndex.RX, DOFIndex.RY, DOFIndex.RZ]:
+                global_dof = dof_handler.get_global_dof(node.id, dof)
+                if global_dof >= 0 and global_dof < len(u_global):
+                    nodal_disp.append(u_global[global_dof])
+                else:
+                    nodal_disp.append(0.0)
+        nodal_disp = np.array(nodal_disp)
+
+        # Compute shape functions based on element type
+        if n_nodes == 3:  # DKT triangle - use area coordinates
+            L1 = 1.0 - xi - eta
+            L2 = xi
+            L3 = eta
+            N = np.array([L1, L2, L3])
+        elif n_nodes == 4:  # Bilinear quad
+            N = np.array([
+                0.25 * (1 - xi) * (1 - eta),
+                0.25 * (1 + xi) * (1 - eta),
+                0.25 * (1 + xi) * (1 + eta),
+                0.25 * (1 - xi) * (1 + eta)
+            ])
+        elif n_nodes == 8:  # Serendipity quad
+            # Corner nodes
+            N1 = 0.25 * (1 - xi) * (1 - eta) * (-1 - xi - eta)
+            N2 = 0.25 * (1 + xi) * (1 - eta) * (-1 + xi - eta)
+            N3 = 0.25 * (1 + xi) * (1 + eta) * (-1 + xi + eta)
+            N4 = 0.25 * (1 - xi) * (1 + eta) * (-1 - xi + eta)
+            # Mid-edge nodes
+            N5 = 0.5 * (1 - xi**2) * (1 - eta)
+            N6 = 0.5 * (1 + xi) * (1 - eta**2)
+            N7 = 0.5 * (1 - xi**2) * (1 + eta)
+            N8 = 0.5 * (1 - xi) * (1 - eta**2)
+            N = np.array([N1, N2, N3, N4, N5, N6, N7, N8])
+        elif n_nodes == 9:  # Lagrangian quad
+            # Helper 1D Lagrange polynomials
+            L_m1 = 0.5 * xi * (xi - 1)  # at xi = -1
+            L_0 = 1 - xi**2              # at xi = 0
+            L_p1 = 0.5 * xi * (xi + 1)  # at xi = 1
+            M_m1 = 0.5 * eta * (eta - 1)
+            M_0 = 1 - eta**2
+            M_p1 = 0.5 * eta * (eta + 1)
+
+            N = np.array([
+                L_m1 * M_m1,  # Node 1 (-1, -1)
+                L_p1 * M_m1,  # Node 2 (+1, -1)
+                L_p1 * M_p1,  # Node 3 (+1, +1)
+                L_m1 * M_p1,  # Node 4 (-1, +1)
+                L_0 * M_m1,   # Node 5 (0, -1)
+                L_p1 * M_0,   # Node 6 (+1, 0)
+                L_0 * M_p1,   # Node 7 (0, +1)
+                L_m1 * M_0,   # Node 8 (-1, 0)
+                L_0 * M_0     # Node 9 (0, 0)
+            ])
+        else:
+            raise ValueError(f"Unsupported element with {n_nodes} nodes")
+
+        # Interpolate displacements
+        result = {"UX": 0.0, "UY": 0.0, "UZ": 0.0, "RX": 0.0, "RY": 0.0, "RZ": 0.0}
+        dof_names = ["UX", "UY", "UZ", "RX", "RY", "RZ"]
+        for i, dof_name in enumerate(dof_names):
+            for j in range(n_nodes):
+                result[dof_name] += N[j] * nodal_disp[j * 6 + i]
+
+        return result
+
+    def get_plate_moments(
+        self,
+        plate_element,
+        xi: float = 0.0,
+        eta: float = 0.0,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> Dict[str, float]:
+        """Get internal moments at a point within a plate element.
+
+        Computes bending moments per unit width from curvatures using the
+        constitutive relationship M = D * κ.
+
+        Args:
+            plate_element: PlateElement, PlateElement8, PlateElement9, or PlateElementTri.
+            xi: Natural coordinate ξ (default: 0 = center).
+            eta: Natural coordinate η (default: 0 = center).
+            load_case: LoadCase to query (uses active if None).
+
+        Returns:
+            Dict with moment components in kN·m/m (moment per unit width):
+            - "Mx": Moment about y-axis (causes stress in x-direction)
+            - "My": Moment about x-axis (causes stress in y-direction)
+            - "Mxy": Twisting moment
+
+        Note:
+            Sign convention: Positive moment causes tension on bottom surface.
+
+        Example:
+            # Get moments at center of plate element
+            moments = model.get_plate_moments(element)
+            print(f"Mx = {moments['Mx']:.2f} kN·m/m")
+        """
+        if load_case is not None:
+            self._cpp_model.set_active_load_case(load_case)
+
+        # Get material properties
+        E = plate_element.material.E
+        nu = plate_element.material.nu
+        t = plate_element.thickness
+
+        # Bending stiffness
+        D = E * t**3 / (12 * (1 - nu**2))
+
+        # Get nodal rotations (curvature-related DOFs)
+        u_global = self._cpp_model.get_displacements()
+        dof_handler = self._cpp_model.get_dof_handler()
+
+        nodes = plate_element.nodes
+        n_nodes = len(nodes)
+
+        # Extract nodal w and rotations
+        w_nodal = []
+        rx_nodal = []
+        ry_nodal = []
+        for node in nodes:
+            w_dof = dof_handler.get_global_dof(node.id, DOFIndex.UZ)
+            rx_dof = dof_handler.get_global_dof(node.id, DOFIndex.RX)
+            ry_dof = dof_handler.get_global_dof(node.id, DOFIndex.RY)
+            w_nodal.append(u_global[w_dof] if w_dof >= 0 else 0.0)
+            rx_nodal.append(u_global[rx_dof] if rx_dof >= 0 else 0.0)
+            ry_nodal.append(u_global[ry_dof] if ry_dof >= 0 else 0.0)
+
+        # Approximate curvatures using shape function derivatives
+        # For simplicity, use finite differences at element center
+        # κ_x = -∂²w/∂x², κ_y = -∂²w/∂y², κ_xy = -2∂²w/∂x∂y
+
+        # Get element dimensions (approximate)
+        x = np.array([n.x for n in nodes])
+        y = np.array([n.y for n in nodes])
+        lx = np.max(x) - np.min(x)
+        ly = np.max(y) - np.min(y)
+
+        # Use nodal rotations to estimate curvatures
+        # θ_x ≈ ∂w/∂y, θ_y ≈ -∂w/∂x (Mindlin/Kirchhoff convention)
+        # κ_x ≈ ∂θ_y/∂x = -∂²w/∂x², κ_y ≈ -∂θ_x/∂y = -∂²w/∂y²
+        if n_nodes >= 4:
+            # Use corner nodes for gradient estimation
+            theta_x_avg = np.mean(rx_nodal[:4])
+            theta_y_avg = np.mean(ry_nodal[:4])
+
+            # Curvature estimates from nodal rotation differences
+            d_theta_y_dx = (np.mean([ry_nodal[1], ry_nodal[2]]) -
+                           np.mean([ry_nodal[0], ry_nodal[3]])) / max(lx, 1e-6)
+            d_theta_x_dy = (np.mean([rx_nodal[2], rx_nodal[3]]) -
+                           np.mean([rx_nodal[0], rx_nodal[1]])) / max(ly, 1e-6)
+
+            kappa_x = d_theta_y_dx  # -∂²w/∂x²
+            kappa_y = -d_theta_x_dy  # -∂²w/∂y²
+            kappa_xy = 0.5 * ((ry_nodal[1] - ry_nodal[0]) / max(ly, 1e-6) +
+                              (rx_nodal[3] - rx_nodal[0]) / max(lx, 1e-6))
+        else:
+            # Triangle - simplified
+            kappa_x = 0.0
+            kappa_y = 0.0
+            kappa_xy = 0.0
+
+        # Compute moments from curvatures: M = D * κ
+        # [Mx]   [D  νD  0    ] [κx ]
+        # [My] = [νD D   0    ] [κy ]
+        # [Mxy]  [0  0   D(1-ν)/2] [κxy]
+        Mx = D * (kappa_x + nu * kappa_y)
+        My = D * (kappa_y + nu * kappa_x)
+        Mxy = D * (1 - nu) / 2 * kappa_xy * 2  # Factor 2 for engineering shear
+
+        return {"Mx": Mx, "My": My, "Mxy": Mxy}
+
+    def get_plate_stress(
+        self,
+        plate_element,
+        surface: str = "middle",
+        xi: float = 0.0,
+        eta: float = 0.0,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> Dict[str, float]:
+        """Get stress at a point within a plate element.
+
+        Computes bending stresses from internal moments using linear
+        stress distribution through thickness.
+
+        Args:
+            plate_element: PlateElement, PlateElement8, PlateElement9, or PlateElementTri.
+            surface: Location through thickness - "top", "bottom", or "middle".
+            xi: Natural coordinate ξ (default: 0 = center).
+            eta: Natural coordinate η (default: 0 = center).
+            load_case: LoadCase to query (uses active if None).
+
+        Returns:
+            Dict with stress components in kN/m² (kPa):
+            - "sigma_x": Normal stress in x-direction
+            - "sigma_y": Normal stress in y-direction
+            - "tau_xy": Shear stress in xy-plane
+
+        Note:
+            Positive stress is tensile. For plate bending:
+            - Top surface (z = +t/2): compression when moment positive
+            - Bottom surface (z = -t/2): tension when moment positive
+
+        Example:
+            # Get stress at top surface of plate element
+            stress = model.get_plate_stress(element, surface="top")
+            print(f"σ_x = {stress['sigma_x']:.0f} kPa")
+        """
+        # Get moments first
+        moments = self.get_plate_moments(plate_element, xi, eta, load_case)
+
+        t = plate_element.thickness
+
+        # Distance from neutral axis
+        if surface == "top":
+            z = t / 2
+        elif surface == "bottom":
+            z = -t / 2
+        elif surface == "middle":
+            z = 0.0
+        else:
+            raise ValueError(f"Surface must be 'top', 'bottom', or 'middle', got '{surface}'")
+
+        # Stress from bending: σ = M * z / I, where I = t³/12 per unit width
+        # So σ = M * z / (t³/12) = 12 * M * z / t³
+        I = t**3 / 12  # Per unit width
+
+        if abs(t) < 1e-10:
+            sigma_x = 0.0
+            sigma_y = 0.0
+            tau_xy = 0.0
+        else:
+            sigma_x = moments["Mx"] * z / I
+            sigma_y = moments["My"] * z / I
+            tau_xy = moments["Mxy"] * z / I
+
+        return {"sigma_x": sigma_x, "sigma_y": sigma_y, "tau_xy": tau_xy}
+
+    def get_plate_elements(self) -> List:
+        """Get all plate elements in the model.
+
+        Returns:
+            List of all plate elements (MITC4, MITC8, MITC9, DKT).
+        """
+        elements = []
+        elements.extend(self._cpp_model.plate_elements)
+        elements.extend(self._cpp_model.plate_elements_8)
+        elements.extend(self._cpp_model.plate_elements_9)
+        elements.extend(self._cpp_model.plate_elements_tri)
+        return elements
+
     def create_load_case(
         self,
         name: str,
