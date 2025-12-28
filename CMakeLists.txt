@@ -8,8 +8,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # On macOS, ensure C++ standard library is found
 if(APPLE)
-    # Add explicit include path for libc++ headers
-    include_directories(SYSTEM /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1)
+    # Use xcrun to find the correct SDK path (works on all macOS versions)
+    execute_process(
+        COMMAND xcrun --show-sdk-path
+        OUTPUT_VARIABLE MACOS_SDK_PATH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(MACOS_SDK_PATH)
+        include_directories(SYSTEM "${MACOS_SDK_PATH}/usr/include/c++/v1")
+    endif()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 endif()
 
