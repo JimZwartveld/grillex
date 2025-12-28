@@ -35,7 +35,7 @@ Usage:
     disp = model.get_displacement_at([6, 0, 0], DOFIndex.UY)
 """
 
-from typing import List, Tuple, Optional, Union, Dict, TYPE_CHECKING
+from typing import List, Tuple, Optional, Union, Dict, Callable, TYPE_CHECKING
 from dataclasses import dataclass
 import numpy as np
 
@@ -1142,6 +1142,243 @@ class StructuralModel:
 
         plate.support_curves.append(support)
         return support
+
+    # ===== Beam to Plate Conversion =====
+
+    def convert_beam_to_plate(
+        self,
+        beam: "Beam",
+        width: float,
+        orientation: str = "horizontal",
+        thickness: Optional[float] = None,
+        mesh_size: float = 0.5,
+        element_type: str = "MITC4",
+        name: Optional[str] = None,
+        remove_beam: bool = False
+    ) -> Plate:
+        """Convert a beam into a plate representation.
+
+        Creates a rectangular plate along the beam's axis with the specified
+        width and orientation. This is useful for:
+        - Modeling wide flanges or decks that were initially represented as beams
+        - Creating plate representations of I-beam webs for detailed analysis
+        - Converting simplified beam models to plate models
+
+        The plate is created along the beam axis with corners computed based
+        on the orientation parameter. The beam's material is used for the plate.
+
+        Args:
+            beam: The Beam object to convert.
+            width: Width of the plate in meters (perpendicular to beam axis).
+            orientation: Plate orientation relative to beam axis:
+                - "horizontal": Plate normal points up (global +Z). For horizontal
+                  beams, the plate lies in the XY plane.
+                - "vertical": Plate normal perpendicular to beam axis and global Z.
+                  For horizontal beams, creates a vertical web-like plate.
+                - "top": Like horizontal, but offset up by width/2.
+                - "bottom": Like horizontal, but offset down by width/2.
+            thickness: Plate thickness in meters. If None, uses section area
+                divided by beam length as an estimate.
+            mesh_size: Target element size in meters (default 0.5m).
+            element_type: Element type: "MITC4", "MITC8", "MITC9", or "DKT".
+            name: Optional name for the plate.
+            remove_beam: If True, removes the original beam from the model.
+
+        Returns:
+            The created Plate object.
+
+        Raises:
+            ValueError: If beam has no material, invalid orientation, or beam
+                is collinear with global Z for vertical orientation.
+
+        Example:
+            >>> from grillex.core import StructuralModel
+            >>> model = StructuralModel(name="Beam to Plate")
+            >>> _ = model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+            >>> _ = model.add_section("Flat", A=0.06, Iy=1e-4, Iz=1e-4, J=1e-4)
+            >>> beam = model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Flat", "Steel")
+            >>> plate = model.convert_beam_to_plate(beam, width=0.5, thickness=0.02)
+            >>> plate.n_corners
+            4
+            >>> len(plate.corners)
+            4
+        """
+        # Validate orientation
+        valid_orientations = {"horizontal", "vertical", "top", "bottom"}
+        if orientation not in valid_orientations:
+            raise ValueError(
+                f"Invalid orientation '{orientation}'. "
+                f"Valid options: {sorted(valid_orientations)}"
+            )
+
+        # Get beam geometry
+        start = np.array(beam.start_pos)
+        end = np.array(beam.end_pos)
+        beam_dir = beam.get_direction()
+        beam_length = beam.length
+
+        # Compute plate thickness if not specified
+        if thickness is None:
+            # Estimate from section area and beam length
+            area = beam.section.A
+            thickness = area / width if width > 0 else 0.01
+
+        # Get material name from beam
+        material_name = beam.material.name
+
+        # Compute perpendicular directions based on orientation
+        global_z = np.array([0.0, 0.0, 1.0])
+
+        if orientation in ("horizontal", "top", "bottom"):
+            # Plate normal should be vertical (global Z)
+            # Width direction is perpendicular to beam axis in horizontal plane
+            if abs(np.dot(beam_dir, global_z)) > 0.999:
+                # Beam is vertical - use global X as width direction
+                width_dir = np.array([1.0, 0.0, 0.0])
+            else:
+                # Cross beam direction with Z to get horizontal perpendicular
+                width_dir = np.cross(beam_dir, global_z)
+                width_dir = width_dir / np.linalg.norm(width_dir)
+
+            # Compute vertical offset for top/bottom
+            z_offset = 0.0
+            if orientation == "top":
+                z_offset = width / 2
+            elif orientation == "bottom":
+                z_offset = -width / 2
+
+        elif orientation == "vertical":
+            # Plate is vertical, parallel to beam axis
+            # Width direction is vertical (global Z)
+            if abs(np.dot(beam_dir, global_z)) > 0.999:
+                raise ValueError(
+                    "Cannot create vertical plate for a vertical beam. "
+                    "Use 'horizontal' orientation instead."
+                )
+            width_dir = global_z
+            z_offset = 0.0
+
+        # Compute corner positions
+        half_width = width / 2.0
+
+        if orientation in ("horizontal", "top", "bottom"):
+            # Plate in horizontal plane (or parallel to it)
+            z_shift = np.array([0.0, 0.0, z_offset])
+            c1 = start - half_width * width_dir + z_shift
+            c2 = end - half_width * width_dir + z_shift
+            c3 = end + half_width * width_dir + z_shift
+            c4 = start + half_width * width_dir + z_shift
+        else:  # vertical
+            # Plate in vertical plane along beam
+            c1 = start - half_width * width_dir
+            c2 = end - half_width * width_dir
+            c3 = end + half_width * width_dir
+            c4 = start + half_width * width_dir
+
+        corners = [c1.tolist(), c2.tolist(), c3.tolist(), c4.tolist()]
+
+        # Create the plate
+        plate_name = name or f"Plate_from_{beam.beam_id}"
+        plate = self.add_plate(
+            corners=corners,
+            thickness=thickness,
+            material=material_name,
+            mesh_size=mesh_size,
+            element_type=element_type,
+            name=plate_name
+        )
+
+        # Optionally remove the original beam
+        if remove_beam:
+            self._remove_beam(beam)
+
+        return plate
+
+    def convert_beams_to_plates(
+        self,
+        beams: Optional[List["Beam"]] = None,
+        width: Optional[float] = None,
+        width_function: Optional[Callable[["Beam"], float]] = None,
+        orientation: str = "horizontal",
+        thickness: Optional[float] = None,
+        thickness_function: Optional[Callable[["Beam"], float]] = None,
+        mesh_size: float = 0.5,
+        element_type: str = "MITC4",
+        remove_beams: bool = False
+    ) -> List[Plate]:
+        """Convert multiple beams to plates.
+
+        Batch conversion of beams to plates with optional functions to compute
+        width and thickness from beam properties.
+
+        Args:
+            beams: List of Beam objects to convert. If None, converts all beams.
+            width: Fixed width for all plates in meters. Either width or
+                width_function must be provided.
+            width_function: Function that takes a Beam and returns width in meters.
+                Example: lambda b: b.section.A / 0.02 (area-based)
+            orientation: Plate orientation ("horizontal", "vertical", "top", "bottom").
+            thickness: Fixed thickness for all plates in meters.
+            thickness_function: Function that takes a Beam and returns thickness.
+            mesh_size: Target element size in meters (default 0.5m).
+            element_type: Element type: "MITC4", "MITC8", "MITC9", or "DKT".
+            remove_beams: If True, removes original beams from the model.
+
+        Returns:
+            List of created Plate objects.
+
+        Raises:
+            ValueError: If neither width nor width_function is provided.
+
+        Example:
+            # Convert all beams with area-based width
+            plates = model.convert_beams_to_plates(
+                width_function=lambda b: b.section.A / 0.02,
+                thickness=0.02
+            )
+        """
+        if width is None and width_function is None:
+            raise ValueError("Either 'width' or 'width_function' must be provided")
+
+        target_beams = beams if beams is not None else list(self.beams)
+        plates = []
+
+        for beam in target_beams:
+            # Compute width
+            w = width if width is not None else width_function(beam)
+
+            # Compute thickness
+            t = None
+            if thickness is not None:
+                t = thickness
+            elif thickness_function is not None:
+                t = thickness_function(beam)
+
+            plate = self.convert_beam_to_plate(
+                beam=beam,
+                width=w,
+                orientation=orientation,
+                thickness=t,
+                mesh_size=mesh_size,
+                element_type=element_type,
+                remove_beam=remove_beams
+            )
+            plates.append(plate)
+
+        return plates
+
+    def _remove_beam(self, beam: "Beam") -> None:
+        """Remove a beam from the model.
+
+        Args:
+            beam: The Beam object to remove.
+
+        Note:
+            This removes the Python Beam object and its elements from tracking,
+            but does not modify C++ model state. Use with caution.
+        """
+        if beam in self.beams:
+            self.beams.remove(beam)
 
     # ===== Meshing =====
 

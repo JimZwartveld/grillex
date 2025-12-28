@@ -964,6 +964,100 @@ TOOLS: List[Dict[str, Any]] = [
             "required": ["element_id"]
         }
     },
+
+    # =========================================================================
+    # Beam to Plate Conversion (Phase 19.14)
+    # =========================================================================
+    {
+        "name": "convert_beam_to_plate",
+        "description": "Convert a beam into a plate representation. Creates a rectangular plate along the beam's axis with specified width and orientation. Useful for modeling wide flanges, decks, or creating detailed plate models from simplified beam models.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "beam_id": {
+                    "type": "integer",
+                    "description": "ID of the beam to convert"
+                },
+                "width": {
+                    "type": "number",
+                    "description": "Width of the plate in meters (perpendicular to beam axis)"
+                },
+                "orientation": {
+                    "type": "string",
+                    "enum": ["horizontal", "vertical", "top", "bottom"],
+                    "description": "Plate orientation: 'horizontal' (normal up), 'vertical' (normal perpendicular to beam and Z), 'top'/'bottom' (offset horizontally up/down). Default 'horizontal'."
+                },
+                "thickness": {
+                    "type": "number",
+                    "description": "Plate thickness in meters. If not specified, estimated from section area."
+                },
+                "mesh_size": {
+                    "type": "number",
+                    "description": "Target element size in meters (default 0.5)"
+                },
+                "element_type": {
+                    "type": "string",
+                    "enum": ["MITC4", "MITC8", "MITC9", "DKT"],
+                    "description": "Plate element type (default MITC4)"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Optional name for the plate"
+                },
+                "remove_beam": {
+                    "type": "boolean",
+                    "description": "If true, removes the original beam from the model. Default false."
+                }
+            },
+            "required": ["beam_id", "width"]
+        }
+    },
+    {
+        "name": "convert_beams_to_plates",
+        "description": "Convert multiple beams to plates. Batch conversion with optional functions to compute width and thickness from beam properties.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "beam_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "List of beam IDs to convert. If not specified, converts all beams."
+                },
+                "width": {
+                    "type": "number",
+                    "description": "Fixed width for all plates in meters. Either width or width_method must be provided."
+                },
+                "width_method": {
+                    "type": "string",
+                    "enum": ["area_based", "fixed"],
+                    "description": "Method to compute width: 'area_based' (width = section_area / thickness), 'fixed' (use width parameter)"
+                },
+                "orientation": {
+                    "type": "string",
+                    "enum": ["horizontal", "vertical", "top", "bottom"],
+                    "description": "Plate orientation (default 'horizontal')"
+                },
+                "thickness": {
+                    "type": "number",
+                    "description": "Plate thickness in meters. Required if width_method is 'area_based'."
+                },
+                "mesh_size": {
+                    "type": "number",
+                    "description": "Target element size in meters (default 0.5)"
+                },
+                "element_type": {
+                    "type": "string",
+                    "enum": ["MITC4", "MITC8", "MITC9", "DKT"],
+                    "description": "Plate element type (default MITC4)"
+                },
+                "remove_beams": {
+                    "type": "boolean",
+                    "description": "If true, removes original beams from model. Default false."
+                }
+            },
+            "required": []
+        }
+    },
 ]
 
 
@@ -1074,6 +1168,14 @@ class ToolExecutor:
             return "Mesh generation failed. Try using a coarser mesh_size or check that the plate geometry is valid."
         if "gmsh" in error_str:
             return "Gmsh meshing error. Ensure gmsh is installed (pip install gmsh) and plate geometry is valid."
+
+        # Beam-to-plate conversion errors
+        if "beam" in error_str and "not found" in error_str:
+            return "Use create_beam tool first to create a beam, then refer to it by the returned beam_id."
+        if "vertical plate" in error_str and "vertical beam" in error_str:
+            return "Cannot create a vertical plate for a vertical beam. Use 'horizontal' orientation instead."
+        if "invalid orientation" in error_str:
+            return "Valid orientations are: 'horizontal', 'vertical', 'top', 'bottom'."
 
         return None
 
@@ -2387,6 +2489,126 @@ class ToolExecutor:
                     "tau_xy": float(stress["tau_xy"])
                 },
                 "units": "kN/m²"
+            }
+        )
+
+    # =========================================================================
+    # Beam to Plate Conversion (Phase 19.14)
+    # =========================================================================
+
+    def _tool_convert_beam_to_plate(self, params: Dict[str, Any]) -> ToolResult:
+        """Convert a beam to a plate representation."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        beam_id = params["beam_id"]
+        width = params["width"]
+
+        # Find beam by ID
+        beam = None
+        for b in self.model.beams:
+            if b.beam_id == beam_id:
+                beam = b
+                break
+
+        if beam is None:
+            return ToolResult(
+                success=False,
+                error=f"Beam with ID {beam_id} not found",
+                suggestion=f"Available beam IDs: {[b.beam_id for b in self.model.beams[:10]]}"
+            )
+
+        plate = self.model.convert_beam_to_plate(
+            beam=beam,
+            width=width,
+            orientation=params.get("orientation", "horizontal"),
+            thickness=params.get("thickness"),
+            mesh_size=params.get("mesh_size", 0.5),
+            element_type=params.get("element_type", "MITC4"),
+            name=params.get("name"),
+            remove_beam=params.get("remove_beam", False)
+        )
+
+        return ToolResult(
+            success=True,
+            result={
+                "plate_name": plate.name,
+                "n_corners": plate.n_corners,
+                "thickness": plate.thickness,
+                "area": plate.get_area(),
+                "message": f"Beam {beam_id} converted to plate '{plate.name}'"
+            }
+        )
+
+    def _tool_convert_beams_to_plates(self, params: Dict[str, Any]) -> ToolResult:
+        """Convert multiple beams to plates."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        beam_ids = params.get("beam_ids")
+        width = params.get("width")
+        width_method = params.get("width_method", "fixed")
+        thickness = params.get("thickness")
+
+        # Determine beams to convert
+        if beam_ids:
+            beams = []
+            for bid in beam_ids:
+                for b in self.model.beams:
+                    if b.beam_id == bid:
+                        beams.append(b)
+                        break
+        else:
+            beams = list(self.model.beams)
+
+        if not beams:
+            return ToolResult(
+                success=False,
+                error="No beams to convert",
+                suggestion="Add beams first using create_beam tool"
+            )
+
+        # Handle width computation
+        if width_method == "area_based":
+            if thickness is None:
+                return ToolResult(
+                    success=False,
+                    error="thickness is required when width_method is 'area_based'",
+                    suggestion="Specify thickness parameter"
+                )
+            width_function = lambda b: b.section.A / thickness
+            plates = self.model.convert_beams_to_plates(
+                beams=beams,
+                width_function=width_function,
+                orientation=params.get("orientation", "horizontal"),
+                thickness=thickness,
+                mesh_size=params.get("mesh_size", 0.5),
+                element_type=params.get("element_type", "MITC4"),
+                remove_beams=params.get("remove_beams", False)
+            )
+        else:
+            if width is None:
+                return ToolResult(
+                    success=False,
+                    error="width is required when width_method is 'fixed' or not specified",
+                    suggestion="Specify width parameter or use width_method='area_based'"
+                )
+            plates = self.model.convert_beams_to_plates(
+                beams=beams,
+                width=width,
+                orientation=params.get("orientation", "horizontal"),
+                thickness=thickness,
+                mesh_size=params.get("mesh_size", 0.5),
+                element_type=params.get("element_type", "MITC4"),
+                remove_beams=params.get("remove_beams", False)
+            )
+
+        return ToolResult(
+            success=True,
+            result={
+                "n_plates_created": len(plates),
+                "plate_names": [p.name for p in plates],
+                "message": f"Converted {len(plates)} beams to plates"
             }
         )
 

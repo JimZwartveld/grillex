@@ -272,3 +272,113 @@ Troubleshooting
   - Check boundary conditions are correctly applied
   - Verify material properties (E should be in kN/m^2)
   - Ensure mesh is sufficiently refined for the load pattern
+
+Beam to Plate Conversion
+------------------------
+
+Grillex can convert beam elements into plate representations. This is useful
+for:
+
+- Converting simplified beam models to detailed plate models
+- Modeling wide flanges or deck plates from beam representations
+- Creating plate representations of I-beam webs for stress analysis
+
+Basic Conversion
+~~~~~~~~~~~~~~~~
+
+.. doctest::
+
+    >>> from grillex.core import StructuralModel
+    >>> model = StructuralModel(name="Beam to Plate")
+    >>> _ = model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model.add_section("Flat", A=0.06, Iy=1e-4, Iz=1e-4, J=1e-4)
+
+    # Create a beam
+    >>> beam = model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Flat", "Steel")
+
+    # Convert to a horizontal plate
+    >>> plate = model.convert_beam_to_plate(
+    ...     beam=beam,
+    ...     width=0.5,
+    ...     thickness=0.02,
+    ...     orientation="horizontal"
+    ... )
+    >>> plate.n_corners
+    4
+    >>> round(plate.get_area(), 1)
+    3.0
+
+Orientation Options
+~~~~~~~~~~~~~~~~~~~
+
+The ``orientation`` parameter controls how the plate is oriented relative
+to the beam axis:
+
+- ``"horizontal"``: Plate normal points up (global +Z). For horizontal beams,
+  the plate lies in the XY plane.
+- ``"vertical"``: Plate normal is perpendicular to beam axis and global Z.
+  Creates a vertical web-like plate.
+- ``"top"``: Like horizontal, but offset up by width/2.
+- ``"bottom"``: Like horizontal, but offset down by width/2.
+
+.. doctest::
+
+    >>> from grillex.core import StructuralModel
+    >>> model = StructuralModel(name="Orientations")
+    >>> _ = model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model.add_section("Flat", A=0.06, Iy=1e-4, Iz=1e-4, J=1e-4)
+    >>> beam = model.add_beam_by_coords([0, 0, 0], [4, 0, 0], "Flat", "Steel")
+
+    # Vertical plate (like a web)
+    >>> web = model.convert_beam_to_plate(beam, width=0.3, thickness=0.01,
+    ...     orientation="vertical")
+
+    # Top flange (offset up)
+    >>> top_flange = model.convert_beam_to_plate(beam, width=0.15, thickness=0.02,
+    ...     orientation="top")
+
+Batch Conversion
+~~~~~~~~~~~~~~~~
+
+Convert multiple beams at once using ``convert_beams_to_plates()``:
+
+.. doctest::
+
+    >>> from grillex.core import StructuralModel
+    >>> model = StructuralModel(name="Batch Conversion")
+    >>> _ = model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model.add_section("Flat", A=0.06, Iy=1e-4, Iz=1e-4, J=1e-4)
+
+    # Create multiple beams
+    >>> _ = model.add_beam_by_coords([0, 0, 0], [4, 0, 0], "Flat", "Steel")
+    >>> _ = model.add_beam_by_coords([0, 2, 0], [4, 2, 0], "Flat", "Steel")
+
+    # Convert all beams with fixed width
+    >>> plates = model.convert_beams_to_plates(width=0.5, thickness=0.02)
+    >>> len(plates)
+    2
+
+    # Or use a function to compute width from section properties
+    >>> plates = model.convert_beams_to_plates(
+    ...     width_function=lambda b: b.section.A / 0.02,
+    ...     thickness=0.02
+    ... )
+
+Automatic Thickness
+~~~~~~~~~~~~~~~~~~~
+
+If ``thickness`` is not specified, it's estimated from the beam's section
+area divided by the plate width:
+
+.. doctest::
+
+    >>> from grillex.core import StructuralModel
+    >>> model = StructuralModel(name="Auto Thickness")
+    >>> _ = model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model.add_section("Flat", A=0.06, Iy=1e-4, Iz=1e-4, J=1e-4)
+    >>> beam = model.add_beam_by_coords([0, 0, 0], [4, 0, 0], "Flat", "Steel")
+
+    # thickness = A / width = 0.06 / 0.3 = 0.2
+    >>> plate = model.convert_beam_to_plate(beam, width=0.3)
+    >>> plate.thickness
+    0.2

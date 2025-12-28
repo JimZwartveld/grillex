@@ -1761,6 +1761,126 @@ Document the plate meshing API and provide examples.
 
 ---
 
+### Task 19.14: Beam to Plate Conversion ✓
+
+**Requirements:** R-MOD-008
+**Dependencies:** Tasks 19.7 (add_plate)
+**Difficulty:** Medium
+**Status:** Complete
+
+**Description:**
+Implement functions to convert beam elements into plate representations. This enables:
+- Converting simplified beam models to detailed plate models
+- Modeling wide flanges or deck plates from beam representations
+- Creating plate representations of I-beam webs for stress analysis
+
+**Steps:**
+
+1. Add `convert_beam_to_plate()` method to StructuralModel:
+   ```python
+   def convert_beam_to_plate(
+       self,
+       beam: Beam,
+       width: float,
+       orientation: str = "horizontal",
+       thickness: Optional[float] = None,
+       mesh_size: float = 0.5,
+       element_type: str = "MITC4",
+       name: Optional[str] = None,
+       remove_beam: bool = False
+   ) -> Plate:
+       """Convert a beam into a plate representation."""
+   ```
+
+2. Support multiple orientations:
+   - `"horizontal"` - Plate normal points up (global +Z)
+   - `"vertical"` - Plate normal perpendicular to beam axis and global Z
+   - `"top"` - Horizontal plate offset up by width/2
+   - `"bottom"` - Horizontal plate offset down by width/2
+
+3. Add `convert_beams_to_plates()` for batch conversion:
+   ```python
+   def convert_beams_to_plates(
+       self,
+       beams: Optional[List[Beam]] = None,
+       width: Optional[float] = None,
+       width_function: Optional[Callable[[Beam], float]] = None,
+       orientation: str = "horizontal",
+       thickness: Optional[float] = None,
+       thickness_function: Optional[Callable[[Beam], float]] = None,
+       ...
+   ) -> List[Plate]:
+       """Convert multiple beams to plates."""
+   ```
+
+4. Add LLM tool schemas for beam-to-plate conversion
+5. Write comprehensive tests
+6. Update documentation
+
+**Acceptance Criteria:**
+- [x] `convert_beam_to_plate()` creates rectangular plate along beam axis
+- [x] All four orientations work correctly (horizontal, vertical, top, bottom)
+- [x] Width parameter controls plate width perpendicular to beam
+- [x] Thickness defaults to section_area / width if not specified
+- [x] Material is inherited from beam
+- [x] `remove_beam` option removes original beam
+- [x] `convert_beams_to_plates()` batch converts multiple beams
+- [x] width_function allows dynamic width computation
+- [x] thickness_function allows dynamic thickness computation
+- [x] LLM tool schemas added with proper descriptions
+- [x] Tool handlers implemented in ToolExecutor
+- [x] Error handling with actionable suggestions
+- [x] 32 unit tests passing
+- [x] Plate geometry verified (area, normal, edge lengths)
+
+### Execution Notes (Completed 2025-12-28)
+
+**Steps Taken:**
+1. Implemented `convert_beam_to_plate()` in model_wrapper.py with:
+   - Corner calculation based on beam axis and orientation
+   - Support for horizontal, vertical, top, bottom orientations
+   - Automatic thickness estimation from section area
+   - Option to remove original beam
+
+2. Implemented `convert_beams_to_plates()` for batch conversion:
+   - Supports width/thickness functions for dynamic computation
+   - Converts all beams if none specified
+
+3. Added `_remove_beam()` helper method
+
+4. Added LLM tool schemas to tools.py:
+   - `convert_beam_to_plate` tool with all parameters
+   - `convert_beams_to_plates` tool with width_method option
+
+5. Added tool handlers in ToolExecutor:
+   - Beam lookup by ID
+   - width_method='area_based' for automatic width calculation
+
+6. Added error handling suggestions for conversion errors
+
+7. Created comprehensive test suite (32 tests) covering:
+   - Basic conversion for all orientations
+   - Different beam orientations (horizontal, diagonal, vertical)
+   - Parameter combinations (mesh_size, element_type, name)
+   - Batch conversion with functions
+   - Plate geometry verification
+
+**Problems Encountered:**
+- **Issue**: Vertical beam with "horizontal" orientation - test expected plate normal [0,0,1]
+  - **Root Cause**: For a vertical beam, the plate still spans along the beam axis
+  - **Solution**: Updated test to expect correct normal [0,1,0] for XZ-plane plate
+
+**Verification:**
+- 32/32 beam-to-plate tests passing ✓
+- All tool handlers working correctly ✓
+
+**Files Created/Modified:**
+- `src/grillex/core/model_wrapper.py` - Added convert functions
+- `src/grillex/llm/tools.py` - Added tool schemas and handlers
+- `tests/python/test_phase19_beam_to_plate.py` - New test file
+
+---
+
 ## Summary
 
 Phase 19 introduces comprehensive plate meshing capabilities:
@@ -1776,6 +1896,7 @@ Phase 19 introduces comprehensive plate meshing capabilities:
 | Plate-Beam Coupling | Rigid links with releases and offsets |
 | Support Curves | Boundary conditions along edges |
 | Unified Meshing | Single mesh() for plates and beams |
+| Beam-to-Plate Conversion | Convert beams to plate representations |
 
 **Key Design Decisions:**
 1. **Gmsh for meshing** - Proven library with quad recombination
