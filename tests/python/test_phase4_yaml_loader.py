@@ -176,7 +176,7 @@ class TestErrorHandling:
 
     def test_empty_yaml_file(self):
         """Test error for empty YAML file - AC3"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False, encoding='utf-8') as f:
             f.write("")
             temp_path = f.name
 
@@ -188,7 +188,7 @@ class TestErrorHandling:
 
     def test_invalid_yaml_syntax(self):
         """Test error for invalid YAML syntax - AC3"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False, encoding='utf-8') as f:
             f.write("invalid: yaml: syntax: [}")
             temp_path = f.name
 
@@ -200,7 +200,7 @@ class TestErrorHandling:
 
     def test_yaml_root_not_dict(self):
         """Test error when YAML root is not a dictionary - AC3"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False, encoding='utf-8') as f:
             f.write("- this\n- is\n- a\n- list")
             temp_path = f.name
 
