@@ -166,6 +166,11 @@ class GmshPlateMesher:
         if len(corners) < 3:
             raise ValueError("At least 3 corners are required for a plate")
 
+        # Validate corner coordinates before trying to mesh
+        for i, corner in enumerate(corners):
+            if len(corner) != 3:
+                raise ValueError(f"Each corner must have 3 coordinates, got {len(corner)}")
+
         self._ensure_initialized()
         gmsh = self._gmsh
 
@@ -177,8 +182,6 @@ class GmshPlateMesher:
             # Create points
             point_tags = []
             for corner in corners:
-                if len(corner) != 3:
-                    raise ValueError(f"Each corner must have 3 coordinates, got {len(corner)}")
                 tag = gmsh.model.geo.addPoint(corner[0], corner[1], corner[2], mesh_size)
                 point_tags.append(tag)
 
@@ -334,11 +337,13 @@ class GmshPlateMesher:
             except Exception:
                 pass
 
-        # Get nodes on each edge
+        # Get nodes on each edge (including corner nodes)
         edge_nodes: Dict[int, List[int]] = {}
         for i, line_tag in enumerate(edge_line_tags):
             try:
-                edge_node_tags, _, _ = gmsh.model.mesh.getNodes(1, line_tag)
+                # Get nodes on the line (dimension 1) - includes interior and boundary nodes
+                # Use includeBoundary=True to include corner nodes
+                edge_node_tags, _, _ = gmsh.model.mesh.getNodes(1, line_tag, includeBoundary=True)
                 edge_nodes[i] = [tag_to_idx[int(t)] for t in edge_node_tags]
             except Exception:
                 edge_nodes[i] = []
