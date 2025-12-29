@@ -38,21 +38,18 @@ COPY pyproject.toml setup.py setup.cfg CMakeLists.txt ./
 COPY src/ src/
 COPY cpp/ cpp/
 
+# Remove any pre-built extensions from host (macOS .so won't work on Linux)
+RUN rm -f src/grillex/_grillex_cpp*.so src/grillex/_grillex_cpp*.pyd
+
 # Set fallback version since git history is not available in Docker
 ARG SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${SETUPTOOLS_SCM_PRETEND_VERSION}
 
 # Install build dependencies including pybind11 (provides CMake config)
-RUN pip install --no-cache-dir build wheel setuptools setuptools_scm pybind11
+RUN pip install --no-cache-dir wheel setuptools setuptools_scm pybind11
 
-# Build C++ extension first
-# Use pybind11's CMake config from pip install
-RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
-    -Dpybind11_DIR=$(python -c "import pybind11; print(pybind11.get_cmake_dir())") \
-    && cmake --build build -j$(nproc)
-
-# Build Python wheel
-RUN python -m build --wheel
+# Build wheel (cmake runs automatically via setup.py)
+RUN pip wheel . --no-deps -w dist/
 
 # Verify wheel was created
 RUN ls -la dist/ && test -f dist/*.whl
