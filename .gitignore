@@ -41,6 +41,7 @@ coverage.xml
 # Build and docs folder/files
 build/*
 dist/*
+dist-linux/*
 sdist/*
 docs/api/*
 docs/_rst/*
