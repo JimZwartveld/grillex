@@ -28,10 +28,6 @@ npm-debug.log
 *.swp
 *.swo
 
-# Build artifacts
-webapp/frontend/dist/
-webapp/frontend/node_modules/
-
 # Environment
 .env
 .env.local
