@@ -313,6 +313,26 @@ TOOLS: List[Dict[str, Any]] = [
             "required": ["beam_start", "beam_end", "load_start"]
         }
     },
+    {
+        "name": "add_load_case",
+        "description": "Create a new load case to organize loads. Load cases can be combined according to design codes for ultimate and serviceability limit states.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the load case (e.g., 'Dead Load', 'Live Load 1', 'Wind X+')"
+                },
+                "load_case_type": {
+                    "type": "string",
+                    "enum": ["permanent", "variable", "accidental", "seismic"],
+                    "description": "Type of load case for combination factors: permanent (dead loads), variable (live loads), accidental, or seismic. Default 'variable'.",
+                    "default": "variable"
+                }
+            },
+            "required": ["name"]
+        }
+    },
 
     # =========================================================================
     # Analysis
@@ -1219,6 +1239,34 @@ class ToolExecutor:
                 "load_start": params["load_start"],
                 "load_end": load_end,
                 "message": "Line load applied to beam"
+            }
+        )
+
+    def _tool_add_load_case(self, params: Dict[str, Any]) -> ToolResult:
+        """Create a new load case."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        name = params["name"]
+        load_type_str = params.get("load_case_type", "variable").lower()
+
+        # Map string to LoadCaseType enum
+        type_map = {
+            "permanent": LoadCaseType.Permanent,
+            "variable": LoadCaseType.Variable,
+            "accidental": LoadCaseType.Accidental,
+            "seismic": LoadCaseType.Seismic,
+        }
+        load_type = type_map.get(load_type_str, LoadCaseType.Variable)
+
+        load_case = self.model.create_load_case(name, load_type)
+        return ToolResult(
+            success=True,
+            result={
+                "id": load_case.id,
+                "name": name,
+                "type": load_type_str,
+                "message": f"Load case '{name}' created with type '{load_type_str}'"
             }
         )
 
