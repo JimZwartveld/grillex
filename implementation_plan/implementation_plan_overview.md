@@ -129,5 +129,5 @@ The implementation plan is organized into 18 phases:
 ### Phase 18: WebApp UX Improvements & Model Alignment
 **Requirements:** User feedback from Phase 17 **Dependencies:** Phase 17 **Difficulty:** High **Description:** UX improvements based on user testing feedback. Key changes include: Z-up coordinate system, right-click context menus for all element creation/editing, cargo and load combination support, active load case selection, flexible support DOF configuration, model invalidation on changes, searchable settings panel, and aligning frontend types directly with C++ Model class structure.
 
-→ [See full Phase 18 details](implementation_plan_phase18.md)
+→ [See full Phase 18 details](../../grillex-webapp/implementation_plan/implementation_plan_phase18.md)
 
