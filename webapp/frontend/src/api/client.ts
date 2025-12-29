@@ -44,14 +44,27 @@ async function request<T>(
 // Model endpoints
 export const modelApi = {
   getState: () => request<{
+    exists: boolean;
     name: string;
     nodes: unknown[];
     beams: unknown[];
     materials: unknown[];
     sections: unknown[];
+    boundaryConditions: unknown[];
+    loadCases: unknown[];
+    cargos: unknown[];
+    springs: unknown[];
+    isAnalyzed: boolean;
+    results: unknown;
   }>('/model/state'),
 
   reset: () => request<{ message: string }>('/model/reset', { method: 'POST' }),
+
+  create: (name: string = 'New Model') =>
+    request<{ success: boolean; result?: unknown }>('/tools/create_model', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
 };
 
 // Tool endpoints

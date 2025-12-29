@@ -98,14 +98,12 @@ class LoadState(BaseModel):
     """State of a load in the model.
 
     Attributes:
-        type: Load type ("point" or "line").
-        position: Load position [x, y, z] in meters.
+        node_id: Node ID where load is applied.
         dof: Degree of freedom (e.g., "UZ").
         value: Load magnitude in kN or kN/m.
     """
 
-    type: str = "point"
-    position: List[float]
+    node_id: int
     dof: str
     value: float
 
@@ -114,14 +112,14 @@ class BoundaryConditionState(BaseModel):
     """State of a boundary condition in the model.
 
     Attributes:
-        position: BC position [x, y, z] in meters.
-        type: BC type ("fixed", "pinned", "roller").
-        dofs: List of fixed DOFs.
+        node_id: Node ID where BC is applied.
+        dof: Degree of freedom (e.g., "UZ").
+        value: Prescribed value.
     """
 
-    position: List[float]
-    type: str
-    dofs: List[str] = Field(default_factory=list)
+    node_id: int
+    dof: str
+    value: float
 
 
 class SpringState(BaseModel):

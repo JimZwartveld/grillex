@@ -1,9 +1,41 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import useStore from '../../stores/modelStore';
 import { createProfileFromSection } from './geometry/sectionProfiles';
 import CargoBlock from './elements/CargoBlock';
+
+// Ground plane for capturing empty space clicks
+function GroundPlane({ onContextMenu }: { onContextMenu: (position: [number, number, number], event: React.MouseEvent) => void }) {
+  return (
+    <mesh
+      rotation={[-Math.PI / 2, 0, 0]}  // Rotate to XY plane for Z-up
+      position={[0, 0, 0]}
+      onContextMenu={(e) => {
+        e.stopPropagation();
+        const point = e.point;
+        // Snap to nearest 0.5m grid
+        const snappedPoint: [number, number, number] = [
+          Math.round(point.x * 2) / 2,
+          Math.round(point.y * 2) / 2,
+          Math.round(point.z * 2) / 2,
+        ];
+        if (e.nativeEvent) {
+          onContextMenu(snappedPoint, e.nativeEvent as unknown as React.MouseEvent);
+        }
+      }}
+      onPointerOver={() => {
+        document.body.style.cursor = 'crosshair';
+      }}
+      onPointerOut={() => {
+        document.body.style.cursor = 'default';
+      }}
+    >
+      <planeGeometry args={[100, 100]} />
+      <meshBasicMaterial transparent opacity={0} />
+    </mesh>
+  );
+}
 
 // Extruded beam component with realistic cross-section
 function ExtrudedBeam({
@@ -53,9 +85,17 @@ function ExtrudedBeam({
     const direction = endVec.clone().sub(startVec).normalize();
 
     // Create quaternion to rotate from Z-axis to beam direction
-    const q = new THREE.Quaternion();
+    const q1 = new THREE.Quaternion();
     const zAxis = new THREE.Vector3(0, 0, 1);
-    q.setFromUnitVectors(zAxis, direction);
+    q1.setFromUnitVectors(zAxis, direction);
+
+    // Add a 90° rotation around the beam axis (local X) to orient the profile correctly
+    // This makes the profile's Y (height/web) align with global Z (up) for horizontal beams
+    const q2 = new THREE.Quaternion();
+    q2.setFromAxisAngle(direction, -Math.PI / 2);
+
+    // Combine rotations: first rotate to beam direction, then roll to correct orientation
+    const q = q2.multiply(q1);
 
     return {
       position: startVec,
@@ -151,7 +191,17 @@ function FixedSupportRealistic({ position }: { position: [number, number, number
 }
 
 export default function RealisticView() {
-  const { beams, sections, boundaryConditions, cargos, selectedBeamId } = useStore();
+  const { beams, sections, boundaryConditions, cargos, selectedBeamId, openAddContextMenu, openContextMenu, contextMenu } = useStore();
+
+  const handleGroundContextMenu = useCallback((position: [number, number, number], e: React.MouseEvent) => {
+    e.preventDefault();
+    openAddContextMenu(e.clientX, e.clientY, position);
+  }, [openAddContextMenu]);
+
+  const handleCargoContextMenu = useCallback((cargoId: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    openContextMenu(e.clientX, e.clientY, 'cargo', cargoId);
+  }, [openContextMenu]);
 
   // Get unique node positions
   const nodePositions = useMemo(() => {
@@ -191,6 +241,9 @@ export default function RealisticView() {
 
   return (
     <group>
+      {/* Ground plane for right-click context menu on empty space */}
+      <GroundPlane onContextMenu={handleGroundContextMenu} />
+
       {/* Beams */}
       {beams.map((beam) =>
         useSimplified ? (
@@ -224,7 +277,12 @@ export default function RealisticView() {
 
       {/* Cargo blocks */}
       {cargos.map((cargo) => (
-        <CargoBlock key={cargo.id} cargo={cargo} />
+        <CargoBlock
+          key={cargo.id}
+          cargo={cargo}
+          selected={contextMenu.elementType === 'cargo' && contextMenu.elementId === cargo.id}
+          onContextMenu={(e) => handleCargoContextMenu(cargo.id, e)}
+        />
       ))}
     </group>
   );

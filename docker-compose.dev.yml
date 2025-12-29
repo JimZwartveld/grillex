@@ -10,6 +10,7 @@ services:
       dockerfile: webapp/backend/Dockerfile.dev
     volumes:
       - ./src:/app/src
+      - ./webapp/__init__.py:/app/webapp/__init__.py:ro
       - ./webapp/backend:/app/webapp/backend:ro
     command: uvicorn webapp.backend.main:app --host 0.0.0.0 --port 8000 --reload
     environment:

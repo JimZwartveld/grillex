@@ -40,6 +40,9 @@ RUN pip install --no-cache-dir "numpy>=1.24.0" "scipy>=1.10.0" "pyyaml>=6.0" "py
 # Install webapp dependencies with reload support
 RUN pip install --no-cache-dir fastapi uvicorn anthropic python-multipart pydantic-settings watchfiles
 
+# Create webapp directory structure for volume mounts
+RUN mkdir -p /app/webapp
+
 # Create entrypoint script that copies the .so file to the mounted volume
 RUN echo '#!/bin/bash\n\
 # Copy the C++ extension to the mounted src directory\n\

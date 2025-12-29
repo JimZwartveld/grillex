@@ -36,6 +36,7 @@ LocalAxes::LocalAxes(const Eigen::Vector3d& end_a,
     // Step 3: Compute z_axis perpendicular to x_axis in the reference plane
     // z_axis = normalize(reference - (reference · x_axis) * x_axis)
     // This is the Gram-Schmidt orthogonalization
+    // Using global Z as reference means local z will point up for horizontal beams
     Eigen::Vector3d z_temp = reference - reference.dot(x_axis) * x_axis;
     double z_norm = z_temp.norm();
 
@@ -46,6 +47,7 @@ LocalAxes::LocalAxes(const Eigen::Vector3d& end_a,
     z_axis = z_temp / z_norm;
 
     // Step 4: Compute y_axis = z_axis × x_axis (right-handed system)
+    // For a horizontal beam along X, this gives local y pointing in global Y direction
     y_axis = z_axis.cross(x_axis);
 
     // Step 5: Apply roll rotation if specified

@@ -193,38 +193,41 @@ class ModelService:
         # Boundary conditions from C++ model
         boundary_conditions: List[Dict[str, Any]] = []
         try:
-            if hasattr(self.model._cpp_model, 'bc_handler'):
-                bc_handler = self.model._cpp_model.bc_handler
-                if hasattr(bc_handler, 'get_all_bcs'):
-                    for bc in bc_handler.get_all_bcs():
-                        boundary_conditions.append({
-                            "node_id": bc.node_id,
-                            "dof": bc.dof,
-                            "value": bc.value,
-                        })
+            bc_handler = self.model._cpp_model.bc_handler
+            for fixed_dof in bc_handler.get_fixed_dofs():
+                # Convert DOF index to string
+                dof_names = ['UX', 'UY', 'UZ', 'RX', 'RY', 'RZ', 'WARP']
+                dof_str = dof_names[fixed_dof.local_dof] if fixed_dof.local_dof < len(dof_names) else str(fixed_dof.local_dof)
+                boundary_conditions.append({
+                    "node_id": fixed_dof.node_id,
+                    "dof": dof_str,
+                    "value": fixed_dof.value,
+                })
         except Exception:
             pass  # BC access not available
 
-        # Get load cases from Python model
+        # Get load cases from C++ model
         load_cases: List[Dict[str, Any]] = []
         try:
-            if hasattr(self.model, '_load_cases'):
-                for idx, lc in enumerate(self.model._load_cases):
-                    lc_data = {
-                        "id": getattr(lc, 'id', idx),
-                        "name": getattr(lc, 'name', f'LC{idx}'),
-                        "type": getattr(lc, 'type', 'permanent'),
-                        "loads": [],
-                    }
-                    # Get loads from the load case
-                    if hasattr(lc, 'point_loads'):
-                        for load in lc.point_loads:
-                            lc_data["loads"].append({
-                                "node_id": load.node_id,
-                                "dof": load.dof,
-                                "value": load.value,
-                            })
-                    load_cases.append(lc_data)
+            cpp_load_cases = self.model._cpp_model.get_load_cases()
+            for lc in cpp_load_cases:
+                lc_data = {
+                    "id": lc.id,
+                    "name": lc.name,
+                    "type": str(lc.type).split('.')[-1].lower(),  # Convert enum to string
+                    "loads": [],
+                }
+                # Get nodal loads from the load case
+                for load in lc.get_nodal_loads():
+                    # Convert DOF enum to string
+                    dof_names = ['UX', 'UY', 'UZ', 'RX', 'RY', 'RZ', 'WARP']
+                    dof_str = dof_names[load.dof] if load.dof < len(dof_names) else str(load.dof)
+                    lc_data["loads"].append({
+                        "node_id": load.node_id,
+                        "dof": dof_str,
+                        "value": load.value,
+                    })
+                load_cases.append(lc_data)
         except Exception:
             pass  # Load case access not available
 

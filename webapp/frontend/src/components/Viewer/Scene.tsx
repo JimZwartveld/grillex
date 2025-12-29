@@ -72,9 +72,26 @@ export default function Scene() {
       <directionalLight position={[-10, 10, -5]} intensity={0.3} />
 
       {/* Ground grid - on XY plane (Z=0) for Z-up coordinate system */}
+      {/* Top side (visible from above, Z+) */}
       <Grid
         position={[0, 0, 0]}
         rotation={[-Math.PI / 2, 0, 0]}
+        args={[50, 50]}
+        cellSize={1}
+        cellThickness={0.5}
+        cellColor="#d0d0d0"
+        sectionSize={5}
+        sectionThickness={1}
+        sectionColor="#808080"
+        fadeDistance={50}
+        fadeStrength={1}
+        followCamera={false}
+        infiniteGrid
+      />
+      {/* Bottom side (visible from below, Z-) */}
+      <Grid
+        position={[0, 0, 0]}
+        rotation={[Math.PI / 2, 0, 0]}
         args={[50, 50]}
         cellSize={1}
         cellThickness={0.5}

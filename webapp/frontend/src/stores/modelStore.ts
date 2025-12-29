@@ -9,6 +9,9 @@ import type {
   Beam,
   Material,
   Section,
+  BoundaryCondition,
+  LoadCase,
+  Cargo,
   ChatMessage,
   AnalysisResults,
   ModelEvent,
@@ -295,11 +298,16 @@ export const useStore = create<Store>((set, get) => ({
 
     if (response.success && response.data) {
       set({
-        name: response.data.name,
+        name: response.data.name || 'New Model',
         nodes: response.data.nodes as Node[],
         beams: response.data.beams as Beam[],
         materials: response.data.materials as Material[],
         sections: response.data.sections as Section[],
+        boundaryConditions: (response.data.boundaryConditions || []) as BoundaryCondition[],
+        loadCases: (response.data.loadCases || []) as LoadCase[],
+        cargos: (response.data.cargos || []) as Cargo[],
+        isAnalyzed: response.data.isAnalyzed || false,
+        results: (response.data.results as AnalysisResults) || null,
         isLoading: false,
       });
     } else {
