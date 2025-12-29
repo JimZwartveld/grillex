@@ -74,11 +74,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd --create-home --shell /bin/bash grillex
 
 # Copy built wheel from builder stage
-COPY --from=builder /build/dist/*.whl /tmp/
+COPY --from=builder /build/dist/ /tmp/dist/
 
 # Install the grillex package with MCP dependencies
-RUN pip install --no-cache-dir /tmp/*.whl[mcp] \
-    && rm /tmp/*.whl \
+RUN pip install --no-cache-dir /tmp/dist/grillex-*.whl[mcp] \
+    && rm -rf /tmp/dist \
     && pip cache purge
 
 # Switch to non-root user
