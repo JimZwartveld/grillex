@@ -13,11 +13,16 @@ on:
       - master
   workflow_dispatch:
     inputs:
-      publish_to_pypi:
-        description: 'Publish to PyPI (only for tags)'
-        required: false
-        default: 'false'
-        type: boolean
+      publish_target:
+        description: 'Where to publish'
+        required: true
+        default: 'none'
+        type: choice
+        options:
+          - none
+          - testpypi
+          - pypi
+          - private
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -214,7 +219,9 @@ jobs:
     name: Publish to TestPyPI
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'testpypi') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
 
     environment:
       name: testpypi
@@ -243,3 +250,55 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
           verbose: true
           skip-existing: true
+
+  # =============================================================================
+  # Publish to Private PyPI Server
+  # =============================================================================
+  # Configure these secrets in your repository:
+  #   PRIVATE_PYPI_URL      - Your PyPI server URL (e.g., https://pypi.company.com/simple/)
+  #   PRIVATE_PYPI_USERNAME - Username for authentication
+  #   PRIVATE_PYPI_PASSWORD - Password or token for authentication
+  # =============================================================================
+  publish_private:
+    name: Publish to Private PyPI
+    needs: [build_wheels, build_sdist, test_wheels]
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'private'
+
+    environment:
+      name: private-pypi
+
+    steps:
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      - name: Download sdist
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+      - name: List distribution files
+        run: ls -la dist/
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install twine
+        run: pip install twine
+
+      - name: Publish to Private PyPI
+        env:
+          TWINE_REPOSITORY_URL: ${{ secrets.PRIVATE_PYPI_URL }}
+          TWINE_USERNAME: ${{ secrets.PRIVATE_PYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.PRIVATE_PYPI_PASSWORD }}
+        run: |
+          echo "Publishing to: $TWINE_REPOSITORY_URL"
+          twine upload --verbose --skip-existing dist/*
