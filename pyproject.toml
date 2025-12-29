@@ -37,7 +37,9 @@ test-command = "python -c \"import grillex; from grillex.core import StructuralM
 build-verbosity = 1
 
 [tool.cibuildwheel.linux]
-# Eigen is fetched via CMake FetchContent, no pre-install needed
+# Install pybind11 via pip (provides CMake config, avoids FetchContent issues)
+before-build = "pip install pybind11"
+
 # Use manylinux2014 for broader compatibility
 manylinux-x86_64-image = "manylinux2014"
 manylinux-aarch64-image = "manylinux2014"
@@ -49,6 +51,9 @@ repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"
 # Install Eigen via Homebrew
 before-all = "brew install eigen"
 
+# Install pybind11 via pip (provides CMake config)
+before-build = "pip install pybind11"
+
 # Build only for the native architecture (macos-14 is ARM)
 archs = ["arm64"]
 
@@ -56,12 +61,11 @@ archs = ["arm64"]
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
 [tool.cibuildwheel.windows]
-# Use delvewheel to bundle DLLs
-before-build = "pip install delvewheel"
+# Install pybind11 and delvewheel
+before-build = "pip install pybind11 delvewheel"
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel}"
 
 # Eigen is fetched via CMake FetchContent, no pre-install needed
-# but we need to ensure CMake can find Visual Studio
 environment = { CMAKE_GENERATOR = "Visual Studio 17 2022" }
 
 # =============================================================================
