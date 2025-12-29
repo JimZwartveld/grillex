@@ -167,7 +167,7 @@ class TestResultCase:
             elements=elements
         )
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
             temp_path = f.name
 
         try:
@@ -176,7 +176,7 @@ class TestResultCase:
             # Verify file exists and is valid JSON
             assert Path(temp_path).exists()
 
-            with open(temp_path, 'r') as f:
+            with open(temp_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
             assert isinstance(data, dict)
@@ -201,7 +201,7 @@ class TestExportFunctions:
         model.analyze()
 
         # Export to JSON
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
             temp_path = f.name
 
         try:
@@ -210,7 +210,7 @@ class TestExportFunctions:
             # Verify file exists and is valid JSON
             assert Path(temp_path).exists()
 
-            with open(temp_path, 'r') as f:
+            with open(temp_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
             assert isinstance(data, dict)
@@ -271,7 +271,7 @@ class TestExportFunctions:
 
             # Verify each file is valid JSON
             for file_path in created_files:
-                with open(file_path, 'r') as f:
+                with open(file_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 assert isinstance(data, dict)
                 assert data['success'] is True
@@ -423,7 +423,7 @@ class TestAcceptanceCriteria:
         model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
         model.analyze()
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
             temp_path = f.name
 
         try:
@@ -434,7 +434,7 @@ class TestAcceptanceCriteria:
             assert Path(temp_path).exists()
 
             # Should be valid JSON
-            with open(temp_path, 'r') as f:
+            with open(temp_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
             # Should be a dictionary

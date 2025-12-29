@@ -81,7 +81,7 @@ def load_model_from_yaml(file_path: str) -> StructuralModel:
         raise FileNotFoundError(f"YAML file not found: {file_path}")
 
     try:
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f)
     except yaml.YAMLError as e:
         raise YAMLLoadError(f"Invalid YAML syntax: {e}")

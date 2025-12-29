@@ -23,9 +23,34 @@ import subprocess
 import sys
 from pathlib import Path
 
-from setuptools import setup
+from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
-from setuptools.command.build_py import build_py
+
+
+def get_ext_suffix():
+    """Get the platform-specific extension suffix."""
+    import sysconfig
+    ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
+    if ext_suffix is None:
+        if sys.platform == "win32":
+            ext_suffix = ".pyd"
+        else:
+            ext_suffix = ".so"
+    return ext_suffix
+
+
+def extension_exists():
+    """Check if the C++ extension already exists."""
+    ext_suffix = get_ext_suffix()
+    ext_path = Path(__file__).parent / "src" / "grillex" / ("_grillex_cpp" + ext_suffix)
+    return ext_path.exists()
+
+
+class CMakeExtension(Extension):
+    """A custom Extension class that doesn't require sources."""
+    def __init__(self, name, sourcedir=""):
+        super().__init__(name, sources=[])
+        self.sourcedir = os.fspath(Path(sourcedir).resolve())
 
 
 class CMakeBuild(build_ext):
@@ -42,17 +67,39 @@ class CMakeBuild(build_ext):
                 "Install it with: pip install cmake"
             )
 
+        # Build each extension
+        for ext in self.extensions:
+            self.build_extension(ext)
+
+    def build_extension(self, ext):
+        """Build a single extension using CMake."""
+        import shutil
+
+        # Source directory (project root)
+        source_dir = Path(ext.sourcedir) if ext.sourcedir else Path(__file__).parent.resolve()
+
+        # Check if extension already exists in source tree (pre-built by CI)
+        ext_suffix = get_ext_suffix()
+        ext_filename = "_grillex_cpp" + ext_suffix
+        existing_ext = source_dir / "src" / "grillex" / ext_filename
+
+        if existing_ext.exists() and self.inplace:
+            # For editable/inplace installs, skip build if extension exists
+            print("Extension already exists at " + str(existing_ext) + ", skipping CMake build")
+            return
+
         # Build directory
         build_dir = Path(self.build_temp).resolve()
         build_dir.mkdir(parents=True, exist_ok=True)
 
-        # Source directory (project root)
-        source_dir = Path(__file__).parent.resolve()
+        # Output directory where setuptools expects the extension
+        extdir = Path(self.get_ext_fullpath(ext.name)).parent.resolve()
+        extdir.mkdir(parents=True, exist_ok=True)
 
         # CMake configuration
         cmake_args = [
-            f"-DCMAKE_BUILD_TYPE=Release",
-            f"-DPYTHON_EXECUTABLE={sys.executable}",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DPYTHON_EXECUTABLE=" + sys.executable,
         ]
 
         # Platform-specific settings
@@ -69,82 +116,59 @@ class CMakeBuild(build_ext):
         ]
 
         # Configure
-        print(f"CMake configure: {source_dir} -> {build_dir}")
+        print("CMake configure: " + str(source_dir) + " -> " + str(build_dir))
         subprocess.check_call(
             ["cmake", str(source_dir)] + cmake_args,
             cwd=build_dir,
         )
 
         # Build
-        print(f"CMake build: {build_dir}")
+        print("CMake build: " + str(build_dir))
         subprocess.check_call(
             ["cmake", "--build", "."] + build_args,
             cwd=build_dir,
         )
 
-        # The built extension should now be in src/grillex/
-        ext_suffix = self._get_extension_suffix()
-        ext_path = source_dir / "src" / "grillex" / f"_grillex_cpp{ext_suffix}"
+        # Find and copy the built extension to the output directory
+        # Possible locations where CMake might have put the extension
+        possible_locations = [
+            source_dir / "src" / "grillex" / ext_filename,
+            build_dir / "cpp" / ext_filename,
+            build_dir / "cpp" / "Release" / ext_filename,
+            build_dir / ext_filename,
+        ]
 
-        if not ext_path.exists():
-            # Check alternative locations
-            for alt_path in [
-                build_dir / "cpp" / f"_grillex_cpp{ext_suffix}",
-                build_dir / f"_grillex_cpp{ext_suffix}",
-            ]:
-                if alt_path.exists():
-                    import shutil
-                    shutil.copy2(alt_path, ext_path)
-                    break
-            else:
-                raise RuntimeError(
-                    f"Could not find built extension. "
-                    f"Expected at: {ext_path}"
-                )
+        ext_path = None
+        for loc in possible_locations:
+            if loc.exists():
+                ext_path = loc
+                break
 
-        print(f"Extension built: {ext_path}")
+        if ext_path is None:
+            raise RuntimeError(
+                "Could not find built extension. Searched in:\n" +
+                "\n".join("  - " + str(loc) for loc in possible_locations)
+            )
 
-    def _get_extension_suffix(self):
-        """Get the platform-specific extension suffix."""
-        import sysconfig
-        ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
-        if ext_suffix is None:
-            if sys.platform == "win32":
-                ext_suffix = ".pyd"
-            else:
-                ext_suffix = ".so"
-        return ext_suffix
+        # Copy to the setuptools output directory
+        dest_path = extdir / ext_filename
+        print("Copying extension: " + str(ext_path) + " -> " + str(dest_path))
+        shutil.copy2(ext_path, dest_path)
 
 
-class CustomBuildPy(build_py):
-    """Custom build_py that ensures C++ extension is built first."""
-
-    def run(self):
-        # Build C++ extension first
-        self.run_command("build_ext")
-        # Then run the standard build_py
-        super().run()
-
-
-if __name__ == "__main__":
-    try:
-        setup(
-            use_scm_version={"version_scheme": "no-guess-dev"},
-            cmdclass={
-                "build_ext": CMakeBuild,
-                "build_py": CustomBuildPy,
-            },
-        )
-    except Exception as e:
-        print(
-            f"\nAn error occurred while building the project:\n{e}\n\n"
-            "Please ensure you have the most updated version of setuptools, "
-            "setuptools_scm, wheel, and cmake:\n"
-            "   pip install -U setuptools setuptools_scm wheel cmake\n\n"
-            "Also ensure you have a C++ compiler installed:\n"
-            "   - Linux: apt-get install build-essential\n"
-            "   - macOS: xcode-select --install\n"
-            "   - Windows: Install Visual Studio Build Tools\n",
-            file=sys.stderr,
-        )
-        raise
+# Only declare ext_modules if extension doesn't exist yet
+# This avoids issues with setuptools editable wheel builds
+if extension_exists():
+    # Extension already built, just do a pure Python install
+    setup(
+        use_scm_version={"version_scheme": "no-guess-dev"},
+    )
+else:
+    # Extension needs to be built
+    setup(
+        use_scm_version={"version_scheme": "no-guess-dev"},
+        ext_modules=[CMakeExtension("grillex._grillex_cpp", sourcedir=str(Path(__file__).parent))],
+        cmdclass={
+            "build_ext": CMakeBuild,
+        },
+    )

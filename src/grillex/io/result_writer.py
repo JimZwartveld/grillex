@@ -168,7 +168,7 @@ class ResultCase:
         output_path = Path(file_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(self.to_dict(), f, indent=indent)
 
     def to_json_string(self, indent: int = 2) -> str:
