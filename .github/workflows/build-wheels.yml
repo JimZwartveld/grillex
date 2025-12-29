@@ -131,27 +131,31 @@ jobs:
           # Find and install the appropriate wheel for this platform
           PYTHON_VERSION=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
 
+          # Determine platform and architecture
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            PLATFORM="linux"
+            PLATFORM="manylinux"
+            ARCH="x86_64"
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            PLATFORM="macos"
+            PLATFORM="macosx"
+            ARCH=$(uname -m)
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
             PLATFORM="win"
+            ARCH="amd64"
           fi
 
-          echo "Looking for wheel: Python=$PYTHON_VERSION, Platform=$PLATFORM"
+          echo "Looking for wheel: Python=$PYTHON_VERSION, Platform=$PLATFORM, Arch=$ARCH"
+          ls -la wheelhouse/
 
-          # Find matching wheel
-          WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*${PLATFORM}*.whl" | head -1)
+          # Find matching wheel with correct architecture
+          WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*${PLATFORM}*${ARCH}*.whl" -o -name "grillex-*${PYTHON_VERSION}*${PLATFORM}*${ARCH}.whl" | head -1)
 
           if [[ -z "$WHEEL" ]]; then
-            echo "No matching wheel found, trying any compatible wheel..."
-            WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*.whl" | head -1)
+            echo "No exact match found, trying without arch..."
+            WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*${PLATFORM}*.whl" | grep -v aarch64 | head -1)
           fi
 
           if [[ -z "$WHEEL" ]]; then
             echo "Error: No compatible wheel found"
-            ls -la wheelhouse/
             exit 1
           fi
 

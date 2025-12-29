@@ -38,6 +38,10 @@ COPY pyproject.toml setup.py setup.cfg CMakeLists.txt ./
 COPY src/ src/
 COPY cpp/ cpp/
 
+# Set fallback version since git history is not available in Docker
+ARG SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=${SETUPTOOLS_SCM_PRETEND_VERSION}
+
 # Build the wheel
 RUN pip install --no-cache-dir build wheel setuptools setuptools_scm
 

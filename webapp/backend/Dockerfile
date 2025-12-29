@@ -11,13 +11,22 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python package
-COPY pyproject.toml .
+COPY pyproject.toml setup.py setup.cfg CMakeLists.txt ./
 COPY src/ src/
 COPY cpp/ cpp/
-COPY CMakeLists.txt .
 
 # Build C++ extension
-RUN pip install --no-cache-dir build
+# Set fallback version since git history is not available in Docker
+ARG SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=${SETUPTOOLS_SCM_PRETEND_VERSION}
+
+RUN pip install --no-cache-dir build wheel setuptools setuptools_scm
+
+# Build C++ extension first
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build build -j$(nproc)
+
+# Build and install Python wheel
 RUN python -m build --wheel
 RUN pip install --no-cache-dir dist/*.whl
 
