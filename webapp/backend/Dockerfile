@@ -20,10 +20,13 @@ COPY cpp/ cpp/
 ARG SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${SETUPTOOLS_SCM_PRETEND_VERSION}
 
-RUN pip install --no-cache-dir build wheel setuptools setuptools_scm
+# Install build dependencies including pybind11 (provides CMake config)
+RUN pip install --no-cache-dir build wheel setuptools setuptools_scm pybind11
 
 # Build C++ extension first
+# Use pybind11's CMake config from pip install
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
+    -Dpybind11_DIR=$(python -c "import pybind11; print(pybind11.get_cmake_dir())") \
     && cmake --build build -j$(nproc)
 
 # Build and install Python wheel

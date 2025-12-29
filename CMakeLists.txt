@@ -21,15 +21,21 @@ if(APPLE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 endif()
 
-# Use FetchContent to get pybind11 (ensures compatible version)
-include(FetchContent)
-FetchContent_Declare(
-    pybind11
-    GIT_REPOSITORY https://github.com/pybind/pybind11.git
-    GIT_TAG v2.13.6
-    GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(pybind11)
+# Try to find pybind11 (from pip install or system), otherwise fetch it
+find_package(pybind11 QUIET CONFIG)
+if(NOT pybind11_FOUND)
+    message(STATUS "pybind11 not found, fetching from GitHub...")
+    include(FetchContent)
+    FetchContent_Declare(
+        pybind11
+        GIT_REPOSITORY https://github.com/pybind/pybind11.git
+        GIT_TAG v2.13.6
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(pybind11)
+else()
+    message(STATUS "Found pybind11: ${pybind11_DIR}")
+endif()
 
 # Try to find system Eigen first, otherwise fetch it
 find_package(Eigen3 QUIET NO_MODULE)
