@@ -39,6 +39,7 @@ from typing import List, Tuple, Optional, Union, Dict, TYPE_CHECKING
 from dataclasses import dataclass
 import numpy as np
 
+# Core imports
 from grillex._grillex_cpp import (
     Model as _CppModel,
     Material as _CppMaterial,
@@ -50,20 +51,42 @@ from grillex._grillex_cpp import (
     Node,
     InternalActions,
     ActionExtreme,
-    # Phase 15: Nonlinear Springs
     SpringElement as _CppSpringElement,
-    SpringBehavior,
-    NonlinearSolverSettings,
-    NonlinearSolverResult,
-    LoadCombination,
-    LoadCombinationResult,
     LoadCaseResult,
-    # Phase 16: Eigenvalue Analysis
-    EigensolverMethod,
-    EigensolverSettings,
-    EigensolverResult,
-    ModeResult,
 )
+
+# Optional imports - Phase 15: Nonlinear Springs
+try:
+    from grillex._grillex_cpp import (
+        SpringBehavior,
+        NonlinearSolverSettings,
+        NonlinearSolverResult,
+    )
+except ImportError:
+    SpringBehavior = None
+    NonlinearSolverSettings = None
+    NonlinearSolverResult = None
+
+# Optional imports - Phase 16: Eigenvalue Analysis
+try:
+    from grillex._grillex_cpp import (
+        EigensolverMethod,
+        EigensolverSettings,
+        EigensolverResult,
+        ModeResult,
+    )
+except ImportError:
+    EigensolverMethod = None
+    EigensolverSettings = None
+    EigensolverResult = None
+    ModeResult = None
+
+# Optional imports - Load combination analysis
+try:
+    from grillex._grillex_cpp import LoadCombination, LoadCombinationResult
+except ImportError:
+    LoadCombination = None
+    LoadCombinationResult = None
 
 from .cargo import Cargo, CargoConnection
 from .plate import Plate, EdgeMeshControl, PlateBeamCoupling, SupportCurve
@@ -1404,8 +1427,8 @@ class StructuralModel:
         krx: float = 0.0,
         kry: float = 0.0,
         krz: float = 0.0,
-        behavior: SpringBehavior = SpringBehavior.Linear,
-        behavior_per_dof: Optional[Dict[int, SpringBehavior]] = None,
+        behavior: Optional["SpringBehavior"] = None,
+        behavior_per_dof: Optional[Dict[int, "SpringBehavior"]] = None,
         gap: float = 0.0,
         gap_per_dof: Optional[Dict[int, float]] = None,
     ) -> _CppSpringElement:
@@ -1479,11 +1502,12 @@ class StructuralModel:
         spring.kry = kry
         spring.krz = krz
 
-        # Set behavior
-        if behavior != SpringBehavior.Linear:
-            spring.set_all_behavior(behavior)
+        # Set behavior (only if SpringBehavior is available and behavior is non-linear)
+        if behavior is not None and SpringBehavior is not None:
+            if behavior != SpringBehavior.Linear:
+                spring.set_all_behavior(behavior)
 
-        if behavior_per_dof:
+        if behavior_per_dof and SpringBehavior is not None:
             for dof, b in behavior_per_dof.items():
                 spring.set_behavior(dof, b)
 
@@ -2010,7 +2034,7 @@ class StructuralModel:
     def analyze_modes(
         self,
         n_modes: int = 10,
-        method: EigensolverMethod = EigensolverMethod.Dense,
+        method: Optional["EigensolverMethod"] = None,
         tolerance: float = 1e-8,
         max_iterations: int = 100,
         compute_participation: bool = True,
@@ -2047,9 +2071,16 @@ class StructuralModel:
                 # Get mode shape for first mode
                 mode1 = model.get_mode_shape(1)
         """
+        if EigensolverSettings is None:
+            raise RuntimeError("Eigenvalue analysis not available - C++ module needs rebuild")
+
         settings = EigensolverSettings()
         settings.n_modes = n_modes
-        settings.method = method
+        # Use Dense method as default if not specified
+        if method is not None:
+            settings.method = method
+        elif EigensolverMethod is not None:
+            settings.method = EigensolverMethod.Dense
         settings.tolerance = tolerance
         settings.max_iterations = max_iterations
         settings.compute_participation = compute_participation

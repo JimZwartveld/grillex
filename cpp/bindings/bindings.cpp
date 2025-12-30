@@ -714,11 +714,8 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def("fork_support", &grillex::BCHandler::fork_support,
              py::arg("node_id"),
              "Apply fork support (fix translations, free rotations and warping)")
-        .def("apply_to_system", &grillex::BCHandler::apply_to_system,
-             py::arg("K"),
-             py::arg("F"),
-             py::arg("dof_handler"),
-             "Apply boundary conditions to system matrices using penalty method")
+        // Note: apply_to_system is not exposed to Python because pybind11 doesn't support
+        // Eigen::SparseMatrix as input parameters. This method is used internally by the C++ solver.
         .def("get_fixed_global_dofs", &grillex::BCHandler::get_fixed_global_dofs,
              py::arg("dof_handler"),
              "Get list of global DOF indices that are fixed")
@@ -2682,32 +2679,11 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         "        print(result.detailed_message)\n"
         "        for fix in result.suggested_fixes:\n"
         "            print(f'Suggestion: {fix}')")
-        .def(py::init<>())
-        .def("analyze", [](const grillex::SingularityAnalyzer& analyzer,
-                           const Eigen::SparseMatrix<double>& K,
-                           const grillex::DOFHandler& dof_handler,
-                           const grillex::SingularityAnalyzerSettings& settings) {
-            return analyzer.analyze(K, dof_handler, settings);
-        },
-             py::arg("K"), py::arg("dof_handler"),
-             py::arg("settings") = grillex::SingularityAnalyzerSettings{},
-             "Analyze stiffness matrix for singularity (without mass matrix)")
-        .def("analyze_with_mass", [](const grillex::SingularityAnalyzer& analyzer,
-                                     const Eigen::SparseMatrix<double>& K,
-                                     const Eigen::SparseMatrix<double>& M,
-                                     const grillex::DOFHandler& dof_handler,
-                                     const grillex::SingularityAnalyzerSettings& settings) {
-            return analyzer.analyze(K, M, dof_handler, settings);
-        },
-             py::arg("K"), py::arg("M"), py::arg("dof_handler"),
-             py::arg("settings") = grillex::SingularityAnalyzerSettings{},
-             "Analyze K and M matrices for singularity (preferred method)")
-        .def("is_singular", &grillex::SingularityAnalyzer::is_singular,
-             py::arg("K"),
-             "Quick check for singularity (without detailed diagnostics)")
-        .def("count_rigid_body_modes", &grillex::SingularityAnalyzer::count_rigid_body_modes,
-             py::arg("K"), py::arg("threshold") = 1e-8,
-             "Get the number of rigid body modes in the matrix");
+        .def(py::init<>());
+        // Note: analyze(), analyze_with_mass(), is_singular(), count_rigid_body_modes()
+        // are not exposed to Python because they take Eigen::SparseMatrix as input,
+        // which pybind11 cannot convert from Python. These are internal diagnostic tools
+        // used by the C++ solver. Use Model.check_singularity() for Python-level diagnostics.
 
     // ========================================================================
     // Phase 15: Nonlinear Solver
@@ -2775,33 +2751,9 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def(py::init<const grillex::NonlinearSolverSettings&>(),
              py::arg("settings") = grillex::NonlinearSolverSettings(),
              "Construct solver with settings")
-        .def("solve", [](grillex::NonlinearSolver& solver,
-                        const Eigen::SparseMatrix<double>& base_K,
-                        const Eigen::VectorXd& F,
-                        py::list springs_list,
-                        const grillex::DOFHandler& dof_handler,
-                        const grillex::NonlinearInitialState& initial_state) {
-            // Convert py::list to std::vector<SpringElement*>
-            std::vector<grillex::SpringElement*> springs;
-            for (auto& item : springs_list) {
-                springs.push_back(item.cast<grillex::SpringElement*>());
-            }
-            return solver.solve(base_K, F, springs, dof_handler, initial_state);
-        },
-             py::arg("base_K"),
-             py::arg("F"),
-             py::arg("springs"),
-             py::arg("dof_handler"),
-             py::arg("initial_state") = grillex::NonlinearInitialState(),
-             "Solve system with nonlinear springs.\n\n"
-             "Args:\n"
-             "    base_K: Base stiffness matrix (beams, plates - excludes springs)\n"
-             "    F: External force vector [kN]\n"
-             "    springs: List of spring elements (states will be updated)\n"
-             "    dof_handler: DOF handler for global DOF indexing\n"
-             "    initial_state: Optional initial state from previous solve\n\n"
-             "Returns:\n"
-             "    NonlinearSolverResult with displacements and convergence info")
+        // Note: solve() method is not exposed to Python because it takes Eigen::SparseMatrix
+        // as input, which pybind11 cannot convert from Python. Nonlinear solving is handled
+        // internally by the Model class via analyze_nonlinear().
         .def("settings", &grillex::NonlinearSolver::settings,
              "Get current settings")
         .def("set_settings", &grillex::NonlinearSolver::set_settings,
@@ -2822,37 +2774,13 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         "- M: Global mass matrix [mT]\n"
         "- omega: Natural circular frequency [rad/s]\n"
         "- phi: Mode shape (eigenvector)\n\n"
-        "Example:\n"
-        "    solver = EigenvalueSolver()\n"
-        "    settings = EigensolverSettings()\n"
-        "    settings.n_modes = 10\n"
-        "    K_red, M_red, dof_map = solver.reduce_system(K, M, bc, dof_handler)\n"
-        "    result = solver.solve(K_red, M_red, settings)")
+        "Note: solve() and reduce_system() methods are not exposed to Python\n"
+        "because they take Eigen::SparseMatrix as input. Use Model.analyze_modes()\n"
+        "for eigenvalue analysis from Python.")
         .def(py::init<>())
-        .def("solve", &grillex::EigenvalueSolver::solve,
-             py::arg("K"),
-             py::arg("M"),
-             py::arg("settings") = grillex::EigensolverSettings(),
-             "Solve eigenvalue problem.\n\n"
-             "Args:\n"
-             "    K: Stiffness matrix (reduced, i.e., fixed DOFs eliminated)\n"
-             "    M: Mass matrix (reduced, same size as K)\n"
-             "    settings: Solver configuration\n\n"
-             "Returns:\n"
-             "    EigensolverResult with eigenvalues, frequencies, and mode shapes")
-        .def("reduce_system", &grillex::EigenvalueSolver::reduce_system,
-             py::arg("K"),
-             py::arg("M"),
-             py::arg("bc_handler"),
-             py::arg("dof_handler"),
-             "Reduce system by eliminating fixed DOFs.\n\n"
-             "Args:\n"
-             "    K: Full stiffness matrix\n"
-             "    M: Full mass matrix\n"
-             "    bc_handler: Boundary condition handler\n"
-             "    dof_handler: DOF handler\n\n"
-             "Returns:\n"
-             "    Tuple of (K_reduced, M_reduced, dof_mapping)")
+        // Note: solve() and reduce_system() are not exposed to Python because they take
+        // Eigen::SparseMatrix as input, which pybind11 cannot convert from Python.
+        // Eigenvalue solving is handled internally by the Model class via analyze_modes().
         .def_static("expand_mode_shape", &grillex::EigenvalueSolver::expand_mode_shape,
              py::arg("reduced_shape"),
              py::arg("dof_mapping"),

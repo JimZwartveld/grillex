@@ -55,6 +55,7 @@ This module provides Python-friendly access to the C++ core data structures:
 - SingularityAnalyzer: Analyzes structural systems for singularity using eigenvalue decomposition
 """
 
+# Core imports - these should always be available
 from grillex._grillex_cpp import (
     Node,
     NodeRegistry,
@@ -83,9 +84,6 @@ from grillex._grillex_cpp import (
     DistributedLoad,
     LoadCase,
     LoadCaseResult,
-    LoadCombinationResult,
-    LoadCombinationTerm,
-    LoadCombination,
     Model,
     EqualityConstraint,
     RigidLink,
@@ -100,41 +98,101 @@ from grillex._grillex_cpp import (
     ReleaseCombo2DOF,
     ReleaseComboWarping,
     DisplacementLine,
-    # Phase 8: Additional Element Types
+    # Phase 8: Basic Element Types
     SpringElement,
     PointMass,
     PlateElement,
-    PlateElement8,
-    PlateElement9,
-    PlateElementTri,
     LoadingCondition,
-    # Phase 15: Nonlinear Springs
-    SpringBehavior,
-    NonlinearSolverResult,
-    NonlinearInitialState,
-    NonlinearSolverSettings,
-    NonlinearSolver,
-    # Phase 11: Error Handling & Diagnostics
-    ErrorCode,
-    GrillexError,
-    WarningCode,
-    WarningSeverity,
-    GrillexWarning,
-    WarningList,
-    # Phase 11 (Task 11.3): Singularity Diagnostics
-    RigidBodyModeType,
-    RigidBodyModeInfo,
-    DOFParticipation,
-    SingularityDiagnostics,
-    SingularityAnalyzerSettings,
-    SingularityAnalyzer,
-    # Phase 16: Eigenvalue Analysis
-    EigensolverMethod,
-    EigensolverSettings,
-    ModeResult,
-    EigensolverResult,
-    EigenvalueSolver,
 )
+
+# Optional imports - these may not be available in older C++ builds
+# Plate element variants
+try:
+    from grillex._grillex_cpp import PlateElement8, PlateElement9, PlateElementTri
+except ImportError:
+    PlateElement8 = None
+    PlateElement9 = None
+    PlateElementTri = None
+
+# Nonlinear springs (Phase 15)
+try:
+    from grillex._grillex_cpp import (
+        SpringBehavior,
+        NonlinearSolverResult,
+        NonlinearInitialState,
+        NonlinearSolverSettings,
+        NonlinearSolver,
+    )
+except ImportError:
+    SpringBehavior = None
+    NonlinearSolverResult = None
+    NonlinearInitialState = None
+    NonlinearSolverSettings = None
+    NonlinearSolver = None
+
+# Error handling (Phase 11)
+try:
+    from grillex._grillex_cpp import (
+        ErrorCode,
+        GrillexError,
+        WarningCode,
+        WarningSeverity,
+        GrillexWarning,
+        WarningList,
+    )
+except ImportError:
+    ErrorCode = None
+    GrillexError = None
+    WarningCode = None
+    WarningSeverity = None
+    GrillexWarning = None
+    WarningList = None
+
+# Singularity diagnostics (Phase 11.3)
+try:
+    from grillex._grillex_cpp import (
+        RigidBodyModeType,
+        RigidBodyModeInfo,
+        DOFParticipation,
+        SingularityDiagnostics,
+        SingularityAnalyzerSettings,
+        SingularityAnalyzer,
+    )
+except ImportError:
+    RigidBodyModeType = None
+    RigidBodyModeInfo = None
+    DOFParticipation = None
+    SingularityDiagnostics = None
+    SingularityAnalyzerSettings = None
+    SingularityAnalyzer = None
+
+# Eigenvalue analysis (Phase 16)
+try:
+    from grillex._grillex_cpp import (
+        EigensolverMethod,
+        EigensolverSettings,
+        ModeResult,
+        EigensolverResult,
+        EigenvalueSolver,
+    )
+except ImportError:
+    EigensolverMethod = None
+    EigensolverSettings = None
+    ModeResult = None
+    EigensolverResult = None
+    EigenvalueSolver = None
+
+# Load combination analysis
+try:
+    from grillex._grillex_cpp import (
+        LoadCombinationResult,
+        LoadCombinationTerm,
+        LoadCombination,
+    )
+except ImportError:
+    LoadCombinationResult = None
+    LoadCombinationTerm = None
+    LoadCombination = None
 
 __all__ = [
     'Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes',
