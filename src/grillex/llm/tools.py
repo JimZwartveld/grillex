@@ -109,7 +109,15 @@ TOOLS: List[Dict[str, Any]] = [
                 },
                 "rho": {
                     "type": "number",
-                    "description": "Density in mT/m³ (metric tonnes per cubic meter). Steel is 7.85e-3."
+                    "description": "Density in mT/m³ (metric tonnes per cubic meter). Steel is 7.85."
+                },
+                "fy": {
+                    "type": "number",
+                    "description": "Yield stress in kN/m². Optional. Steel S355 is typically 355000."
+                },
+                "fu": {
+                    "type": "number",
+                    "description": "Ultimate tensile strength in kN/m². Optional. Steel S355 is typically 470000-630000."
                 }
             },
             "required": ["name", "E", "nu", "rho"]
@@ -325,12 +333,108 @@ TOOLS: List[Dict[str, Any]] = [
                 },
                 "load_case_type": {
                     "type": "string",
-                    "enum": ["permanent", "variable", "accidental", "seismic"],
-                    "description": "Type of load case for combination factors: permanent (dead loads), variable (live loads), accidental, or seismic. Default 'variable'.",
+                    "enum": ["permanent", "variable", "environmental", "accidental"],
+                    "description": "Type of load case for combination factors: permanent (dead loads), variable (live loads), environmental (wind/wave), accidental. Default 'variable'.",
                     "default": "variable"
                 }
             },
             "required": ["name"]
+        }
+    },
+    {
+        "name": "add_load_combination",
+        "description": "Create a load combination with type-based factors. Common presets: SLS(1,1,0,1), ULS-a(1.3,1.3,0,0.7), ULS-b(1.0,1.0,0,1.3), ALS(1.0,0,1.0,0).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the combination (e.g., 'ULS-a', 'SLS', 'ALS')"
+                },
+                "permanent_factor": {
+                    "type": "number",
+                    "description": "Factor for permanent load cases. Default 1.0.",
+                    "default": 1.0
+                },
+                "variable_factor": {
+                    "type": "number",
+                    "description": "Factor for variable load cases. Default 1.0.",
+                    "default": 1.0
+                },
+                "environmental_factor": {
+                    "type": "number",
+                    "description": "Factor for environmental load cases (wind/wave). Default 1.0.",
+                    "default": 1.0
+                },
+                "accidental_factor": {
+                    "type": "number",
+                    "description": "Factor for accidental load cases. Default 0.0.",
+                    "default": 0.0
+                }
+            },
+            "required": ["name"]
+        }
+    },
+    {
+        "name": "add_load_case_to_combination",
+        "description": "Add a load case to a load combination. The factor is determined by the load case type unless an override factor is provided.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "combination_id": {
+                    "type": "integer",
+                    "description": "ID of the load combination"
+                },
+                "load_case_id": {
+                    "type": "integer",
+                    "description": "ID of the load case to add"
+                },
+                "override_factor": {
+                    "type": "number",
+                    "description": "Optional override factor. If not provided, uses type-based factor from the combination."
+                }
+            },
+            "required": ["combination_id", "load_case_id"]
+        }
+    },
+    {
+        "name": "remove_load_case_from_combination",
+        "description": "Remove a load case from a load combination.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "combination_id": {
+                    "type": "integer",
+                    "description": "ID of the load combination"
+                },
+                "load_case_id": {
+                    "type": "integer",
+                    "description": "ID of the load case to remove"
+                }
+            },
+            "required": ["combination_id", "load_case_id"]
+        }
+    },
+    {
+        "name": "update_load_case_override",
+        "description": "Update the override factor for a load case in a combination. Set to null to remove the override.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "combination_id": {
+                    "type": "integer",
+                    "description": "ID of the load combination"
+                },
+                "load_case_id": {
+                    "type": "integer",
+                    "description": "ID of the load case"
+                },
+                "override_factor": {
+                    "type": ["number", "null"],
+                    "description": "New override factor, or null to remove override and use type-based factor"
+                }
+            },
+            "required": ["combination_id", "load_case_id", "override_factor"]
         }
     },
 
@@ -606,6 +710,14 @@ TOOLS: List[Dict[str, Any]] = [
                 "rho": {
                     "type": "number",
                     "description": "New density in mT/m³. Optional."
+                },
+                "fy": {
+                    "type": "number",
+                    "description": "New yield stress in kN/m². Optional."
+                },
+                "fu": {
+                    "type": "number",
+                    "description": "New ultimate tensile strength in kN/m². Optional."
                 }
             },
             "required": ["name"]
@@ -1116,7 +1228,9 @@ class ToolExecutor:
             name=params["name"],
             E=params["E"],
             nu=params["nu"],
-            rho=params["rho"]
+            rho=params["rho"],
+            fy=params.get("fy", 0.0),
+            fu=params.get("fu", 0.0)
         )
         return ToolResult(
             success=True,
@@ -1254,8 +1368,8 @@ class ToolExecutor:
         type_map = {
             "permanent": LoadCaseType.Permanent,
             "variable": LoadCaseType.Variable,
+            "environmental": LoadCaseType.Environmental,
             "accidental": LoadCaseType.Accidental,
-            "seismic": LoadCaseType.Seismic,
         }
         load_type = type_map.get(load_type_str, LoadCaseType.Variable)
 
@@ -1269,6 +1383,119 @@ class ToolExecutor:
                 "message": f"Load case '{name}' created with type '{load_type_str}'"
             }
         )
+
+    def _tool_add_load_combination(self, params: Dict[str, Any]) -> ToolResult:
+        """Create a load combination with type-based factors."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        name = params["name"]
+        permanent_factor = params.get("permanent_factor", 1.0)
+        variable_factor = params.get("variable_factor", 1.0)
+        environmental_factor = params.get("environmental_factor", 1.0)
+        accidental_factor = params.get("accidental_factor", 0.0)
+
+        combo = self.model.create_load_combination(
+            name,
+            permanent_factor,
+            variable_factor,
+            environmental_factor,
+            accidental_factor
+        )
+        return ToolResult(
+            success=True,
+            result={
+                "id": combo["id"],
+                "name": name,
+                "permanent_factor": permanent_factor,
+                "variable_factor": variable_factor,
+                "environmental_factor": environmental_factor,
+                "accidental_factor": accidental_factor,
+                "message": f"Load combination '{name}' created"
+            }
+        )
+
+    def _tool_add_load_case_to_combination(self, params: Dict[str, Any]) -> ToolResult:
+        """Add a load case to a load combination."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        combination_id = params["combination_id"]
+        load_case_id = params["load_case_id"]
+        override_factor = params.get("override_factor")
+
+        try:
+            combo = self.model.add_load_case_to_combination(
+                combination_id,
+                load_case_id,
+                override_factor
+            )
+            return ToolResult(
+                success=True,
+                result={
+                    "combination_id": combination_id,
+                    "load_case_id": load_case_id,
+                    "override_factor": override_factor,
+                    "has_override": override_factor is not None,
+                    "total_load_cases": len(combo["load_cases"]),
+                    "message": f"Load case {load_case_id} added to combination {combination_id}"
+                }
+            )
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e))
+
+    def _tool_remove_load_case_from_combination(self, params: Dict[str, Any]) -> ToolResult:
+        """Remove a load case from a load combination."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        combination_id = params["combination_id"]
+        load_case_id = params["load_case_id"]
+
+        try:
+            combo = self.model.remove_load_case_from_combination(
+                combination_id,
+                load_case_id
+            )
+            return ToolResult(
+                success=True,
+                result={
+                    "combination_id": combination_id,
+                    "load_case_id": load_case_id,
+                    "remaining_load_cases": len(combo["load_cases"]),
+                    "message": f"Load case {load_case_id} removed from combination {combination_id}"
+                }
+            )
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e))
+
+    def _tool_update_load_case_override(self, params: Dict[str, Any]) -> ToolResult:
+        """Update the override factor for a load case in a combination."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        combination_id = params["combination_id"]
+        load_case_id = params["load_case_id"]
+        override_factor = params.get("override_factor")
+
+        try:
+            combo = self.model.update_load_case_override(
+                combination_id,
+                load_case_id,
+                override_factor
+            )
+            return ToolResult(
+                success=True,
+                result={
+                    "combination_id": combination_id,
+                    "load_case_id": load_case_id,
+                    "override_factor": override_factor,
+                    "has_override": override_factor is not None,
+                    "message": f"Override factor updated for load case {load_case_id} in combination {combination_id}"
+                }
+            )
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e))
 
     def _tool_analyze(self, params: Dict[str, Any]) -> ToolResult:
         """Run analysis."""
@@ -1725,6 +1952,14 @@ class ToolExecutor:
         if "rho" in params and params["rho"] is not None:
             material.rho = params["rho"]
             changes.append(f"rho -> {params['rho']}")
+
+        if "fy" in params and params["fy"] is not None:
+            material.fy = params["fy"]
+            changes.append(f"fy -> {params['fy']}")
+
+        if "fu" in params and params["fu"] is not None:
+            material.fu = params["fu"]
+            changes.append(f"fu -> {params['fu']}")
 
         if not changes:
             return ToolResult(

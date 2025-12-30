@@ -93,10 +93,13 @@ public:
      * @param name Material name
      * @param E Young's modulus [kN/m²]
      * @param nu Poisson's ratio [-]
-     * @param rho Density [mT/m³]
+     * @param rho Density [mT/m³] (typical steel: 7.85 mT/m³)
+     * @param fy Yield stress [kN/m²] (default: 0, not specified)
+     * @param fu Ultimate tensile strength [kN/m²] (default: 0, not specified)
      * @return Pointer to created material (owned by model)
      */
-    Material* create_material(const std::string& name, double E, double nu, double rho);
+    Material* create_material(const std::string& name, double E, double nu, double rho,
+                              double fy = 0.0, double fu = 0.0);
 
     /**
      * @brief Create a section and add to model

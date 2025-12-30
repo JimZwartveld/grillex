@@ -120,16 +120,19 @@ PYBIND11_MODULE(_grillex_cpp, m) {
     // Material class
     py::class_<grillex::Material>(m, "Material",
         "Material properties for structural elements")
-        .def(py::init<int, std::string, double, double, double>(),
+        .def(py::init<int, std::string, double, double, double, double, double>(),
              py::arg("id"), py::arg("name"), py::arg("E"),
              py::arg("nu"), py::arg("rho"),
-             "Construct a material with E [kN/m²], nu, rho [mT/m³]")
+             py::arg("fy") = 0.0, py::arg("fu") = 0.0,
+             "Construct a material with E [kN/m²], nu, rho [mT/m³], fy [kN/m²], fu [kN/m²]")
         .def_readwrite("id", &grillex::Material::id, "Material ID")
         .def_readwrite("name", &grillex::Material::name, "Material name")
         .def_readwrite("E", &grillex::Material::E, "Young's modulus [kN/m²]")
         .def_readwrite("G", &grillex::Material::G, "Shear modulus [kN/m²]")
         .def_readwrite("nu", &grillex::Material::nu, "Poisson's ratio")
         .def_readwrite("rho", &grillex::Material::rho, "Density [mT/m³]")
+        .def_readwrite("fy", &grillex::Material::fy, "Yield stress [kN/m²]")
+        .def_readwrite("fu", &grillex::Material::fu, "Ultimate tensile strength [kN/m²]")
         .def_static("compute_G", &grillex::Material::compute_G,
                     py::arg("E"), py::arg("nu"),
                     "Compute shear modulus from E and nu")
@@ -1332,7 +1335,9 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              py::arg("E"),
              py::arg("nu"),
              py::arg("rho"),
-             "Create a material and add to model",
+             py::arg("fy") = 0.0,
+             py::arg("fu") = 0.0,
+             "Create a material with optional yield stress and ultimate strength",
              py::return_value_policy::reference_internal)
         .def("create_section", &grillex::Model::create_section,
              py::arg("name"),

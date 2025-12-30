@@ -30,8 +30,8 @@ from .base import CheckResult, DesignCheck, DesignCode
 # =============================================================================
 
 # Partial factors for resistance
-GAMMA_M0 = 1.0  # Resistance of cross-sections
-GAMMA_M1 = 1.0  # Resistance of members to instability
+GAMMA_M0 = 1.15  # Resistance of cross-sections
+GAMMA_M1 = 1.15  # Resistance of members to instability
 GAMMA_M2 = 1.25  # Resistance of cross-sections in tension to fracture
 
 

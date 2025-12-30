@@ -669,6 +669,8 @@ class StructuralModel:
         self._sections: dict[str, _CppSection] = {}
         self._node_map: dict[Tuple[float, float, float], Node] = {}
         self._beam_id_counter = 1
+        self._load_combinations: List[dict] = []
+        self._combination_id_counter = 1
 
     # ===== Material and Section Management =====
 
@@ -677,7 +679,9 @@ class StructuralModel:
         name: str,
         E: float,
         nu: float,
-        rho: float
+        rho: float = 7.85,
+        fy: float = 0.0,
+        fu: float = 0.0
     ) -> _CppMaterial:
         """Add a material to the model library.
 
@@ -685,15 +689,21 @@ class StructuralModel:
             name: Material name
             E: Young's modulus [kN/m²]
             nu: Poisson's ratio [-]
-            rho: Density [mT/m³ = kN/m³/g]
+            rho: Density [mT/m³] (default: 7.85 mT/m³ for steel)
+            fy: Yield stress [kN/m²] (default: 0, not specified)
+            fu: Ultimate tensile strength [kN/m²] (default: 0, not specified)
 
         Returns:
             Material object
+
+        Note:
+            Typical steel density is 7.85 mT/m³ (7850 kg/m³).
+            Typical S355 steel: fy=355000 kN/m² (355 MPa), fu=470000 kN/m² (470 MPa).
         """
         if name in self._materials:
             return self._materials[name]
 
-        mat = self._cpp_model.create_material(name, E, nu, rho)
+        mat = self._cpp_model.create_material(name, E, nu, rho, fy, fu)
         self._materials[name] = mat
         return mat
 
@@ -766,7 +776,25 @@ class StructuralModel:
         """
         x, y, z = position
         key = (round(x, 9), round(y, 9), round(z, 9))
-        return self._node_map.get(key)
+
+        # Fast path: exact key lookup
+        node = self._node_map.get(key)
+        if node is not None:
+            return node
+
+        # Slow path: tolerance-based search through all nodes
+        tol = tolerance if tolerance is not None else self._tolerance
+        tol_sq = tol * tol
+
+        for node in self._node_map.values():
+            dx = node.x - x
+            dy = node.y - y
+            dz = node.z - z
+            dist_sq = dx*dx + dy*dy + dz*dz
+            if dist_sq <= tol_sq:
+                return node
+
+        return None
 
     # ===== Beam Creation =====
 
@@ -1542,6 +1570,166 @@ class StructuralModel:
     def get_default_load_case(self) -> _CppLoadCase:
         """Get or create the default load case (for simple models)."""
         return self._cpp_model.get_default_load_case()
+
+    def create_load_combination(
+        self,
+        name: str,
+        permanent_factor: float = 1.0,
+        variable_factor: float = 1.0,
+        environmental_factor: float = 1.0,
+        accidental_factor: float = 0.0
+    ) -> dict:
+        """Create a load combination with type-based factors.
+
+        Args:
+            name: Combination name (e.g., 'ULS-a', 'SLS')
+            permanent_factor: Factor for permanent load cases
+            variable_factor: Factor for variable load cases
+            environmental_factor: Factor for environmental load cases
+            accidental_factor: Factor for accidental load cases
+
+        Returns:
+            Dictionary with combination properties
+        """
+        combo = {
+            "id": self._combination_id_counter,
+            "name": name,
+            "permanent_factor": permanent_factor,
+            "variable_factor": variable_factor,
+            "environmental_factor": environmental_factor,
+            "accidental_factor": accidental_factor,
+            "load_cases": [],  # List of {load_case_id, override_factor, has_override}
+        }
+        self._load_combinations.append(combo)
+        self._combination_id_counter += 1
+        return combo
+
+    def get_load_combinations(self) -> List[dict]:
+        """Get all load combinations."""
+        return self._load_combinations
+
+    def add_load_case_to_combination(
+        self,
+        combination_id: int,
+        load_case_id: int,
+        override_factor: Optional[float] = None
+    ) -> dict:
+        """Add a load case to a load combination.
+
+        Args:
+            combination_id: ID of the load combination
+            load_case_id: ID of the load case to add
+            override_factor: Optional factor override (if not provided, uses type-based factor)
+
+        Returns:
+            The updated combination dictionary
+
+        Raises:
+            ValueError: If combination or load case not found, or load case already in combination
+        """
+        # Find the combination
+        combo = None
+        for c in self._load_combinations:
+            if c["id"] == combination_id:
+                combo = c
+                break
+        if combo is None:
+            raise ValueError(f"Load combination with ID {combination_id} not found")
+
+        # Find the load case
+        load_case = self._cpp_model.get_load_case_by_id(load_case_id)
+        if load_case is None:
+            raise ValueError(f"Load case with ID {load_case_id} not found")
+
+        # Check if already in combination
+        for lc in combo["load_cases"]:
+            if lc["load_case_id"] == load_case_id:
+                raise ValueError(f"Load case {load_case_id} already in combination")
+
+        # Get load case type name for display
+        type_name = load_case.type.name if hasattr(load_case.type, 'name') else str(load_case.type)
+
+        # Add to combination
+        lc_member = {
+            "load_case_id": load_case_id,
+            "name": load_case.name,
+            "type": type_name,
+            "override_factor": override_factor,
+            "has_override": override_factor is not None,
+        }
+        combo["load_cases"].append(lc_member)
+        return combo
+
+    def remove_load_case_from_combination(
+        self,
+        combination_id: int,
+        load_case_id: int
+    ) -> dict:
+        """Remove a load case from a load combination.
+
+        Args:
+            combination_id: ID of the load combination
+            load_case_id: ID of the load case to remove
+
+        Returns:
+            The updated combination dictionary
+
+        Raises:
+            ValueError: If combination not found or load case not in combination
+        """
+        # Find the combination
+        combo = None
+        for c in self._load_combinations:
+            if c["id"] == combination_id:
+                combo = c
+                break
+        if combo is None:
+            raise ValueError(f"Load combination with ID {combination_id} not found")
+
+        # Find and remove the load case
+        for i, lc in enumerate(combo["load_cases"]):
+            if lc["load_case_id"] == load_case_id:
+                combo["load_cases"].pop(i)
+                return combo
+
+        raise ValueError(f"Load case {load_case_id} not found in combination")
+
+    def update_load_case_override(
+        self,
+        combination_id: int,
+        load_case_id: int,
+        override_factor: Optional[float]
+    ) -> dict:
+        """Update the override factor for a load case in a combination.
+
+        Args:
+            combination_id: ID of the load combination
+            load_case_id: ID of the load case
+            override_factor: New factor override (None to remove override)
+
+        Returns:
+            The updated combination dictionary
+
+        Raises:
+            ValueError: If combination not found or load case not in combination
+        """
+        # Find the combination
+        combo = None
+        for c in self._load_combinations:
+            if c["id"] == combination_id:
+                combo = c
+                break
+        if combo is None:
+            raise ValueError(f"Load combination with ID {combination_id} not found")
+
+        # Find and update the load case
+        for lc in combo["load_cases"]:
+            if lc["load_case_id"] == load_case_id:
+                lc["override_factor"] = override_factor
+                lc["has_override"] = override_factor is not None
+                return combo
+
+        raise ValueError(f"Load case {load_case_id} not found in combination")
 
     def add_point_load(
         self,

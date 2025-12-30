@@ -9,8 +9,9 @@ namespace grillex {
 Model::Model(double node_tolerance, LinearSolver::Method solver_method)
     : nodes(node_tolerance), solver_(solver_method) {}
 
-Material* Model::create_material(const std::string& name, double E, double nu, double rho) {
-    auto material = std::make_unique<Material>(next_material_id_++, name, E, nu, rho);
+Material* Model::create_material(const std::string& name, double E, double nu, double rho,
+                                  double fy, double fu) {
+    auto material = std::make_unique<Material>(next_material_id_++, name, E, nu, rho, fy, fu);
     Material* ptr = material.get();
     materials.push_back(std::move(material));
     return ptr;
