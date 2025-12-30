@@ -1632,6 +1632,21 @@ class StructuralModel:
         """Get all load combinations."""
         return self._load_combinations
 
+    def delete_load_combination(self, combination_id: int) -> None:
+        """Delete a load combination.
+
+        Args:
+            combination_id: ID of the combination to delete
+
+        Raises:
+            ValueError: If combination not found
+        """
+        for i, c in enumerate(self._load_combinations):
+            if c["id"] == combination_id:
+                self._load_combinations.pop(i)
+                return
+        raise ValueError(f"Load combination with ID {combination_id} not found")
+
     def add_load_case_to_combination(
         self,
         combination_id: int,

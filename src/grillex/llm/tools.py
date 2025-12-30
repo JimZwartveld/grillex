@@ -437,6 +437,20 @@ TOOLS: List[Dict[str, Any]] = [
             "required": ["combination_id", "load_case_id", "override_factor"]
         }
     },
+    {
+        "name": "delete_load_combination",
+        "description": "Delete a load combination.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "combination_id": {
+                    "type": "integer",
+                    "description": "ID of the load combination to delete"
+                }
+            },
+            "required": ["combination_id"]
+        }
+    },
 
     # =========================================================================
     # Analysis
@@ -1464,6 +1478,25 @@ class ToolExecutor:
                     "load_case_id": load_case_id,
                     "remaining_load_cases": len(combo["load_cases"]),
                     "message": f"Load case {load_case_id} removed from combination {combination_id}"
+                }
+            )
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e))
+
+    def _tool_delete_load_combination(self, params: Dict[str, Any]) -> ToolResult:
+        """Delete a load combination."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        combination_id = params["combination_id"]
+
+        try:
+            self.model.delete_load_combination(combination_id)
+            return ToolResult(
+                success=True,
+                result={
+                    "combination_id": combination_id,
+                    "message": f"Load combination {combination_id} deleted"
                 }
             )
         except ValueError as e:
