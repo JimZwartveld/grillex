@@ -100,6 +100,7 @@ class CMakeBuild(build_ext):
         cmake_args = [
             "-DCMAKE_BUILD_TYPE=Release",
             "-DPYTHON_EXECUTABLE=" + sys.executable,
+            "-DBUILD_TESTS=OFF",  # Don't build C++ tests during wheel creation
         ]
 
         # Platform-specific settings

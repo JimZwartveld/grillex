@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest:*)",
+      "Bash(pytest:*)",
+      "Bash(python -c:*)",
+      "Bash(pip install:*)",
+      "Bash(cmake:*)",
+      "Bash(cmake --build:*)",
+      "Bash(ls:*)",
+      "Bash(docker-compose:*)",
+      "Bash(cat:*)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(find:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(make:*)",
+      "Bash(pip show:*)",
+      "Bash(grep:*)",
+      "Read(/Users/jimzwartveld/python/repositories/grillex-webapp/**)",
+      "Edit(/Users/jimzwartveld/python/repositories/grillex-webapp/**)",
+      "Write(/Users/jimzwartveld/python/repositories/grillex-webapp/**)"
+    ]
+  }
+}
