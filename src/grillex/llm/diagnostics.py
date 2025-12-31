@@ -20,7 +20,7 @@ Usage:
     # Returns list of tool calls that can fix the issue
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from dataclasses import dataclass
 
 from grillex.core import ErrorCode, GrillexError, WarningCode, WarningSeverity, GrillexWarning

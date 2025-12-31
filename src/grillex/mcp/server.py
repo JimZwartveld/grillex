@@ -47,7 +47,6 @@ except ImportError:
 
 # Grillex imports
 from grillex.llm.tools import TOOLS, ToolExecutor, ToolResult
-from grillex.core import StructuralModel
 
 # Configure logging
 logging.basicConfig(

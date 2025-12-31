@@ -267,7 +267,7 @@ def build_result_case(
             try:
                 disp = model.cpp_model.get_node_displacement(node.id, dof)
                 displacements.append(float(disp))
-            except:
+            except Exception:
                 displacements.append(0.0)
 
         # Always get reactions for all nodes (will be zeros for unconstrained nodes)
@@ -278,7 +278,7 @@ def build_result_case(
             try:
                 rxn = model.cpp_model.get_node_reaction(node.id, dof)
                 reactions.append(float(rxn))
-            except:
+            except Exception:
                 reactions.append(0.0)
 
         node_result = NodeResult(

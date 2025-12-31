@@ -7,7 +7,10 @@ and unstructured meshes for plate regions.
 
 import numpy as np
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from grillex.core.plate import Plate
 
 
 class MeshingError(Exception):

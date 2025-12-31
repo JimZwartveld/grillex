@@ -51,7 +51,7 @@ Usage:
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 import yaml
 
 from grillex.core import StructuralModel, DOFIndex, LoadCaseType
