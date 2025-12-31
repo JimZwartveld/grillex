@@ -129,6 +129,8 @@ class Beam:
     - Convenient plotting of internal actions (when Phase 7 is implemented)
 
     Attributes:
+        beam_id: Unique beam identifier
+        name: User-defined beam name for display
         start_pos: Starting position [x, y, z] in global coordinates
         end_pos: Ending position [x, y, z] in global coordinates
         section: Section object
@@ -144,7 +146,8 @@ class Beam:
         end_pos: List[float],
         section: _CppSection,
         material: _CppMaterial,
-        beam_id: Optional[int] = None
+        beam_id: Optional[int] = None,
+        name: Optional[str] = None
     ):
         """Initialize a Beam.
 
@@ -154,8 +157,10 @@ class Beam:
             section: Cross-section properties
             material: Material properties
             beam_id: Optional unique identifier
+            name: Optional beam name for display
         """
         self.beam_id = beam_id
+        self.name = name  # User-defined beam name
         self.start_pos = np.array(start_pos)
         self.end_pos = np.array(end_pos)
         self.section = section

@@ -652,14 +652,15 @@ class TestPositionUpdates:
 
         beam = self.executor.model.beams[0]
 
-        # Set a roll angle first
-        roll_angle = 0.5  # radians
+        # Set a roll angle first (in degrees, converted to radians internally)
+        roll_angle_deg = 30.0  # degrees
+        roll_angle_rad = np.radians(roll_angle_deg)
         self.executor.execute("update_beam", {
             "beam_id": beam.beam_id,
-            "roll_angle": roll_angle
+            "roll_angle": roll_angle_deg
         })
 
-        assert beam.elements[0].local_axes.roll == pytest.approx(roll_angle, abs=1e-6)
+        assert beam.elements[0].local_axes.roll == pytest.approx(roll_angle_rad, abs=1e-6)
 
         # Update position - roll should be preserved
         result = self.executor.execute("update_beam", {
@@ -668,7 +669,7 @@ class TestPositionUpdates:
         })
 
         assert result.success
-        assert beam.elements[0].local_axes.roll == pytest.approx(roll_angle, abs=1e-6)
+        assert beam.elements[0].local_axes.roll == pytest.approx(roll_angle_rad, abs=1e-6)
 
     def test_beam_position_update_shared_node_blocked(self):
         """Test that position update fails for shared nodes."""
@@ -714,10 +715,10 @@ class TestPositionUpdates:
         initial_z = elem.local_axes.z_axis.copy()
         np.testing.assert_allclose(initial_z, [0, 0, 1], atol=1e-6)
 
-        # Apply 90 degree roll
+        # Apply 90 degree roll (input in degrees)
         result = self.executor.execute("update_beam", {
             "beam_id": beam.beam_id,
-            "roll_angle": np.pi / 2
+            "roll_angle": 90
         })
 
         assert result.success

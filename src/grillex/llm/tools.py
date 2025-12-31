@@ -968,13 +968,17 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "update_beam",
-        "description": "Update a beam's properties including position, material, section, formulation, warping, and offsets.",
+        "description": "Update a beam's properties including name, position, material, section, formulation, warping, and offsets.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "beam_id": {
                     "type": "integer",
                     "description": "ID of the beam to update"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "User-defined beam name for display. Optional."
                 },
                 "start_position": {
                     "type": "array",
@@ -1000,7 +1004,7 @@ TOOLS: List[Dict[str, Any]] = [
                 },
                 "roll_angle": {
                     "type": "number",
-                    "description": "Roll angle about beam axis in radians. Optional."
+                    "description": "Roll angle about beam axis in degrees. Optional."
                 },
                 "formulation": {
                     "type": "string",
@@ -2829,6 +2833,12 @@ class ToolExecutor:
         changes = []
         import numpy as np
 
+        # Update name if provided
+        if "name" in params and params["name"] is not None:
+            old_name = beam.name
+            beam.name = params["name"]
+            changes.append(f"name '{old_name}' -> '{beam.name}'")
+
         # Helper to check if a node is shared with other elements
         def is_node_shared(node_id: int, exclude_beam_id: int) -> bool:
             for b in self.model.beams:
@@ -2947,6 +2957,10 @@ class ToolExecutor:
             warping = params["warping_enabled"]
             for elem in beam.elements:
                 elem.config.include_warping = warping
+                # When warping is enabled, release warping DOFs by default
+                if warping:
+                    elem.releases.release_warp_i = True
+                    elem.releases.release_warp_j = True
             changes.append(f"warping_enabled -> {warping}")
 
         # Update offsets if provided
@@ -2964,16 +2978,17 @@ class ToolExecutor:
                 elem.offset_j = offset_j
             changes.append(f"offset_j -> {params['offset_j']}")
 
-        # Update roll angle if provided
+        # Update roll angle if provided (input in degrees, converted to radians)
         if "roll_angle" in params and params["roll_angle"] is not None:
-            roll = params["roll_angle"]
+            roll_deg = params["roll_angle"]
+            roll_rad = np.radians(roll_deg)
             from grillex.core.data_types import LocalAxes
             for elem in beam.elements:
                 # Recalculate local_axes with the new roll angle
                 pos_i = np.array([elem.node_i.x, elem.node_i.y, elem.node_i.z])
                 pos_j = np.array([elem.node_j.x, elem.node_j.y, elem.node_j.z])
-                elem.local_axes = LocalAxes(pos_i, pos_j, roll)
-            changes.append(f"roll_angle -> {roll}")
+                elem.local_axes = LocalAxes(pos_i, pos_j, roll_rad)
+            changes.append(f"roll_angle -> {roll_deg}°")
 
         # Update releases if provided
         if "releases_i" in params and params["releases_i"] is not None:
