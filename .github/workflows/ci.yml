@@ -48,15 +48,25 @@ jobs:
           pip install --upgrade pip
           pip install build pytest pytest-cov numpy scipy pyyaml pydantic
 
-      - name: Build C++ extension
+      - name: Build C++ extension and tests
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
           cmake --build build -j$(nproc)
+
+      - name: Run C++ tests
+        run: |
+          cd build/tests/cpp
+          ./test_boundary_conditions
+          ./test_eigenvalue_solver
+          ./test_singularity_diagnostics
+          ./test_constraints
+          ./test_internal_actions
+          ./test_warping
 
       - name: Install package in development mode
         run: pip install -e .[testing,meshing]
 
-      - name: Run tests
+      - name: Run Python tests
         run: |
           pytest tests/python -v --cov=grillex --cov-report=xml --cov-report=term-missing
 
@@ -93,15 +103,25 @@ jobs:
           pip install --upgrade pip
           pip install build pytest numpy scipy pyyaml pydantic
 
-      - name: Build C++ extension
+      - name: Build C++ extension and tests
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
           cmake --build build -j$(sysctl -n hw.ncpu)
+
+      - name: Run C++ tests
+        run: |
+          cd build/tests/cpp
+          ./test_boundary_conditions
+          ./test_eigenvalue_solver
+          ./test_singularity_diagnostics
+          ./test_constraints
+          ./test_internal_actions
+          ./test_warping
 
       - name: Install package in development mode
         run: pip install -e .[testing,meshing]
 
-      - name: Run tests
+      - name: Run Python tests
         run: |
           pytest tests/python -v
 
@@ -128,15 +148,25 @@ jobs:
           pip install --upgrade pip
           pip install build pytest numpy scipy pyyaml pydantic
 
-      - name: Build C++ extension
+      - name: Build C++ extension and tests
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
           cmake --build build --config Release -j $env:NUMBER_OF_PROCESSORS
+
+      - name: Run C++ tests
+        run: |
+          cd build/tests/cpp/Release
+          ./test_boundary_conditions.exe
+          ./test_eigenvalue_solver.exe
+          ./test_singularity_diagnostics.exe
+          ./test_constraints.exe
+          ./test_internal_actions.exe
+          ./test_warping.exe
 
       - name: Install package in development mode
         run: pip install -e .[testing,meshing]
 
-      - name: Run tests
+      - name: Run Python tests
         run: |
           pytest tests/python -v
 

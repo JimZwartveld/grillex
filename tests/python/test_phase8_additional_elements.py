@@ -242,7 +242,7 @@ class TestSpringElementInModel:
         # Apply vertical load at node 2
         F = 100.0  # kN
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, F)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, F])
 
         # Analyze
         assert model.analyze(), f"Analysis failed: {model.get_error_message()}"
@@ -280,7 +280,7 @@ class TestSpringElementInModel:
 
         # Apply load
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         # Should analyze successfully
         assert model.analyze()
@@ -542,7 +542,7 @@ class TestSpringOnlyModel:
         # Apply load
         F = 50.0
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UX, F)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [F, 0, 0])
 
         # Should analyze successfully
         assert model.analyze(), f"Analysis failed: {model.get_error_message()}"
@@ -767,7 +767,7 @@ class TestPlateElementInModel:
 
         # Apply small downward load at each corner
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n1.id, DOFIndex.UZ, -1.0)
+        lc.add_nodal_load([n1.x, n1.y, n1.z], [0, 0, -1.0])
 
         # With fixed BCs at all nodes, displacements should be zero
         # but analysis should complete successfully
@@ -811,8 +811,8 @@ class TestPlateElementInModel:
         # Apply downward load at free end nodes (n2, n3)
         F = -1.0  # kN at each node
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, F)
-        lc.add_nodal_load(n3.id, DOFIndex.UZ, F)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, F])
+        lc.add_nodal_load([n3.x, n3.y, n3.z], [0, 0, F])
 
         # Analyze
         assert model.analyze(), f"Analysis failed: {model.get_error_message()}"
@@ -922,7 +922,7 @@ class TestPlateConvergence:
         # Apply load at center node (node 4)
         P = -10.0  # kN
         lc = model.get_default_load_case()
-        lc.add_nodal_load(nodes[4].id, DOFIndex.UZ, P)
+        lc.add_nodal_load([nodes[4].x, nodes[4].y, nodes[4].z], [0, 0, P])
 
         # Analyze
         assert model.analyze(), f"Analysis failed: {model.get_error_message()}"

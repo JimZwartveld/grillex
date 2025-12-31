@@ -1,14 +1,53 @@
 # C++ core library and Python bindings for Grillex
 
-# Create a placeholder library target for the C++ core
+# Collect all C++ source files for the core library
+set(GRILLEX_CORE_SOURCES
+    src/node.cpp
+    src/node_registry.cpp
+    src/material.cpp
+    src/section.cpp
+    src/local_axes.cpp
+    src/beam_element.cpp
+    src/spring_element.cpp
+    src/point_mass.cpp
+    src/plate_element.cpp
+    src/plate_element_8.cpp
+    src/plate_element_9.cpp
+    src/plate_element_tri.cpp
+    src/dof_handler.cpp
+    src/assembler.cpp
+    src/boundary_condition.cpp
+    src/solver.cpp
+    src/load_case.cpp
+    src/model.cpp
+    src/constraints.cpp
+    src/internal_actions_axial.cpp
+    src/internal_actions_bending_euler.cpp
+    src/internal_actions_bending_timoshenko.cpp
+    src/internal_actions_deflection_euler.cpp
+    src/internal_actions_warping.cpp
+    src/nonlinear_solver.cpp
+    src/eigenvalue_solver.cpp
+    src/singularity_diagnostics.cpp
+    src/placeholder.cpp
+)
+
+# Create a static library for C++ tests to link against
+add_library(grillex_core_static STATIC ${GRILLEX_CORE_SOURCES})
+target_include_directories(grillex_core_static PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(grillex_core_static PUBLIC Eigen3::Eigen)
+
+# Define _USE_MATH_DEFINES for M_PI on Windows/MSVC
+target_compile_definitions(grillex_core_static PUBLIC _USE_MATH_DEFINES)
+
+# Keep the interface library for header-only usage
 add_library(grillex_core INTERFACE)
 target_include_directories(grillex_core INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_link_libraries(grillex_core INTERFACE Eigen3::Eigen)
-
-# Define _USE_MATH_DEFINES for M_PI on Windows/MSVC
-# Must be defined before <cmath> is included
 target_compile_definitions(grillex_core INTERFACE _USE_MATH_DEFINES)
 
 # Create the pybind11 module

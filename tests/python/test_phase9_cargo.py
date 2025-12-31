@@ -207,7 +207,7 @@ class TestCargoWithLoads:
         # Apply gravity as nodal load: F = m * g = 10 * 9.81 = 98.1 kN
         gravity = 9.81  # m/s^2
         weight = cargo.get_weight(gravity)  # Use cargo's weight method
-        lc.add_nodal_load(cargo.cog_node.id, DOFIndex.UZ, -weight)
+        lc.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [0, 0, -weight])
 
         # Analyze
         result = model.analyze()
@@ -272,7 +272,7 @@ class TestCargoWithLoads:
 
         # Apply downward point load at cargo CoG
         # Weight = 20 mT * 9.81 m/s² = 196.2 kN
-        lc.add_nodal_load(cargo.cog_node.id, DOFIndex.UZ, -196.2)
+        lc.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [0, 0, -196.2])
 
         result = model.analyze()
         assert result, "Analysis should succeed with 4-point supported cargo"
@@ -483,7 +483,7 @@ class TestStaticDynamicCargoConnections:
 
         # Apply gravity as nodal load at CoG
         weight = cargo.get_weight()  # 100 * 9.81 = 981 kN
-        lc_gravity.add_nodal_load(cargo.cog_node.id, DOFIndex.UZ, -weight)
+        lc_gravity.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [0, 0, -weight])
 
         # Analyze
         result = model.analyze()
@@ -541,7 +541,7 @@ class TestStaticDynamicCargoConnections:
 
         # Apply gravity as nodal load at CoG
         weight = cargo.get_weight()
-        lc_gravity.add_nodal_load(cargo.cog_node.id, DOFIndex.UZ, -weight)
+        lc_gravity.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [0, 0, -weight])
 
         # Analyze
         result = model.analyze()
@@ -598,7 +598,7 @@ class TestStaticDynamicCargoConnections:
 
         # Apply lateral load at CoG (simulating roll acceleration)
         lateral_force = 50.0  # kN
-        lc_env.add_nodal_load(cargo.cog_node.id, DOFIndex.UX, lateral_force)
+        lc_env.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [lateral_force, 0, 0])
 
         # Analyze
         result = model.analyze()
@@ -659,10 +659,10 @@ class TestStaticDynamicCargoConnections:
 
         # Add loads to gravity case
         weight = cargo.get_weight()
-        lc_gravity.add_nodal_load(cargo.cog_node.id, DOFIndex.UZ, -weight)
+        lc_gravity.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [0, 0, -weight])
 
         # Add loads to roll case
-        lc_roll.add_nodal_load(cargo.cog_node.id, DOFIndex.UX, 100.0)
+        lc_roll.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [100.0, 0, 0])
 
         # Analyze
         result = model.analyze()
@@ -712,8 +712,8 @@ class TestStaticDynamicCargoConnections:
         lc_env = model.create_load_case("Roll", LoadCaseType.Environmental)
 
         # Add loads
-        lc_permanent.add_nodal_load(cargo.cog_node.id, DOFIndex.UZ, -100.0)
-        lc_env.add_nodal_load(cargo.cog_node.id, DOFIndex.UX, 50.0)
+        lc_permanent.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [0, 0, -100.0])
+        lc_env.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [50.0, 0, 0])
 
         # Analyze
         result = model.analyze()
@@ -931,7 +931,7 @@ class TestCargoReactionsUnderLoad:
 
         # Force = mass * acceleration = 100 mT * 1 m/s² = 100 kN
         total_fx = cargo_mass * 1.0
-        lc.add_nodal_load(cargo.cog_node.id, DOFIndex.UX, total_fx)
+        lc.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [total_fx, 0, 0])
 
         # Analyze
         result = model.analyze()
@@ -999,7 +999,7 @@ class TestCargoReactionsUnderLoad:
 
         # Force = mass * acceleration = 100 mT * 1 m/s² = 100 kN
         total_fy = cargo_mass * 1.0
-        lc.add_nodal_load(cargo.cog_node.id, DOFIndex.UY, total_fy)
+        lc.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [0, total_fy, 0])
 
         result = model.analyze()
         assert result, f"Analysis should succeed: {model._cpp_model.get_error_message()}"
@@ -1060,7 +1060,7 @@ class TestCargoReactionsUnderLoad:
 
         # Weight = mass * g = 100 mT * 9.81 m/s² = 981 kN (downward)
         weight = cargo.get_weight()
-        lc.add_nodal_load(cargo.cog_node.id, DOFIndex.UZ, -weight)
+        lc.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [0, 0, -weight])
 
         result = model.analyze()
         assert result, f"Analysis should succeed: {model._cpp_model.get_error_message()}"
@@ -1148,7 +1148,7 @@ class TestCargoWithElevatedCog:
         model.set_active_load_case(lc)
 
         weight = cargo.get_weight()
-        lc.add_nodal_load(cargo.cog_node.id, DOFIndex.UZ, -weight)
+        lc.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [0, 0, -weight])
 
         result = model.analyze()
         assert result, f"Analysis should succeed: {model._cpp_model.get_error_message()}"
@@ -1233,7 +1233,7 @@ class TestCargoWithElevatedCog:
         lc = model.create_load_case("Roll", LoadCaseType.Environmental)
         model.set_active_load_case(lc)
 
-        lc.add_nodal_load(cargo.cog_node.id, DOFIndex.UX, lateral_force)
+        lc.add_nodal_load([cargo.cog_node.x, cargo.cog_node.y, cargo.cog_node.z], [lateral_force, 0, 0])
 
         result = model.analyze()
         assert result, f"Analysis should succeed: {model._cpp_model.get_error_message()}"

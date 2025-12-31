@@ -193,121 +193,6 @@ class TestBCHandlerWithDOFHandler:
         assert global_dofs == [0, 1, 2]  # UX, UY, UZ at node 1
 
 
-class TestPenaltyMethod:
-    """Test penalty method application to system matrices"""
-
-    def setup_method(self):
-        """Set up a simple cantilever beam model"""
-        # Create nodes
-        self.registry = NodeRegistry()
-        self.node1 = self.registry.get_or_create_node(0.0, 0.0, 0.0)  # Fixed end
-        self.node2 = self.registry.get_or_create_node(6.0, 0.0, 0.0)  # Free end
-
-        # Create material (steel)
-        self.mat = Material(1, "Steel", E=200e6, nu=0.3, rho=7.85e-9)
-
-        # Create section (W200x46.1)
-        self.sec = Section(
-            1, "W200x46.1",
-            A=5880e-6,  # m²
-            Iy=45.5e-6,  # m⁴
-            Iz=15.3e-6,  # m⁴
-            J=213e-9    # m⁴
-        )
-
-        # Create beam element
-        self.elem = BeamElement(1, self.node1, self.node2, self.mat, self.sec)
-
-        # Number DOFs
-        self.dof_handler = DOFHandler()
-        self.dof_handler.number_dofs(self.registry)
-
-        # Assemble system matrices
-        assembler = Assembler(self.dof_handler)
-        self.K = assembler.assemble_stiffness([self.elem])
-        self.M = assembler.assemble_mass([self.elem])
-
-        # Create force vector (apply downward load at free end)
-        self.F = np.zeros(self.dof_handler.total_dofs())
-
-    def test_apply_to_stiffness_matrix(self):
-        """Test that penalty method modifies stiffness matrix correctly"""
-        bc = BCHandler()
-        bc.fix_node(self.node1.id)
-
-        K_original = self.K.todense().copy()
-        F_original = self.F.copy()
-
-        # Apply BCs (returns modified K and F)
-        K_mod, F_mod = bc.apply_to_system(self.K, self.F, self.dof_handler)
-
-        K_modified = K_mod.todense()
-
-        # Check that fixed DOF diagonals are much larger
-        for i in range(6):  # First 6 DOFs are fixed
-            assert K_modified[i, i] > K_original[i, i] * 1e10
-
-    def test_system_remains_solvable(self):
-        """Test that system remains solvable after BC application"""
-        bc = BCHandler()
-        bc.fix_node(self.node1.id)
-
-        # Apply BCs (returns modified K and F)
-        K_mod, F_mod = bc.apply_to_system(self.K, self.F, self.dof_handler)
-
-        # System should remain solvable (no NaN in matrix)
-        K_dense = K_mod.todense()
-        assert not np.any(np.isnan(K_dense))
-
-        # Check that matrix is not singular (det != 0)
-        # For a well-conditioned system, we can solve it
-        try:
-            u = np.linalg.solve(K_dense, F_mod)
-            # If solve succeeds, system is solvable
-            assert u.shape == (12,)
-        except np.linalg.LinAlgError:
-            pytest.fail("System became singular after BC application")
-
-    def test_fixed_dofs_result_in_zero_displacement(self):
-        """Test that fixed DOFs result in zero displacement"""
-        bc = BCHandler()
-        bc.fix_node(self.node1.id)
-
-        # Apply downward load at free end (global DOF 7 = UY at node 2)
-        self.F[7] = -10.0  # kN
-
-        # Apply BCs (returns modified K and F)
-        K_mod, F_mod = bc.apply_to_system(self.K, self.F, self.dof_handler)
-
-        # Solve system
-        K_dense = K_mod.todense()
-        u = np.linalg.solve(K_dense, F_mod)
-
-        # Check that fixed DOFs have near-zero displacement
-        for i in range(6):  # First 6 DOFs are fixed
-            assert abs(u[i]) < 1e-10
-
-    def test_prescribed_displacement(self):
-        """Test prescribed displacement (non-zero value)"""
-        bc = BCHandler()
-        # Fix node 1 with prescribed displacement in UX
-        bc.add_fixed_dof(self.node1.id, DOFIndex.UX, 0.01)  # 10mm prescribed
-        # Fix other DOFs to zero
-        for dof in [DOFIndex.UY, DOFIndex.UZ, DOFIndex.RX, DOFIndex.RY, DOFIndex.RZ]:
-            bc.add_fixed_dof(self.node1.id, dof, 0.0)
-
-        # Apply BCs (returns modified K and F)
-        K_mod, F_mod = bc.apply_to_system(self.K, self.F, self.dof_handler)
-
-        # Solve system
-        K_dense = K_mod.todense()
-        u = np.linalg.solve(K_dense, F_mod)
-
-        # Check that prescribed DOF has the prescribed value
-        # (within tolerance due to penalty method approximation)
-        assert abs(u[0] - 0.01) < 1e-6
-
-
 class TestSimplySupportedBeam:
     """Test simply supported beam with pin supports at both ends"""
 
@@ -428,89 +313,18 @@ class TestWarpingBoundaryConditions:
 
 
 class TestAcceptanceCriteria:
-    """Test all acceptance criteria for Task 3.3"""
+    """Test all acceptance criteria for Task 3.3
+
+    NOTE: Tests for AC1-AC3 (penalty method, reactions, system solvability)
+    have been moved to C++ tests in tests/cpp/test_boundary_conditions.cpp
+    because pybind11 cannot handle Eigen::SparseMatrix as input parameters.
+    """
 
     def setup_method(self):
-        """Set up a cantilever beam for testing"""
+        """Set up a simple two-node model for testing"""
         self.registry = NodeRegistry()
         self.node1 = self.registry.get_or_create_node(0.0, 0.0, 0.0)
         self.node2 = self.registry.get_or_create_node(6.0, 0.0, 0.0)
-
-        self.mat = Material(1, "Steel", E=200e6, nu=0.3, rho=7.85e-9)
-        self.sec = Section(1, "W200", A=5880e-6, Iy=45.5e-6, Iz=15.3e-6, J=213e-9)
-
-        self.elem = BeamElement(1, self.node1, self.node2, self.mat, self.sec)
-
-        self.dof_handler = DOFHandler()
-        self.dof_handler.number_dofs(self.registry)
-
-        assembler = Assembler(self.dof_handler)
-        self.K = assembler.assemble_stiffness([self.elem])
-        self.F = np.zeros(self.dof_handler.total_dofs())
-
-    def test_ac1_fixed_dofs_zero_displacement(self):
-        """AC1: Fixed DOFs result in zero (or prescribed) displacement"""
-        bc = BCHandler()
-        bc.fix_node(self.node1.id)
-
-        # Apply load at free end
-        self.F[7] = -10.0  # Downward load
-
-        K_mod, F_mod = bc.apply_to_system(self.K, self.F, self.dof_handler)
-
-        K_dense = K_mod.todense()
-        u = np.linalg.solve(K_dense, F_mod)
-
-        # Fixed DOFs should be near zero
-        for i in range(6):
-            assert abs(u[i]) < 1e-10
-
-    def test_ac2_reactions_recoverable(self):
-        """AC2: Reactions can be recovered from K * u - F"""
-        bc = BCHandler()
-        bc.fix_node(self.node1.id)
-
-        # Apply load
-        self.F[7] = -10.0
-
-        # Store original K before BC application
-        K_original = self.K.copy()
-
-        K_mod, F_mod = bc.apply_to_system(self.K, self.F, self.dof_handler)
-
-        # Solve for displacements
-        K_dense = K_mod.todense()
-        u = np.linalg.solve(K_dense, F_mod)
-
-        # Compute reactions: R = K_original * u - F_applied
-        # (F_applied is external forces only, without penalty modifications)
-        F_applied = np.zeros(self.dof_handler.total_dofs())
-        F_applied[7] = -10.0
-
-        K_orig_dense = K_original.todense()
-        reactions = K_orig_dense @ u - F_applied
-
-        # Reaction at fixed DOFs should be non-zero (supporting the load)
-        # Reaction in Y direction at node 1 should oppose applied load
-        # reactions is a matrix, so need to flatten or access with [0, i]
-        reactions_vec = np.asarray(reactions).flatten()
-        assert abs(reactions_vec[1]) > 1e-6  # UY reaction at node 1
-
-    def test_ac3_system_remains_solvable(self):
-        """AC3: System remains solvable after BC application"""
-        bc = BCHandler()
-        bc.fix_node(self.node1.id)
-
-        K_mod, F_mod = bc.apply_to_system(self.K, self.F, self.dof_handler)
-
-        # System should be solvable
-        K_dense = K_mod.todense()
-        assert not np.any(np.isnan(K_dense))
-
-        # Should be able to solve without error
-        u = np.linalg.solve(K_dense, F_mod)
-        assert u.shape == (12,)
-        assert not np.any(np.isnan(u))
 
     def test_ac4_warping_dof_can_be_fixed_or_free(self):
         """AC4: Warping DOF (index 6) can be fixed or left free"""

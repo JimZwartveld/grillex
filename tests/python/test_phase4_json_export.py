@@ -255,10 +255,10 @@ class TestExportFunctions:
 
         # Create multiple load cases
         lc1 = model.create_load_case("Dead Load", LoadCaseType.Permanent)
-        lc1.add_nodal_load(model.find_node_at([6, 0, 0]).id, DOFIndex.UY, -5.0)
+        lc1.add_nodal_load([6, 0, 0], [0, -5.0, 0])
 
         lc2 = model.create_load_case("Live Load", LoadCaseType.Variable)
-        lc2.add_nodal_load(model.find_node_at([6, 0, 0]).id, DOFIndex.UY, -10.0)
+        lc2.add_nodal_load([6, 0, 0], [0, -10.0, 0])
 
         model.analyze()
 
@@ -456,7 +456,7 @@ class TestAcceptanceCriteria:
         model.fix_node_at([0, 0, 0])
 
         lc = model.create_load_case("Tip Load", LoadCaseType.Variable)
-        lc.add_nodal_load(model.find_node_at([6, 0, 0]).id, DOFIndex.UY, -10.0)
+        lc.add_nodal_load([6, 0, 0], [0, -10.0, 0])
 
         model.analyze()
 
