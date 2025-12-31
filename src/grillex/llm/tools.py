@@ -844,6 +844,20 @@ TOOLS: List[Dict[str, Any]] = [
                     "minItems": 3,
                     "maxItems": 3,
                     "description": "End offset at end node [x, y, z] in local beam coordinates (meters). Optional."
+                },
+                "releases_i": {
+                    "type": "array",
+                    "items": {"type": "boolean"},
+                    "minItems": 7,
+                    "maxItems": 7,
+                    "description": "DOF releases at start end [UX, UY, UZ, RX, RY, RZ, WARP]. True = released (hinge). Optional."
+                },
+                "releases_j": {
+                    "type": "array",
+                    "items": {"type": "boolean"},
+                    "minItems": 7,
+                    "maxItems": 7,
+                    "description": "DOF releases at end [UX, UY, UZ, RX, RY, RZ, WARP]. True = released (hinge). Optional."
                 }
             },
             "required": ["beam_id"]
@@ -2267,6 +2281,38 @@ class ToolExecutor:
             for elem in beam.elements:
                 elem.offset_j = offset_j
             changes.append(f"offset_j -> {params['offset_j']}")
+
+        # Update roll angle if provided
+        if "roll_angle" in params and params["roll_angle"] is not None:
+            roll = params["roll_angle"]
+            for elem in beam.elements:
+                elem.local_axes.roll = roll
+            changes.append(f"roll_angle -> {roll}")
+
+        # Update releases if provided
+        if "releases_i" in params and params["releases_i"] is not None:
+            rel = params["releases_i"]
+            for elem in beam.elements:
+                elem.releases.release_ux_i = rel[0]
+                elem.releases.release_uy_i = rel[1]
+                elem.releases.release_uz_i = rel[2]
+                elem.releases.release_rx_i = rel[3]
+                elem.releases.release_ry_i = rel[4]
+                elem.releases.release_rz_i = rel[5]
+                elem.releases.release_warp_i = rel[6] if len(rel) > 6 else False
+            changes.append(f"releases_i -> {rel}")
+
+        if "releases_j" in params and params["releases_j"] is not None:
+            rel = params["releases_j"]
+            for elem in beam.elements:
+                elem.releases.release_ux_j = rel[0]
+                elem.releases.release_uy_j = rel[1]
+                elem.releases.release_uz_j = rel[2]
+                elem.releases.release_rx_j = rel[3]
+                elem.releases.release_ry_j = rel[4]
+                elem.releases.release_rz_j = rel[5]
+                elem.releases.release_warp_j = rel[6] if len(rel) > 6 else False
+            changes.append(f"releases_j -> {rel}")
 
         if not changes:
             return ToolResult(
