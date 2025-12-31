@@ -22,7 +22,7 @@ Usage:
     })
 """
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 
 from grillex.core import StructuralModel, DOFIndex, LoadCaseType, SpringBehavior, LoadingCondition
@@ -1752,7 +1752,7 @@ class ToolExecutor:
         override_factor = params.get("override_factor")
 
         try:
-            combo = self.model.update_load_case_override(
+            self.model.update_load_case_override(
                 combination_id,
                 load_case_id,
                 override_factor
@@ -1798,7 +1798,6 @@ class ToolExecutor:
             return ToolResult(success=False, error="No model created. Call create_model first.")
 
         n_modes = params.get("n_modes", 10)
-        method = params.get("method", "subspace")
 
         success = self.model.analyze_modes(n_modes=n_modes)
 
@@ -2296,7 +2295,7 @@ class ToolExecutor:
         if changes:
             try:
                 self.model._cpp_model.clear_analysis()
-            except:
+            except Exception:
                 pass
             self.model._is_analyzed = False
 
@@ -2347,7 +2346,7 @@ class ToolExecutor:
 
         try:
             self.model._cpp_model.clear_analysis()
-        except:
+        except Exception:
             pass
         self.model._is_analyzed = False
 
@@ -2386,7 +2385,7 @@ class ToolExecutor:
         # Clear analysis cache
         try:
             self.model._cpp_model.clear_analysis()
-        except:
+        except Exception:
             pass
         self.model._is_analyzed = False
 
@@ -2503,7 +2502,7 @@ class ToolExecutor:
         if changes:
             try:
                 self.model._cpp_model.clear_analysis()
-            except:
+            except Exception:
                 pass
             self.model._is_analyzed = False
 
@@ -2563,7 +2562,7 @@ class ToolExecutor:
 
         try:
             self.model._cpp_model.clear_analysis()
-        except:
+        except Exception:
             pass
         self.model._is_analyzed = False
 
@@ -3301,7 +3300,7 @@ class ToolExecutor:
         offset = params.get("offset")
         releases = params.get("releases")
 
-        coupling = self.model.couple_plate_to_beam(
+        self.model.couple_plate_to_beam(
             plate=plate,
             edge_index=params["edge_index"],
             beam=beam,
@@ -3340,7 +3339,7 @@ class ToolExecutor:
                 suggestion=f"Available plates: {[p.name for p in plates]}"
             )
 
-        support = self.model.add_support_curve(
+        self.model.add_support_curve(
             plate=plate,
             edge_index=params["edge_index"],
             ux=params.get("ux", False),

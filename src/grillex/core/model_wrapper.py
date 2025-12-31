@@ -39,6 +39,9 @@ from typing import List, Tuple, Optional, Union, Dict, TYPE_CHECKING
 from dataclasses import dataclass
 import numpy as np
 
+if TYPE_CHECKING:
+    import pandas as pd
+
 # Core imports
 from grillex._grillex_cpp import (
     Model as _CppModel,
@@ -50,9 +53,9 @@ from grillex._grillex_cpp import (
     DOFIndex,
     Node,
     InternalActions,
-    ActionExtreme,
     SpringElement as _CppSpringElement,
     LoadCaseResult,
+    PlateElement,
 )
 
 # Optional imports - Phase 15: Nonlinear Springs
@@ -88,9 +91,9 @@ except ImportError:
     LoadCombination = None
     LoadCombinationResult = None
 
-from .cargo import Cargo, CargoConnection
+from .cargo import Cargo
 from .plate import Plate, EdgeMeshControl, PlateBeamCoupling, SupportCurve
-from .element_types import get_element_type, create_plate_element
+from .element_types import get_element_type
 
 
 @dataclass
@@ -977,12 +980,17 @@ class StructuralModel:
         return plate
 
     def get_plate_elements(self) -> List:
-        """Return all plate elements in the model.
+        """Get all plate elements in the model.
 
         Returns:
-            List of PlateElement objects.
+            List of all plate elements (MITC4, MITC8, MITC9, DKT).
         """
-        return list(self._cpp_model.plate_elements)
+        elements = []
+        elements.extend(self._cpp_model.plate_elements)
+        elements.extend(self._cpp_model.plate_elements_8)
+        elements.extend(self._cpp_model.plate_elements_9)
+        elements.extend(self._cpp_model.plate_elements_tri)
+        return elements
 
     # ===== Plate Geometry (for meshing) =====
 
@@ -1223,7 +1231,7 @@ class StructuralModel:
             >>> stats = model.mesh()
             >>> print(f"Created {stats.n_plate_elements} plate elements")
         """
-        from grillex.meshing.gmsh_mesher import GmshPlateMesher, MeshResult
+        from grillex.meshing.gmsh_mesher import GmshPlateMesher
 
         stats = MeshStatistics()
 
@@ -1371,7 +1379,7 @@ class StructuralModel:
                 if not edge_node_ids:
                     continue
 
-                beam = coupling.beam
+                _beam = coupling.beam  # noqa: F841
                 offset = np.array(coupling.offset)
 
                 # For each node on the plate edge, create a rigid link to the beam
@@ -1406,7 +1414,7 @@ class StructuralModel:
                 stats.n_beams_subdivided += 1
 
         if verbose:
-            print(f"\nMesh Statistics:")
+            print("\nMesh Statistics:")
             print(f"  Total plate nodes: {stats.n_plate_nodes}")
             print(f"  Total plate elements: {stats.n_plate_elements}")
             print(f"    Quad elements: {stats.n_quad_elements}")
@@ -1995,7 +2003,7 @@ class StructuralModel:
             model_settings.gap_tolerance = settings.gap_tolerance
             model_settings.displacement_tolerance = settings.displacement_tolerance
 
-        success = self._cpp_model.analyze_nonlinear()
+        self._cpp_model.analyze_nonlinear()
 
         # Return results dictionary
         return dict(self._cpp_model.get_all_results())
@@ -2687,10 +2695,6 @@ class StructuralModel:
         # θ_x ≈ ∂w/∂y, θ_y ≈ -∂w/∂x (Mindlin/Kirchhoff convention)
         # κ_x ≈ ∂θ_y/∂x = -∂²w/∂x², κ_y ≈ -∂θ_x/∂y = -∂²w/∂y²
         if n_nodes >= 4:
-            # Use corner nodes for gradient estimation
-            theta_x_avg = np.mean(rx_nodal[:4])
-            theta_y_avg = np.mean(ry_nodal[:4])
-
             # Curvature estimates from nodal rotation differences
             d_theta_y_dx = (np.mean([ry_nodal[1], ry_nodal[2]]) -
                            np.mean([ry_nodal[0], ry_nodal[3]])) / max(lx, 1e-6)
@@ -2770,49 +2774,18 @@ class StructuralModel:
 
         # Stress from bending: σ = M * z / I, where I = t³/12 per unit width
         # So σ = M * z / (t³/12) = 12 * M * z / t³
-        I = t**3 / 12  # Per unit width
+        inertia = t**3 / 12  # Second moment of area per unit width
 
         if abs(t) < 1e-10:
             sigma_x = 0.0
             sigma_y = 0.0
             tau_xy = 0.0
         else:
-            sigma_x = moments["Mx"] * z / I
-            sigma_y = moments["My"] * z / I
-            tau_xy = moments["Mxy"] * z / I
+            sigma_x = moments["Mx"] * z / inertia
+            sigma_y = moments["My"] * z / inertia
+            tau_xy = moments["Mxy"] * z / inertia
 
         return {"sigma_x": sigma_x, "sigma_y": sigma_y, "tau_xy": tau_xy}
-
-    def get_plate_elements(self) -> List:
-        """Get all plate elements in the model.
-
-        Returns:
-            List of all plate elements (MITC4, MITC8, MITC9, DKT).
-        """
-        elements = []
-        elements.extend(self._cpp_model.plate_elements)
-        elements.extend(self._cpp_model.plate_elements_8)
-        elements.extend(self._cpp_model.plate_elements_9)
-        elements.extend(self._cpp_model.plate_elements_tri)
-        return elements
-
-    def create_load_case(
-        self,
-        name: str,
-        load_case_type: Optional[LoadCaseType] = None
-    ) -> _CppLoadCase:
-        """Create a new load case.
-
-        Args:
-            name: Descriptive name (e.g., "Dead Load", "Wind +X")
-            load_case_type: Load case type classification (default: Permanent)
-
-        Returns:
-            Created LoadCase object
-        """
-        if load_case_type is None:
-            return self._cpp_model.create_load_case(name)
-        return self._cpp_model.create_load_case(name, load_case_type)
 
     # ===== Model Information =====
 
@@ -2984,10 +2957,8 @@ class StructuralModel:
 
         # Remove the original beam's element from C++ model elements list
         # (We need to access the underlying C++ model's elements)
-        if beam.elements:
-            old_element = beam.elements[0]
-            # The C++ model maintains its own list - we'll let the old element
-            # remain but create new ones. The model.analyze() will use all elements.
+        # The C++ model maintains its own element list - old elements remain
+        # but new ones are created. model.analyze() will use all elements.
 
         # Create new sub-beams
         new_beams = []
