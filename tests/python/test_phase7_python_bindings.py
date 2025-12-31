@@ -162,7 +162,7 @@ class TestBeamElementMethodsCallable:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UY, -10.0)
+        lc.add_nodal_load([6, 0, 0], [0, -10.0, 0])
 
         model.analyze()
 
@@ -283,7 +283,7 @@ class TestMethodsAcceptEigenArrays:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UY, -10.0)
+        lc.add_nodal_load([6, 0, 0], [0, -10.0, 0])
 
         model.analyze()
 

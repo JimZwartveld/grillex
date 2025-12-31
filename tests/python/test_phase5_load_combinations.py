@@ -96,8 +96,8 @@ class TestAddLoadCases:
 
         # Add loads
         n2 = model.get_all_nodes()[1]
-        dead.add_nodal_load(n2.id, int(DOFIndex.UZ), -10.0)  # 10 kN down
-        live.add_nodal_load(n2.id, int(DOFIndex.UZ), -5.0)   # 5 kN down
+        dead.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])  # 10 kN down
+        live.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -5.0])   # 5 kN down
 
         # Create combination with Eurocode ULS factors
         combo = LoadCombination(1, "ULS", 1.35, 1.5, 1.5, 1.0)
@@ -128,7 +128,7 @@ class TestAddLoadCases:
         dead = model.create_load_case("Dead Load", LoadCaseType.Permanent)
 
         n2 = model.get_all_nodes()[1]
-        dead.add_nodal_load(n2.id, int(DOFIndex.UZ), -10.0)
+        dead.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         # Create combination
         combo = LoadCombination(1, "Custom", 1.35, 1.5, 1.5, 1.0)
@@ -148,9 +148,9 @@ class TestAddLoadCases:
         special = model.create_load_case("Special", LoadCaseType.Variable)
 
         n2 = model.get_all_nodes()[1]
-        dead.add_nodal_load(n2.id, int(DOFIndex.UZ), -10.0)
-        live.add_nodal_load(n2.id, int(DOFIndex.UZ), -5.0)
-        special.add_nodal_load(n2.id, int(DOFIndex.UZ), -3.0)
+        dead.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
+        live.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -5.0])
+        special.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -3.0])
 
         # Create combination
         combo = LoadCombination(1, "Mixed", 1.35, 1.5, 1.5, 1.0)
@@ -233,8 +233,8 @@ class TestCombinedResults:
         live = model.create_load_case("Live Load", LoadCaseType.Variable)
 
         # Add loads - both point loads at tip
-        dead.add_nodal_load(n2.id, int(DOFIndex.UZ), -10.0)  # 10 kN down
-        live.add_nodal_load(n2.id, int(DOFIndex.UZ), -5.0)   # 5 kN down
+        dead.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])  # 10 kN down
+        live.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -5.0])   # 5 kN down
 
         # Analyze
         success = model.analyze()
@@ -352,9 +352,9 @@ class TestEurocodeCombinations:
         W = model.create_load_case("W (Wind)", LoadCaseType.Environmental)
 
         # Add loads
-        G.add_nodal_load(n2.id, int(DOFIndex.UZ), -20.0)  # Dead load
-        Q.add_nodal_load(n2.id, int(DOFIndex.UZ), -15.0)  # Live load
-        W.add_nodal_load(n2.id, int(DOFIndex.UY), 8.0)    # Wind horizontal
+        G.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -20.0])  # Dead load
+        Q.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -15.0])  # Live load
+        W.add_nodal_load([n2.x, n2.y, n2.z], [0, 8.0, 0])    # Wind horizontal
 
         success = model.analyze()
         assert success, f"Analysis failed: {model.get_error_message()}"
@@ -497,7 +497,7 @@ class TestErrorHandling:
         lc1 = model.create_load_case("LC1", LoadCaseType.Permanent)
         lc2 = model.create_load_case("LC2", LoadCaseType.Variable)
 
-        lc1.add_nodal_load(n2.id, int(DOFIndex.UZ), -10.0)
+        lc1.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
         # Don't add anything to lc2
 
         # Analyze only lc1 (implicitly both are analyzed, but lc2 has no loads)

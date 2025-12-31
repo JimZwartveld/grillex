@@ -52,3 +52,24 @@ endif()
 
 # Add subdirectory for C++ sources
 add_subdirectory(cpp)
+
+# Option to build C++ tests
+option(BUILD_TESTS "Build C++ tests" ON)
+
+if(BUILD_TESTS)
+    # Fetch Catch2 for testing
+    include(FetchContent)
+    FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG v3.5.2
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(Catch2)
+
+    # Enable testing
+    enable_testing()
+
+    # Add tests subdirectory
+    add_subdirectory(tests/cpp)
+endif()

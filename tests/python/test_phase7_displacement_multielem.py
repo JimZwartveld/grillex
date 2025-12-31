@@ -48,7 +48,7 @@ class TestDisplacementAtElementEnds:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -81,7 +81,7 @@ class TestDisplacementAtElementEnds:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -114,7 +114,7 @@ class TestDisplacementAtElementEnds:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n3.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([n3.x, n3.y, n3.z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -153,7 +153,7 @@ class TestEulerBernoulliRotation:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -200,7 +200,7 @@ class TestEulerBernoulliRotation:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -252,7 +252,7 @@ class TestDeflectionCurveAnalytical:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -306,7 +306,7 @@ class TestDeflectionCurveAnalytical:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -369,7 +369,7 @@ class TestDeflectionCurveAnalytical:
         model.boundary_conditions.fix_node(nodes[0].id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(nodes[-1].id, DOFIndex.UY, -P)
+        lc.add_nodal_load([nodes[-1].x, nodes[-1].y, nodes[-1].z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -421,7 +421,7 @@ class TestTimoshenkoShearDeformation:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -469,7 +469,7 @@ class TestTimoshenkoShearDeformation:
 
         model_eb.boundary_conditions.fix_node(n1_eb.id)
         lc_eb = model_eb.get_default_load_case()
-        lc_eb.add_nodal_load(n2_eb.id, DOFIndex.UY, -P)
+        lc_eb.add_nodal_load([n2_eb.x, n2_eb.y, n2_eb.z], [0, -P, 0])
         model_eb.analyze()
 
         # Create Timoshenko model with same geometry but shear areas set
@@ -488,7 +488,7 @@ class TestTimoshenkoShearDeformation:
 
         model_timo.boundary_conditions.fix_node(n1_timo.id)
         lc_timo = model_timo.get_default_load_case()
-        lc_timo.add_nodal_load(n2_timo.id, DOFIndex.UY, -P)
+        lc_timo.add_nodal_load([n2_timo.x, n2_timo.y, n2_timo.z], [0, -P, 0])
         model_timo.analyze()
 
         # Get tip deflections
@@ -540,7 +540,7 @@ class TestMultiElementMomentDiagram:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n4.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([n4.x, n4.y, n4.z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -586,7 +586,7 @@ class TestMultiElementMomentDiagram:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n3.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([n3.x, n3.y, n3.z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -630,7 +630,7 @@ class TestExtremaAcrossBoundaries:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n4.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([n4.x, n4.y, n4.z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -673,7 +673,7 @@ class TestDeflectionContinuity:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n4.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([n4.x, n4.y, n4.z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -714,7 +714,7 @@ class TestDeflectionContinuity:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n3.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([n3.x, n3.y, n3.z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -774,7 +774,7 @@ class TestVariableElementCounts:
         model.boundary_conditions.fix_node(nodes[0].id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(nodes[-1].id, DOFIndex.UY, -P)
+        lc.add_nodal_load([nodes[-1].x, nodes[-1].y, nodes[-1].z], [0, -P, 0])
 
         assert model.analyze()
 
@@ -823,7 +823,7 @@ class TestVariableElementCounts:
         model.boundary_conditions.fix_node(nodes[0].id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(nodes[-1].id, DOFIndex.UY, -P)
+        lc.add_nodal_load([nodes[-1].x, nodes[-1].y, nodes[-1].z], [0, -P, 0])
 
         assert model.analyze()
 

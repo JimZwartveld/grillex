@@ -78,7 +78,7 @@ class TestModelLoadsAndBCs:
 
         # Create load case and add load
         lc = model.create_load_case("Test Load")
-        lc.add_nodal_load(node1.id, DOFIndex.UY, -10.0)
+        lc.add_nodal_load([0, 0, 0], [0, -10.0, 0])
         # Model should not be analyzed after adding load
         assert not model.is_analyzed()
 
@@ -89,8 +89,8 @@ class TestModelLoadsAndBCs:
 
         # Create load case and add multiple loads to same DOF
         lc = model.create_load_case("Test Load")
-        lc.add_nodal_load(node1.id, DOFIndex.UY, -5.0)
-        lc.add_nodal_load(node1.id, DOFIndex.UY, -5.0)
+        lc.add_nodal_load([0, 0, 0], [0, -5.0, 0])
+        lc.add_nodal_load([0, 0, 0], [0, -5.0, 0])
         # Loads should accumulate (tested implicitly in analysis)
 
     def test_clear_loads(self):
@@ -100,7 +100,7 @@ class TestModelLoadsAndBCs:
 
         # Create load case and add load
         lc = model.create_load_case("Test Load")
-        lc.add_nodal_load(node1.id, DOFIndex.UY, -10.0)
+        lc.add_nodal_load([0, 0, 0], [0, -10.0, 0])
         # Clear loads from the load case
         lc.clear()
         assert lc.is_empty()
@@ -148,7 +148,7 @@ class TestSimpleCantileverAnalysis:
 
         # Apply load (10 kN downward at tip)
         lc = model.create_load_case("Tip Load")
-        lc.add_nodal_load(node2.id, DOFIndex.UY, -10.0)
+        lc.add_nodal_load([6.0, 0.0, 0.0], [0, -10.0, 0])
 
         # Run analysis
         success = model.analyze()
@@ -211,7 +211,7 @@ class TestErrorHandling:
 
         # Create a load case with a load
         lc = model.create_load_case("Test Load")
-        lc.add_nodal_load(node2.id, DOFIndex.UY, -10.0)
+        lc.add_nodal_load([6, 0, 0], [0, -10.0, 0])
 
         # No boundary conditions - should detect singular system
         success = model.analyze()
@@ -256,7 +256,7 @@ class TestModelClear:
 
         # Create load case and add load
         lc = model.create_load_case("Test Load")
-        lc.add_nodal_load(node2.id, DOFIndex.UY, -10.0)
+        lc.add_nodal_load([6, 0, 0], [0, -10.0, 0])
 
         # Clear model
         model.clear()
@@ -286,7 +286,7 @@ class TestAcceptanceCriteria:
 
         # Create load case and add load
         lc = model.create_load_case("Test Load")
-        lc.add_nodal_load(n2.id, DOFIndex.UY, -1.0)
+        lc.add_nodal_load([3, 0, 0], [0, -1.0, 0])
 
         # Full workflow
         success = model.analyze()
@@ -325,7 +325,7 @@ class TestAcceptanceCriteria:
 
         # Create load case and add load
         lc = model.create_load_case("Point Load")
-        lc.add_nodal_load(n2.id, DOFIndex.UY, -P)
+        lc.add_nodal_load([1, 0, 0], [0, -P, 0])
 
         success = model.analyze()
         assert success
@@ -353,7 +353,7 @@ class TestAcceptanceCriteria:
 
         # Create a load case
         lc = model2.create_load_case("Test Load")
-        lc.add_nodal_load(n2.id, DOFIndex.UY, -1.0)
+        lc.add_nodal_load([1, 0, 0], [0, -1.0, 0])
 
         assert not model2.analyze()
         # Check the load case result for the singular system message
@@ -393,9 +393,9 @@ class TestMultiElementModel:
         model.boundary_conditions.add_fixed_dof(nodes[0].id, DOFIndex.RZ, 0.0)
         model.boundary_conditions.add_fixed_dof(nodes[3].id, DOFIndex.RZ, 0.0)
 
-        # Apply load at middle
+        # Apply load at middle (node at x=1)
         lc = model.create_load_case("Middle Load")
-        lc.add_nodal_load(nodes[1].id, DOFIndex.UY, -10.0)
+        lc.add_nodal_load([1.0, 0, 0], [0, -10.0, 0])
 
         success = model.analyze()
         assert success, f"Analysis failed: {model.get_error_message()}"

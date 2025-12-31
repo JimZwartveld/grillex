@@ -245,7 +245,7 @@ class TestCompressionOnlySpring:
 
         # Apply compressive force (negative Z)
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)  # 10 kN downward
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])  # 10 kN downward
 
         # Analyze with nonlinear
         success = model.analyze_nonlinear()
@@ -283,7 +283,7 @@ class TestTensionOnlySpring:
 
         # Apply tensile force (positive Z)
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, 10.0)  # 10 kN upward
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, 10.0])  # 10 kN upward
 
         # Analyze with nonlinear
         success = model.analyze_nonlinear()
@@ -392,7 +392,7 @@ class TestLineSearchDamping:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         # Enable line search damping
         model.nonlinear_settings().enable_line_search = True
@@ -425,7 +425,7 @@ class TestNonlinearSolverResult:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         success = model.analyze_nonlinear()
 
@@ -454,7 +454,7 @@ class TestNonlinearSolverResult:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         success = model.analyze_nonlinear()
 
@@ -531,7 +531,7 @@ class TestTensionOnlySpringValidation:
 
         # Apply compressive force (negative Z) - spring should NOT activate
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         success = model.analyze_nonlinear()
 
@@ -559,7 +559,7 @@ class TestTensionOnlySpringValidation:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         success = model.analyze_nonlinear()
 
@@ -593,7 +593,7 @@ class TestCompressionOnlySpringValidation:
 
         # Apply upward force (positive Z) - spring should NOT activate (liftoff)
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, 10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, 10.0])
 
         success = model.analyze_nonlinear()
 
@@ -622,7 +622,7 @@ class TestCompressionOnlySpringValidation:
 
         # Apply downward force (gravity on cargo)
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -50.0)  # 50 kN downward
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -50.0])  # 50 kN downward
 
         success = model.analyze_nonlinear()
 
@@ -658,7 +658,7 @@ class TestLoadReversalIteration:
 
         # Apply upward force - should trigger state change during iteration
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, 10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, 10.0])
 
         success = model.analyze_nonlinear()
 
@@ -696,8 +696,8 @@ class TestMultiSpringPartialLiftoff:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)  # Compress spring1
-        lc.add_nodal_load(n2.id, DOFIndex.UY, -10.0)  # Compress spring2 (tension-only, should be inactive)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])  # Compress spring1
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, -10.0, 0])  # Compress spring2 (tension-only, should be inactive)
 
         success = model.analyze_nonlinear()
 
@@ -734,7 +734,7 @@ class TestGapSpringOpenClosed:
 
         # Small compression less than gap
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -5.0)  # Small force
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -5.0])  # Small force
 
         success = model.analyze_nonlinear()
 
@@ -767,7 +767,7 @@ class TestGapSpringOpenClosed:
 
         # Large compression to close gap
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -50.0)  # 50 kN pushes node down
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -50.0])  # 50 kN pushes node down
 
         success = model.analyze_nonlinear()
 
@@ -801,7 +801,7 @@ class TestGapSpringForceOffset:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -50.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -50.0])
 
         success = model.analyze_nonlinear()
 
@@ -841,7 +841,7 @@ class TestTensionGapSpring:
 
         # Small upward load - not enough to take up slack
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, 5.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, 5.0])
 
         success = model.analyze_nonlinear()
 
@@ -874,7 +874,7 @@ class TestTensionGapSpring:
 
         # Large upward load to take up slack and engage spring
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, 50.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, 50.0])
 
         success = model.analyze_nonlinear()
 
@@ -907,7 +907,7 @@ class TestAnalyticalVerification:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, F)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, F])
 
         success = model.analyze_nonlinear()
 
@@ -938,7 +938,7 @@ class TestAnalyticalVerification:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         success = model.analyze_nonlinear()
 
@@ -981,7 +981,7 @@ class TestConvergenceReporting:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         success = model.analyze_nonlinear()
 
@@ -1013,7 +1013,7 @@ class TestEdgeCases:
 
         # Very small load - near threshold
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -0.001)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -0.001])
 
         success = model.analyze_nonlinear()
 
@@ -1039,7 +1039,7 @@ class TestEdgeCases:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         success = model.analyze_nonlinear()
 
@@ -1071,10 +1071,10 @@ class TestLoadCombinationNonlinear:
 
         # Create two load cases
         lc1 = model.get_default_load_case()
-        lc1.add_nodal_load(n2.id, DOFIndex.UZ, -20.0)  # Compression
+        lc1.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -20.0])  # Compression
 
         lc2 = model.create_load_case("Wind", LoadCaseType.Environmental)
-        lc2.add_nodal_load(n2.id, DOFIndex.UZ, 15.0)  # Uplift
+        lc2.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, 15.0])  # Uplift
 
         # With nonlinear springs, superposition is invalid
         # Combined: -20 + 15 = -5 kN (still compression, spring active)
@@ -1109,11 +1109,11 @@ class TestStaticDynamicSequencing:
 
         # Permanent load (gravity)
         lc_perm = model.create_load_case("Dead", LoadCaseType.Permanent)
-        lc_perm.add_nodal_load(n2.id, DOFIndex.UZ, -30.0)
+        lc_perm.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -30.0])
 
         # Variable load (wind uplift)
         lc_var = model.create_load_case("Wind", LoadCaseType.Variable)
-        lc_var.add_nodal_load(n2.id, DOFIndex.UZ, 10.0)
+        lc_var.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, 10.0])
 
         # Create combination directly (not through model)
         combo = LoadCombination(1, "ULS", 1.35, 1.5, 1.5, 1.0)
@@ -1146,7 +1146,7 @@ class TestStaticDynamicSequencing:
 
         # Only Variable load
         lc_var = model.create_load_case("Live", LoadCaseType.Variable)
-        lc_var.add_nodal_load(n2.id, DOFIndex.UZ, -20.0)
+        lc_var.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -20.0])
 
         # Create combination directly
         combo = LoadCombination(2, "SLS", 1.0, 1.0, 1.0, 1.0)
@@ -1191,7 +1191,7 @@ class TestNonlinearInitialState:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         # First solve to establish baseline
         success = model.analyze_nonlinear()
@@ -1246,7 +1246,7 @@ class TestPerformanceBenchmark:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         # Fast path should skip iteration entirely
         start = time.perf_counter()
@@ -1281,7 +1281,7 @@ class TestPerformanceBenchmark:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         # Use settings to configure iteration limit
         settings = NonlinearSolverSettings()
@@ -1328,7 +1328,7 @@ class TestPerformanceBenchmark:
         model.boundary_conditions.fix_node(n_fixed.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n_load.id, DOFIndex.UZ, -50.0)  # Compression
+        lc.add_nodal_load([n_load.x, n_load.y, n_load.z], [0, 0, -50.0])  # Compression
 
         # Benchmark the analysis
         start = time.perf_counter()
@@ -1383,7 +1383,7 @@ class TestPerformanceBenchmark:
         model.boundary_conditions.fix_node(n_fixed.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n_load.id, DOFIndex.UZ, -100.0)  # Compression
+        lc.add_nodal_load([n_load.x, n_load.y, n_load.z], [0, 0, -100.0])  # Compression
 
         start = time.perf_counter()
         success = model.analyze_nonlinear()
@@ -1419,7 +1419,7 @@ class TestPerformanceBenchmark:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([n2.x, n2.y, n2.z], [0, 0, -10.0])
 
         # NonlinearSolverResult should have state_changes_per_iteration
         success = model.analyze_nonlinear()
@@ -1464,7 +1464,7 @@ class TestPerformanceBenchmark:
         model.boundary_conditions.fix_node(n_fixed.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n_load.id, DOFIndex.UZ, -50.0)
+        lc.add_nodal_load([n_load.x, n_load.y, n_load.z], [0, 0, -50.0])
 
         start = time.perf_counter()
         success = model.analyze_nonlinear()

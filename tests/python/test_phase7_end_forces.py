@@ -144,7 +144,7 @@ class TestGetElementDisplacementsLocal:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([6, 0, 0], [0, 0, -10.0])
 
         assert model.analyze()
 
@@ -175,7 +175,7 @@ class TestGetElementDisplacementsLocal:
 
         lc = model.get_default_load_case()
         # Load in global -Z
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([0, 6, 0], [0, 0, -10.0])
 
         assert model.analyze()
 
@@ -220,7 +220,7 @@ class TestComputeEndForces:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -P)
+        lc.add_nodal_load([6, 0, 0], [0, 0, -P])
 
         assert model.analyze()
 
@@ -265,7 +265,7 @@ class TestComputeEndForces:
 
         lc = model.get_default_load_case()
         # Apply axial load at node 2 (along +X = local +x for beam along X)
-        lc.add_nodal_load(n2.id, DOFIndex.UX, P)
+        lc.add_nodal_load([6, 0, 0], [P, 0, 0])
 
         assert model.analyze()
 
@@ -311,8 +311,8 @@ class TestComputeEndForces:
         P1 = 10.0  # kN at midspan
         P2 = 20.0  # kN at tip
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -P1)
-        lc.add_nodal_load(n3.id, DOFIndex.UZ, -P2)
+        lc.add_nodal_load([3, 0, 0], [0, 0, -P1])
+        lc.add_nodal_load([6, 0, 0], [0, 0, -P2])
 
         assert model.analyze()
 
@@ -349,7 +349,7 @@ class TestEndForcesEquilibrium:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -20.0)
+        lc.add_nodal_load([5, 0, 0], [0, 0, -20.0])
 
         assert model.analyze()
 
@@ -394,7 +394,7 @@ class TestEndReleasesZeroForces:
         model.boundary_conditions.pin_node(n3.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([6, 0, 0], [0, 0, -10.0])
 
         assert model.analyze()
 
@@ -427,7 +427,7 @@ class TestEndForcesMatchReactions:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -P)
+        lc.add_nodal_load([6, 0, 0], [0, 0, -P])
 
         assert model.analyze()
 
@@ -473,7 +473,7 @@ class TestWarpingElements:
         model.boundary_conditions.fix_node_with_warping(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([6, 0, 0], [0, 0, -10.0])
 
         assert model.analyze()
 
@@ -520,7 +520,7 @@ class TestTimoshenkoBeamEndForces:
         model.boundary_conditions.fix_node(n1.id)
 
         lc = model.get_default_load_case()
-        lc.add_nodal_load(n2.id, DOFIndex.UZ, -10.0)
+        lc.add_nodal_load([3, 0, 0], [0, 0, -10.0])
 
         assert model.analyze()
 

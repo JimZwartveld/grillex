@@ -270,7 +270,7 @@ class TestAccelerationWithOtherLoads:
         # Add point load at tip using LoadCase API directly
         tip_node = model.find_node_at([L, 0, 0])
         P = -10.0  # kN point load at tip (downward)
-        lc.add_nodal_load(tip_node.id, DOFIndex.UZ, P)
+        lc.add_nodal_load([L, 0, 0], [0, 0, P])
 
         success = model.analyze()
         assert success, "Analysis failed"
