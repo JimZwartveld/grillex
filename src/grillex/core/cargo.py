@@ -130,6 +130,9 @@ class Cargo:
         cargo.add_connection([10.0, 5.0, 0.0], [1e6]*6)
     """
 
+    # Class-level counter for unique IDs
+    _id_counter: int = 0
+
     def __init__(self, name: str):
         """
         Initialize a Cargo object.
@@ -137,8 +140,13 @@ class Cargo:
         Args:
             name: Descriptive name for the cargo (e.g., "Generator Unit 1")
         """
+        # Assign unique ID
+        Cargo._id_counter += 1
+        self.id: int = Cargo._id_counter
+
         self.name = name
         self.cog_position: List[float] = [0.0, 0.0, 0.0]
+        self.dimensions: List[float] = [1.0, 1.0, 1.0]  # [length_x, width_y, height_z] for visualization
         self.mass: float = 0.0
         self.inertia: List[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # Ixx, Iyy, Izz, Ixy, Ixz, Iyz
         self.connections: List[CargoConnection] = []
@@ -161,6 +169,21 @@ class Cargo:
         if len(position) != 3:
             raise ValueError("CoG position must be a 3-element list [x, y, z]")
         self.cog_position = list(position)
+        return self
+
+    def set_dimensions(self, dimensions: List[float]) -> "Cargo":
+        """
+        Set the cargo dimensions for visualization.
+
+        Args:
+            dimensions: [length_x, width_y, height_z] in meters
+
+        Returns:
+            Self for method chaining
+        """
+        if len(dimensions) != 3:
+            raise ValueError("Dimensions must be a 3-element list [length, width, height]")
+        self.dimensions = list(dimensions)
         return self
 
     def set_mass(self, mass: float) -> "Cargo":

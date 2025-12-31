@@ -354,7 +354,12 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Name of the combination (e.g., 'ULS-a', 'SLS', 'ALS')"
+                    "description": "Name of the combination (e.g., 'Main Load', 'Dead + Live')"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": ["ULS-a", "ULS-b", "SLS", "ALS"],
+                    "description": "Combination type. ULS-a: max permanent, ULS-b: max environmental, SLS: serviceability, ALS: accidental"
                 },
                 "permanent_factor": {
                     "type": "number",
@@ -377,7 +382,7 @@ TOOLS: List[Dict[str, Any]] = [
                     "default": 0.0
                 }
             },
-            "required": ["name"]
+            "required": ["name", "type"]
         }
     },
     {
@@ -1084,6 +1089,38 @@ TOOLS: List[Dict[str, Any]] = [
         }
     },
     {
+        "name": "add_cargo",
+        "description": "Add a cargo item to the model. The cargo is represented as a point mass at the CoG with optional visualization dimensions.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name for the cargo (e.g., 'Generator', 'Container 1')"
+                },
+                "cog_position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Center of gravity position [x, y, z] in meters"
+                },
+                "mass": {
+                    "type": "number",
+                    "description": "Total mass in metric tonnes (mT)"
+                },
+                "dimensions": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Cargo dimensions [length_x, width_y, height_z] in meters for visualization. Optional."
+                }
+            },
+            "required": ["name", "cog_position", "mass"]
+        }
+    },
+    {
         "name": "update_cargo",
         "description": "Update cargo properties (mass, name). Note: CoG position cannot be changed after creation.",
         "input_schema": {
@@ -1648,6 +1685,7 @@ class ToolExecutor:
             return ToolResult(success=False, error="No model created. Call create_model first.")
 
         name = params["name"]
+        combo_type = params["type"]
         permanent_factor = params.get("permanent_factor", 1.0)
         variable_factor = params.get("variable_factor", 1.0)
         environmental_factor = params.get("environmental_factor", 1.0)
@@ -1655,6 +1693,7 @@ class ToolExecutor:
 
         combo = self.model.create_load_combination(
             name,
+            combo_type,
             permanent_factor,
             variable_factor,
             environmental_factor,
@@ -1665,11 +1704,12 @@ class ToolExecutor:
             result={
                 "id": combo["id"],
                 "name": name,
+                "type": combo_type,
                 "permanent_factor": permanent_factor,
                 "variable_factor": variable_factor,
                 "environmental_factor": environmental_factor,
                 "accidental_factor": accidental_factor,
-                "message": f"Load combination '{name}' created"
+                "message": f"Load combination '{combo_type} - {name}' created"
             }
         )
 
@@ -3123,6 +3163,46 @@ class ToolExecutor:
                 suggestion="Ensure the position matches an existing node with boundary conditions."
             )
 
+    def _tool_add_cargo(self, params: Dict[str, Any]) -> ToolResult:
+        """Add a cargo item to the model."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        from grillex.core.cargo import Cargo
+
+        name = params["name"]
+        cog_position = params["cog_position"]
+        mass = params["mass"]
+        dimensions = params.get("dimensions", [1.0, 1.0, 1.0])
+
+        # Create the cargo
+        cargo = Cargo(name)
+        cargo.set_cog(cog_position)
+        cargo.set_mass(mass)
+        cargo.set_dimensions(dimensions)
+
+        # Note: We add the cargo to the list but don't generate FE elements
+        # since there are no connections yet. The cargo is purely for tracking/visualization.
+        self.model.cargos.append(cargo)
+
+        # Mark model as not analyzed
+        try:
+            self.model._cpp_model.clear_analysis()
+        except Exception:
+            pass
+
+        return ToolResult(
+            success=True,
+            result={
+                "cargo_id": cargo.id,
+                "name": name,
+                "cog_position": cog_position,
+                "mass": mass,
+                "dimensions": dimensions,
+                "message": f"Cargo '{name}' added at COG {cog_position} with mass {mass} mT."
+            }
+        )
+
     def _tool_update_cargo(self, params: Dict[str, Any]) -> ToolResult:
         """Update cargo properties."""
         if self.model is None:
@@ -3130,15 +3210,21 @@ class ToolExecutor:
 
         cargo_id = params["cargo_id"]
 
-        # Find the cargo by ID (using index as ID)
-        if cargo_id < 0 or cargo_id >= len(self.model.cargos):
+        # Find the cargo by ID
+        cargo = None
+        for c in self.model.cargos:
+            if c.id == cargo_id:
+                cargo = c
+                break
+
+        if cargo is None:
+            available_ids = [c.id for c in self.model.cargos]
             return ToolResult(
                 success=False,
                 error=f"Cargo with ID {cargo_id} not found",
-                suggestion=f"Available cargo IDs: 0 to {len(self.model.cargos) - 1}" if self.model.cargos else "No cargos in model"
+                suggestion=f"Available cargo IDs: {available_ids}" if available_ids else "No cargos in model"
             )
 
-        cargo = self.model.cargos[cargo_id]
         changes = []
 
         # Update name if provided
@@ -3183,16 +3269,23 @@ class ToolExecutor:
 
         cargo_id = params["cargo_id"]
 
-        # Find the cargo by ID (using index as ID)
-        if cargo_id < 0 or cargo_id >= len(self.model.cargos):
+        # Find the cargo by ID
+        cargo_index = None
+        for idx, c in enumerate(self.model.cargos):
+            if c.id == cargo_id:
+                cargo_index = idx
+                break
+
+        if cargo_index is None:
+            available_ids = [c.id for c in self.model.cargos]
             return ToolResult(
                 success=False,
                 error=f"Cargo with ID {cargo_id} not found",
-                suggestion=f"Available cargo IDs: 0 to {len(self.model.cargos) - 1}" if self.model.cargos else "No cargos in model"
+                suggestion=f"Available cargo IDs: {available_ids}" if available_ids else "No cargos in model"
             )
 
         # Remove from Python list
-        removed_cargo = self.model.cargos.pop(cargo_id)
+        removed_cargo = self.model.cargos.pop(cargo_index)
 
         # Note: The underlying C++ elements (point mass, springs) are not removed
         # This is a limitation of the current implementation

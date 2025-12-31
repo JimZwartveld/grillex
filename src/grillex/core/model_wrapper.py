@@ -1612,6 +1612,7 @@ class StructuralModel:
     def create_load_combination(
         self,
         name: str,
+        combo_type: str = "ULS-a",
         permanent_factor: float = 1.0,
         variable_factor: float = 1.0,
         environmental_factor: float = 1.0,
@@ -1620,7 +1621,8 @@ class StructuralModel:
         """Create a load combination with type-based factors.
 
         Args:
-            name: Combination name (e.g., 'ULS-a', 'SLS')
+            name: Combination name (e.g., 'Main Load', 'Dead + Live')
+            combo_type: Combination type (ULS-a, ULS-b, SLS, ALS)
             permanent_factor: Factor for permanent load cases
             variable_factor: Factor for variable load cases
             environmental_factor: Factor for environmental load cases
@@ -1632,6 +1634,7 @@ class StructuralModel:
         combo = {
             "id": self._combination_id_counter,
             "name": name,
+            "type": combo_type,
             "permanent_factor": permanent_factor,
             "variable_factor": variable_factor,
             "environmental_factor": environmental_factor,
@@ -1689,8 +1692,12 @@ class StructuralModel:
         if combo is None:
             raise ValueError(f"Load combination with ID {combination_id} not found")
 
-        # Find the load case
-        load_case = self._cpp_model.get_load_case_by_id(load_case_id)
+        # Find the load case by iterating over all load cases
+        load_case = None
+        for lc in self._cpp_model.get_load_cases():
+            if lc.id == load_case_id:
+                load_case = lc
+                break
         if load_case is None:
             raise ValueError(f"Load case with ID {load_case_id} not found")
 
