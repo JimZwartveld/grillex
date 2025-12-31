@@ -25,7 +25,7 @@ Usage:
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
 
-from grillex.core import StructuralModel, DOFIndex, LoadCaseType, SpringBehavior
+from grillex.core import StructuralModel, DOFIndex, LoadCaseType, SpringBehavior, LoadingCondition
 
 
 # =============================================================================
@@ -698,6 +698,172 @@ TOOLS: List[Dict[str, Any]] = [
     {
         "name": "get_spring_states",
         "description": "Get the state and forces of all springs after nonlinear analysis. Shows which springs are active/inactive and their forces.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "update_spring",
+        "description": "Update spring element properties including position, stiffness, behavior, and gap. Position updates only allowed if node is not shared with other elements.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "spring_id": {
+                    "type": "integer",
+                    "description": "ID of the spring to update"
+                },
+                "position1": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New position [x, y, z] for first node. Only allowed if node is not shared."
+                },
+                "position2": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New position [x, y, z] for second node. Only allowed if node is not shared."
+                },
+                "kx": {
+                    "type": "number",
+                    "description": "Translational stiffness in X direction [kN/m]"
+                },
+                "ky": {
+                    "type": "number",
+                    "description": "Translational stiffness in Y direction [kN/m]"
+                },
+                "kz": {
+                    "type": "number",
+                    "description": "Translational stiffness in Z direction [kN/m]"
+                },
+                "krx": {
+                    "type": "number",
+                    "description": "Rotational stiffness about X axis [kN·m/rad]"
+                },
+                "kry": {
+                    "type": "number",
+                    "description": "Rotational stiffness about Y axis [kN·m/rad]"
+                },
+                "krz": {
+                    "type": "number",
+                    "description": "Rotational stiffness about Z axis [kN·m/rad]"
+                },
+                "behavior": {
+                    "type": "string",
+                    "enum": ["Linear", "TensionOnly", "CompressionOnly"],
+                    "description": "Spring behavior type"
+                },
+                "gap": {
+                    "type": "number",
+                    "description": "Gap before spring engages [m for translation, rad for rotation]"
+                },
+                "loading_condition": {
+                    "type": "string",
+                    "enum": ["All", "Static", "Dynamic"],
+                    "description": "Loading condition: All (default), Static (permanent only), Dynamic (variable/environmental only)"
+                }
+            },
+            "required": ["spring_id"]
+        }
+    },
+    {
+        "name": "delete_spring",
+        "description": "Delete a spring element from the model.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "spring_id": {
+                    "type": "integer",
+                    "description": "ID of the spring to delete"
+                }
+            },
+            "required": ["spring_id"]
+        }
+    },
+
+    # =========================================================================
+    # Rigid Links / Constraints
+    # =========================================================================
+    {
+        "name": "add_rigid_link",
+        "description": "Add a rigid link constraint between slave and master nodes. The slave node's motion follows the master node according to rigid body kinematics: u_slave = u_master + theta_master × offset.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "slave_position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Position of slave (constrained) node [x, y, z] in meters"
+                },
+                "master_position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Position of master (independent) node [x, y, z] in meters"
+                }
+            },
+            "required": ["slave_position", "master_position"]
+        }
+    },
+    {
+        "name": "update_rigid_link",
+        "description": "Update a rigid link constraint. Can update slave or master node positions (if not shared) or the offset.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "link_index": {
+                    "type": "integer",
+                    "description": "Index of the rigid link to update (0-based)"
+                },
+                "slave_position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New position for slave node [x, y, z]. Only allowed if node is not shared."
+                },
+                "master_position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New position for master node [x, y, z]. Only allowed if node is not shared."
+                },
+                "offset": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New offset vector from master to slave [x, y, z] in meters"
+                }
+            },
+            "required": ["link_index"]
+        }
+    },
+    {
+        "name": "delete_rigid_link",
+        "description": "Delete a rigid link constraint.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "link_index": {
+                    "type": "integer",
+                    "description": "Index of the rigid link to delete (0-based)"
+                }
+            },
+            "required": ["link_index"]
+        }
+    },
+    {
+        "name": "get_rigid_links",
+        "description": "Get all rigid link constraints in the model.",
         "input_schema": {
             "type": "object",
             "properties": {},
@@ -2009,6 +2175,440 @@ class ToolExecutor:
             }
         )
 
+    def _tool_update_spring(self, params: Dict[str, Any]) -> ToolResult:
+        """Update spring element properties including position."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        spring_id = params["spring_id"]
+
+        # Find the spring
+        spring = None
+        for s in self.model._cpp_model.spring_elements:
+            if s.id == spring_id:
+                spring = s
+                break
+
+        if spring is None:
+            return ToolResult(
+                success=False,
+                error=f"Spring with ID {spring_id} not found",
+                suggestion="Use get_spring_states to list all springs"
+            )
+
+        changes = []
+
+        # Helper to check if a node is shared
+        def is_node_shared(node_id: int, exclude_spring_id: int) -> bool:
+            # Check beams
+            for b in self.model.beams:
+                for elem in b.elements:
+                    if elem.node_i.id == node_id or elem.node_j.id == node_id:
+                        return True
+            # Check other springs
+            for s in self.model._cpp_model.spring_elements:
+                if s.id == exclude_spring_id:
+                    continue
+                if s.node_i.id == node_id or s.node_j.id == node_id:
+                    return True
+            return False
+
+        # Handle position1 update (node_i)
+        if "position1" in params and params["position1"] is not None:
+            new_pos = params["position1"]
+            node_i = spring.node_i
+            if is_node_shared(node_i.id, spring_id):
+                return ToolResult(
+                    success=False,
+                    error=f"Cannot update position1: node {node_i.id} is shared with other elements",
+                    suggestion="Position updates only allowed on non-shared nodes"
+                )
+            node_i.x = new_pos[0]
+            node_i.y = new_pos[1]
+            node_i.z = new_pos[2]
+            changes.append(f"position1 -> {new_pos}")
+
+        # Handle position2 update (node_j)
+        if "position2" in params and params["position2"] is not None:
+            new_pos = params["position2"]
+            node_j = spring.node_j
+            if is_node_shared(node_j.id, spring_id):
+                return ToolResult(
+                    success=False,
+                    error=f"Cannot update position2: node {node_j.id} is shared with other elements",
+                    suggestion="Position updates only allowed on non-shared nodes"
+                )
+            node_j.x = new_pos[0]
+            node_j.y = new_pos[1]
+            node_j.z = new_pos[2]
+            changes.append(f"position2 -> {new_pos}")
+
+        # Update stiffness properties
+        if "kx" in params and params["kx"] is not None:
+            spring.kx = params["kx"]
+            changes.append(f"kx -> {params['kx']}")
+        if "ky" in params and params["ky"] is not None:
+            spring.ky = params["ky"]
+            changes.append(f"ky -> {params['ky']}")
+        if "kz" in params and params["kz"] is not None:
+            spring.kz = params["kz"]
+            changes.append(f"kz -> {params['kz']}")
+        if "krx" in params and params["krx"] is not None:
+            spring.krx = params["krx"]
+            changes.append(f"krx -> {params['krx']}")
+        if "kry" in params and params["kry"] is not None:
+            spring.kry = params["kry"]
+            changes.append(f"kry -> {params['kry']}")
+        if "krz" in params and params["krz"] is not None:
+            spring.krz = params["krz"]
+            changes.append(f"krz -> {params['krz']}")
+
+        # Update behavior
+        if "behavior" in params and params["behavior"] is not None:
+            behavior_str = params["behavior"]
+            behavior_map = {
+                "Linear": SpringBehavior.Linear,
+                "TensionOnly": SpringBehavior.TensionOnly,
+                "CompressionOnly": SpringBehavior.CompressionOnly,
+            }
+            if behavior_str in behavior_map:
+                spring.set_all_behavior(behavior_map[behavior_str])
+                changes.append(f"behavior -> {behavior_str}")
+
+        # Update gap
+        if "gap" in params and params["gap"] is not None:
+            spring.set_all_gaps(params["gap"])
+            changes.append(f"gap -> {params['gap']}")
+
+        # Update loading condition
+        if "loading_condition" in params and params["loading_condition"] is not None:
+            cond_str = params["loading_condition"]
+            cond_map = {
+                "All": LoadingCondition.All,
+                "Static": LoadingCondition.Static,
+                "Dynamic": LoadingCondition.Dynamic,
+            }
+            if cond_str in cond_map:
+                spring.loading_condition = cond_map[cond_str]
+                changes.append(f"loading_condition -> {cond_str}")
+
+        # Clear analysis cache if any changes made
+        if changes:
+            try:
+                self.model._cpp_model.clear_analysis()
+            except:
+                pass
+            self.model._is_analyzed = False
+
+        return ToolResult(
+            success=True,
+            result={
+                "spring_id": spring_id,
+                "changes": changes,
+                "message": f"Spring updated: {', '.join(changes)}" if changes else "No changes made"
+            }
+        )
+
+    def _tool_delete_spring(self, params: Dict[str, Any]) -> ToolResult:
+        """Delete a spring element."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        spring_id = params["spring_id"]
+
+        # Find and remove the spring
+        springs = self.model._cpp_model.spring_elements
+        found = False
+        for i, s in enumerate(springs):
+            if s.id == spring_id:
+                # Note: We can't directly remove from vector exposed via pybind11
+                # So we need a C++ method or workaround
+                found = True
+                break
+
+        if not found:
+            return ToolResult(
+                success=False,
+                error=f"Spring with ID {spring_id} not found",
+                suggestion="Use get_spring_states to list all springs"
+            )
+
+        # For now, mark as deleted by setting all stiffness to 0
+        # A proper implementation would require a C++ delete method
+        for s in springs:
+            if s.id == spring_id:
+                s.kx = 0.0
+                s.ky = 0.0
+                s.kz = 0.0
+                s.krx = 0.0
+                s.kry = 0.0
+                s.krz = 0.0
+                break
+
+        try:
+            self.model._cpp_model.clear_analysis()
+        except:
+            pass
+        self.model._is_analyzed = False
+
+        return ToolResult(
+            success=True,
+            result={
+                "spring_id": spring_id,
+                "message": f"Spring {spring_id} deleted (stiffness set to zero)"
+            }
+        )
+
+    def _tool_add_rigid_link(self, params: Dict[str, Any]) -> ToolResult:
+        """Add a rigid link constraint."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        import numpy as np
+
+        slave_pos = params["slave_position"]
+        master_pos = params["master_position"]
+
+        # Get or create nodes at the specified positions
+        slave_node = self.model.get_or_create_node(slave_pos[0], slave_pos[1], slave_pos[2])
+        master_node = self.model.get_or_create_node(master_pos[0], master_pos[1], master_pos[2])
+
+        # Calculate offset from master to slave
+        offset = np.array([
+            slave_pos[0] - master_pos[0],
+            slave_pos[1] - master_pos[1],
+            slave_pos[2] - master_pos[2]
+        ])
+
+        # Add the rigid link
+        self.model._cpp_model.add_rigid_link(slave_node, master_node, offset)
+
+        # Clear analysis cache
+        try:
+            self.model._cpp_model.clear_analysis()
+        except:
+            pass
+        self.model._is_analyzed = False
+
+        return ToolResult(
+            success=True,
+            result={
+                "slave_node_id": slave_node.id,
+                "master_node_id": master_node.id,
+                "offset": offset.tolist(),
+                "message": f"Rigid link created: slave node {slave_node.id} constrained to master node {master_node.id}"
+            }
+        )
+
+    def _tool_update_rigid_link(self, params: Dict[str, Any]) -> ToolResult:
+        """Update a rigid link constraint."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        import numpy as np
+
+        link_index = params["link_index"]
+        rigid_links = self.model._cpp_model.constraints.get_rigid_links()
+
+        if link_index < 0 or link_index >= len(rigid_links):
+            return ToolResult(
+                success=False,
+                error=f"Rigid link index {link_index} out of range. Have {len(rigid_links)} links.",
+                suggestion="Use get_rigid_links to see all links"
+            )
+
+        link = rigid_links[link_index]
+        changes = []
+
+        # Helper to check if a node is shared
+        def is_node_shared(node_id: int) -> bool:
+            # Check beams
+            for b in self.model.beams:
+                for elem in b.elements:
+                    if elem.node_i.id == node_id or elem.node_j.id == node_id:
+                        return True
+            # Check springs
+            for s in self.model._cpp_model.spring_elements:
+                if s.node_i.id == node_id or s.node_j.id == node_id:
+                    return True
+            # Check other rigid links (referencing same node in different constraints)
+            count = 0
+            for rl in rigid_links:
+                if rl.slave_node_id == node_id or rl.master_node_id == node_id:
+                    count += 1
+            return count > 1  # More than one reference means shared
+
+        # Helper to get node by ID
+        def get_node_by_id(node_id: int):
+            for node in self.model._cpp_model.get_all_nodes():
+                if node.id == node_id:
+                    return node
+            return None
+
+        # Handle slave_position update
+        if "slave_position" in params and params["slave_position"] is not None:
+            new_pos = params["slave_position"]
+            if is_node_shared(link.slave_node_id):
+                return ToolResult(
+                    success=False,
+                    error=f"Cannot update slave position: node {link.slave_node_id} is shared",
+                    suggestion="Position updates only allowed on non-shared nodes"
+                )
+            slave_node = get_node_by_id(link.slave_node_id)
+            if slave_node:
+                slave_node.x = new_pos[0]
+                slave_node.y = new_pos[1]
+                slave_node.z = new_pos[2]
+                # Recalculate offset
+                master_node = get_node_by_id(link.master_node_id)
+                if master_node:
+                    link.offset = np.array([
+                        slave_node.x - master_node.x,
+                        slave_node.y - master_node.y,
+                        slave_node.z - master_node.z
+                    ])
+                changes.append(f"slave_position -> {new_pos}")
+
+        # Handle master_position update
+        if "master_position" in params and params["master_position"] is not None:
+            new_pos = params["master_position"]
+            if is_node_shared(link.master_node_id):
+                return ToolResult(
+                    success=False,
+                    error=f"Cannot update master position: node {link.master_node_id} is shared",
+                    suggestion="Position updates only allowed on non-shared nodes"
+                )
+            master_node = get_node_by_id(link.master_node_id)
+            if master_node:
+                master_node.x = new_pos[0]
+                master_node.y = new_pos[1]
+                master_node.z = new_pos[2]
+                # Recalculate offset
+                slave_node = get_node_by_id(link.slave_node_id)
+                if slave_node:
+                    link.offset = np.array([
+                        slave_node.x - master_node.x,
+                        slave_node.y - master_node.y,
+                        slave_node.z - master_node.z
+                    ])
+                changes.append(f"master_position -> {new_pos}")
+
+        # Handle offset update directly
+        if "offset" in params and params["offset"] is not None:
+            new_offset = np.array(params["offset"])
+            link.offset = new_offset
+            changes.append(f"offset -> {params['offset']}")
+
+        # Clear analysis cache
+        if changes:
+            try:
+                self.model._cpp_model.clear_analysis()
+            except:
+                pass
+            self.model._is_analyzed = False
+
+        return ToolResult(
+            success=True,
+            result={
+                "link_index": link_index,
+                "changes": changes,
+                "message": f"Rigid link updated: {', '.join(changes)}" if changes else "No changes made"
+            }
+        )
+
+    def _tool_delete_rigid_link(self, params: Dict[str, Any]) -> ToolResult:
+        """Delete a rigid link constraint."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        link_index = params["link_index"]
+        rigid_links = self.model._cpp_model.constraints.get_rigid_links()
+
+        if link_index < 0 or link_index >= len(rigid_links):
+            return ToolResult(
+                success=False,
+                error=f"Rigid link index {link_index} out of range. Have {len(rigid_links)} links.",
+                suggestion="Use get_rigid_links to see all links"
+            )
+
+        # We can't directly remove from the list, but we can clear all and re-add
+        # Store all links except the one to delete
+        links_to_keep = []
+        for i, rl in enumerate(rigid_links):
+            if i != link_index:
+                links_to_keep.append({
+                    'slave_node_id': rl.slave_node_id,
+                    'master_node_id': rl.master_node_id,
+                    'offset': rl.offset.copy()
+                })
+
+        # Clear and re-add
+        self.model._cpp_model.constraints.clear()
+
+        # Helper to get node by ID
+        def get_node_by_id(node_id: int):
+            for node in self.model._cpp_model.get_all_nodes():
+                if node.id == node_id:
+                    return node
+            return None
+
+        for link_data in links_to_keep:
+            slave_node = get_node_by_id(link_data['slave_node_id'])
+            master_node = get_node_by_id(link_data['master_node_id'])
+            if slave_node and master_node:
+                # Use Model's add_rigid_link which takes Node objects
+                self.model._cpp_model.add_rigid_link(
+                    slave_node, master_node, link_data['offset']
+                )
+
+        try:
+            self.model._cpp_model.clear_analysis()
+        except:
+            pass
+        self.model._is_analyzed = False
+
+        return ToolResult(
+            success=True,
+            result={
+                "link_index": link_index,
+                "remaining_links": len(links_to_keep),
+                "message": f"Rigid link {link_index} deleted"
+            }
+        )
+
+    def _tool_get_rigid_links(self, params: Dict[str, Any]) -> ToolResult:
+        """Get all rigid links."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        rigid_links = self.model._cpp_model.constraints.get_rigid_links()
+
+        # Helper to get node position by ID
+        def get_node_pos(node_id: int):
+            for node in self.model._cpp_model.get_all_nodes():
+                if node.id == node_id:
+                    return [node.x, node.y, node.z]
+            return None
+
+        links_info = []
+        for i, rl in enumerate(rigid_links):
+            links_info.append({
+                "index": i,
+                "slave_node_id": rl.slave_node_id,
+                "master_node_id": rl.master_node_id,
+                "slave_position": get_node_pos(rl.slave_node_id),
+                "master_position": get_node_pos(rl.master_node_id),
+                "offset": [rl.offset[0], rl.offset[1], rl.offset[2]]
+            })
+
+        return ToolResult(
+            success=True,
+            result={
+                "num_rigid_links": len(rigid_links),
+                "rigid_links": links_info
+            }
+        )
+
     def _tool_get_model_info(self, params: Dict[str, Any]) -> ToolResult:
         """Get model summary."""
         if self.model is None:
@@ -2239,7 +2839,7 @@ class ToolExecutor:
                     if elem.node_i.id == node_id or elem.node_j.id == node_id:
                         return True
             # Also check springs
-            for s in self.model._cpp_model.springs:
+            for s in self.model._cpp_model.spring_elements:
                 if s.node_i.id == node_id or s.node_j.id == node_id:
                     return True
             return False
@@ -2408,7 +3008,10 @@ class ToolExecutor:
             )
 
         # Mark model as not analyzed (changes require re-analysis)
-        self.model._cpp_model.clear_analysis()
+        try:
+            self.model._cpp_model.clear_analysis()
+        except Exception:
+            pass
 
         return ToolResult(
             success=True,

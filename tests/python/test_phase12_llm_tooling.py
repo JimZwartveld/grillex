@@ -552,10 +552,461 @@ class TestIntegration:
         assert result.success
 
 
-# Skip plate tests if gmsh is not installed
-gmsh = pytest.importorskip("gmsh")
+class TestPositionUpdates:
+    """Tests for position update functionality on beams, springs, and constraints."""
+
+    def setup_method(self):
+        """Set up a basic model for position update tests."""
+        self.executor = ToolExecutor()
+        self.executor.execute("create_model", {"name": "PositionTest"})
+        self.executor.execute("add_material", {
+            "name": "Steel", "E": 210e6, "nu": 0.3, "rho": 7.85e-3
+        })
+        self.executor.execute("add_section", {
+            "name": "IPE300", "A": 0.00538, "Iy": 8.36e-5, "Iz": 6.04e-6, "J": 2.01e-7
+        })
+
+    def test_beam_position_update_end(self):
+        """Test updating beam end position."""
+        import numpy as np
+        self.executor.execute("create_beam", {
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        beam = self.executor.model.beams[0]
+        initial_length = beam.length
+        assert initial_length == pytest.approx(6.0, abs=1e-6)
+
+        # Update end position
+        result = self.executor.execute("update_beam", {
+            "beam_id": beam.beam_id,
+            "end_position": [10, 0, 0]
+        })
+
+        assert result.success
+        assert beam.length == pytest.approx(10.0, abs=1e-6)
+        assert beam.elements[0].length == pytest.approx(10.0, abs=1e-6)
+        # Verify local axes x-axis still points along beam
+        np.testing.assert_allclose(beam.elements[0].local_axes.x_axis, [1, 0, 0], atol=1e-6)
+
+    def test_beam_position_update_start(self):
+        """Test updating beam start position."""
+        import numpy as np
+        self.executor.execute("create_beam", {
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        beam = self.executor.model.beams[0]
+
+        # Update start position
+        result = self.executor.execute("update_beam", {
+            "beam_id": beam.beam_id,
+            "start_position": [-2, 0, 0]
+        })
+
+        assert result.success
+        assert beam.length == pytest.approx(8.0, abs=1e-6)
+        np.testing.assert_allclose(beam.start_pos, [-2, 0, 0], atol=1e-6)
+
+    def test_beam_position_update_local_axes_recalculate(self):
+        """Test that local axes are recalculated when position changes."""
+        import numpy as np
+        self.executor.execute("create_beam", {
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        beam = self.executor.model.beams[0]
+        elem = beam.elements[0]
+
+        # Initial: beam along X-axis
+        np.testing.assert_allclose(elem.local_axes.x_axis, [1, 0, 0], atol=1e-6)
+
+        # Update to make beam go along Y-axis instead
+        result = self.executor.execute("update_beam", {
+            "beam_id": beam.beam_id,
+            "end_position": [0, 6, 0]
+        })
+
+        assert result.success
+        # Local x-axis should now point along global Y
+        np.testing.assert_allclose(elem.local_axes.x_axis, [0, 1, 0], atol=1e-6)
+
+    def test_beam_position_update_preserves_roll(self):
+        """Test that roll angle is preserved when position changes."""
+        import numpy as np
+        self.executor.execute("create_beam", {
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        beam = self.executor.model.beams[0]
+
+        # Set a roll angle first
+        roll_angle = 0.5  # radians
+        self.executor.execute("update_beam", {
+            "beam_id": beam.beam_id,
+            "roll_angle": roll_angle
+        })
+
+        assert beam.elements[0].local_axes.roll == pytest.approx(roll_angle, abs=1e-6)
+
+        # Update position - roll should be preserved
+        result = self.executor.execute("update_beam", {
+            "beam_id": beam.beam_id,
+            "end_position": [8, 0, 0]
+        })
+
+        assert result.success
+        assert beam.elements[0].local_axes.roll == pytest.approx(roll_angle, abs=1e-6)
+
+    def test_beam_position_update_shared_node_blocked(self):
+        """Test that position update fails for shared nodes."""
+        # Create two beams sharing a node
+        self.executor.execute("create_beam", {
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+        self.executor.execute("create_beam", {
+            "start_position": [6, 0, 0],  # Shares end node of first beam
+            "end_position": [12, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        beam1 = self.executor.model.beams[0]
+
+        # Try to update shared node position
+        result = self.executor.execute("update_beam", {
+            "beam_id": beam1.beam_id,
+            "end_position": [8, 0, 0]
+        })
+
+        assert not result.success
+        assert "shared" in result.error.lower()
+
+    def test_beam_roll_angle_recalculates_local_axes(self):
+        """Test that changing roll angle recalculates local axes."""
+        import numpy as np
+        self.executor.execute("create_beam", {
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        beam = self.executor.model.beams[0]
+        elem = beam.elements[0]
+
+        # Initial: z-axis points up for horizontal beam
+        initial_z = elem.local_axes.z_axis.copy()
+        np.testing.assert_allclose(initial_z, [0, 0, 1], atol=1e-6)
+
+        # Apply 90 degree roll
+        result = self.executor.execute("update_beam", {
+            "beam_id": beam.beam_id,
+            "roll_angle": np.pi / 2
+        })
+
+        assert result.success
+        # z-axis should now point in Y direction (90 degree rotation about x-axis)
+        # Note: Sign depends on rotation convention used
+        np.testing.assert_allclose(elem.local_axes.z_axis, [0, 1, 0], atol=1e-6)
+
+    # === Spring Position Update Tests ===
+
+    def test_spring_position_update(self):
+        """Test updating spring node positions."""
+        import numpy as np
+        # Add a spring
+        self.executor.execute("add_spring", {
+            "position1": [0, 0, 0],
+            "position2": [0, 0, 1],
+            "kz": 1000.0
+        })
+
+        springs = self.executor.model._cpp_model.spring_elements
+        assert len(springs) == 1
+        spring = springs[0]
+
+        # Verify initial positions
+        assert spring.node_i.z == pytest.approx(0.0, abs=1e-6)
+        assert spring.node_j.z == pytest.approx(1.0, abs=1e-6)
+
+        # Update position2
+        result = self.executor.execute("update_spring", {
+            "spring_id": spring.id,
+            "position2": [0, 0, 2]
+        })
+
+        assert result.success
+        assert spring.node_j.z == pytest.approx(2.0, abs=1e-6)
+
+    def test_spring_position_update_position1(self):
+        """Test updating spring position1."""
+        self.executor.execute("add_spring", {
+            "position1": [0, 0, 0],
+            "position2": [0, 0, 1],
+            "kz": 1000.0
+        })
+
+        spring = self.executor.model._cpp_model.spring_elements[0]
+
+        result = self.executor.execute("update_spring", {
+            "spring_id": spring.id,
+            "position1": [1, 0, 0]
+        })
+
+        assert result.success
+        assert spring.node_i.x == pytest.approx(1.0, abs=1e-6)
+        assert spring.node_i.y == pytest.approx(0.0, abs=1e-6)
+        assert spring.node_i.z == pytest.approx(0.0, abs=1e-6)
+
+    def test_spring_stiffness_update(self):
+        """Test updating spring stiffness."""
+        self.executor.execute("add_spring", {
+            "position1": [0, 0, 0],
+            "position2": [0, 0, 1],
+            "kz": 1000.0
+        })
+
+        spring = self.executor.model._cpp_model.spring_elements[0]
+        assert spring.kz == pytest.approx(1000.0, abs=1e-6)
+
+        result = self.executor.execute("update_spring", {
+            "spring_id": spring.id,
+            "kz": 5000.0,
+            "kx": 2000.0
+        })
+
+        assert result.success
+        assert spring.kz == pytest.approx(5000.0, abs=1e-6)
+        assert spring.kx == pytest.approx(2000.0, abs=1e-6)
+
+    def test_spring_shared_node_blocked(self):
+        """Test that spring position update fails for shared nodes."""
+        # Create a spring and a beam that share a node
+        self.executor.execute("add_spring", {
+            "position1": [0, 0, 0],
+            "position2": [0, 0, 1],
+            "kz": 1000.0
+        })
+        self.executor.execute("create_beam", {
+            "start_position": [0, 0, 0],  # Shares position with spring
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        spring = self.executor.model._cpp_model.spring_elements[0]
+
+        # Try to update the shared node position
+        result = self.executor.execute("update_spring", {
+            "spring_id": spring.id,
+            "position1": [1, 0, 0]
+        })
+
+        assert not result.success
+        assert "shared" in result.error.lower()
+
+    def test_spring_not_found_error(self):
+        """Test error when spring not found."""
+        result = self.executor.execute("update_spring", {
+            "spring_id": 999,
+            "kz": 1000.0
+        })
+
+        assert not result.success
+        assert "not found" in result.error.lower()
+
+    # === Rigid Link Position Update Tests ===
+
+    def test_add_rigid_link(self):
+        """Test adding a rigid link."""
+        import numpy as np
+
+        result = self.executor.execute("add_rigid_link", {
+            "slave_position": [0, 0, 1],
+            "master_position": [0, 0, 0]
+        })
+
+        assert result.success
+        assert "slave_node_id" in result.result
+        assert "master_node_id" in result.result
+        np.testing.assert_allclose(result.result["offset"], [0, 0, 1], atol=1e-6)
+
+    def test_get_rigid_links(self):
+        """Test getting rigid links."""
+        # Add a rigid link first
+        self.executor.execute("add_rigid_link", {
+            "slave_position": [0, 0, 2],
+            "master_position": [0, 0, 0]
+        })
+
+        result = self.executor.execute("get_rigid_links", {})
+
+        assert result.success
+        assert result.result["num_rigid_links"] == 1
+        assert len(result.result["rigid_links"]) == 1
+        link = result.result["rigid_links"][0]
+        assert link["index"] == 0
+
+    def test_rigid_link_position_update_slave(self):
+        """Test updating rigid link slave position."""
+        import numpy as np
+
+        # Add a rigid link
+        self.executor.execute("add_rigid_link", {
+            "slave_position": [0, 0, 1],
+            "master_position": [0, 0, 0]
+        })
+
+        # Update slave position
+        result = self.executor.execute("update_rigid_link", {
+            "link_index": 0,
+            "slave_position": [0, 0, 2]
+        })
+
+        assert result.success
+        assert "slave_position" in str(result.result["changes"])
+
+        # Verify the offset was recalculated
+        links_result = self.executor.execute("get_rigid_links", {})
+        link = links_result.result["rigid_links"][0]
+        np.testing.assert_allclose(link["offset"], [0, 0, 2], atol=1e-6)
+
+    def test_rigid_link_position_update_master(self):
+        """Test updating rigid link master position."""
+        import numpy as np
+
+        # Add a rigid link
+        self.executor.execute("add_rigid_link", {
+            "slave_position": [0, 0, 1],
+            "master_position": [0, 0, 0]
+        })
+
+        # Update master position (moves it to x=1)
+        result = self.executor.execute("update_rigid_link", {
+            "link_index": 0,
+            "master_position": [1, 0, 0]
+        })
+
+        assert result.success
+        assert "master_position" in str(result.result["changes"])
+
+        # Verify the offset was recalculated: slave at (0,0,1) minus master at (1,0,0) = (-1,0,1)
+        links_result = self.executor.execute("get_rigid_links", {})
+        link = links_result.result["rigid_links"][0]
+        np.testing.assert_allclose(link["offset"], [-1, 0, 1], atol=1e-6)
+
+    def test_rigid_link_offset_update(self):
+        """Test updating rigid link offset directly."""
+        import numpy as np
+
+        # Add a rigid link
+        self.executor.execute("add_rigid_link", {
+            "slave_position": [0, 0, 1],
+            "master_position": [0, 0, 0]
+        })
+
+        # Update offset directly
+        result = self.executor.execute("update_rigid_link", {
+            "link_index": 0,
+            "offset": [1, 2, 3]
+        })
+
+        assert result.success
+
+        # Verify the offset was updated
+        links_result = self.executor.execute("get_rigid_links", {})
+        link = links_result.result["rigid_links"][0]
+        np.testing.assert_allclose(link["offset"], [1, 2, 3], atol=1e-6)
+
+    def test_rigid_link_shared_node_blocked(self):
+        """Test that rigid link position update fails for shared nodes."""
+        # Create a beam that uses a node at origin
+        self.executor.execute("create_beam", {
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        # Add a rigid link with master at same position
+        self.executor.execute("add_rigid_link", {
+            "slave_position": [0, 0, 1],
+            "master_position": [0, 0, 0]  # Same as beam start
+        })
+
+        # Try to update the shared master node position
+        result = self.executor.execute("update_rigid_link", {
+            "link_index": 0,
+            "master_position": [1, 0, 0]
+        })
+
+        assert not result.success
+        assert "shared" in result.error.lower()
+
+    def test_rigid_link_not_found_error(self):
+        """Test error when rigid link not found."""
+        result = self.executor.execute("update_rigid_link", {
+            "link_index": 999,
+            "offset": [1, 2, 3]
+        })
+
+        assert not result.success
+        assert "out of range" in result.error.lower()
+
+    def test_delete_rigid_link(self):
+        """Test deleting a rigid link."""
+        # Add two rigid links
+        self.executor.execute("add_rigid_link", {
+            "slave_position": [0, 0, 1],
+            "master_position": [0, 0, 0]
+        })
+        self.executor.execute("add_rigid_link", {
+            "slave_position": [1, 0, 1],
+            "master_position": [1, 0, 0]
+        })
+
+        # Verify we have 2
+        links_result = self.executor.execute("get_rigid_links", {})
+        assert links_result.result["num_rigid_links"] == 2
+
+        # Delete the first one
+        result = self.executor.execute("delete_rigid_link", {
+            "link_index": 0
+        })
+
+        assert result.success
+        assert result.result["remaining_links"] == 1
+
+        # Verify only 1 remains
+        links_result = self.executor.execute("get_rigid_links", {})
+        assert links_result.result["num_rigid_links"] == 1
 
 
+# Check if gmsh is available for plate tests
+try:
+    import gmsh
+    GMSH_AVAILABLE = True
+except ImportError:
+    GMSH_AVAILABLE = False
+
+
+@pytest.mark.skipif(not GMSH_AVAILABLE, reason="gmsh not installed")
 class TestPlateMeshingTools:
     """Tests for plate meshing LLM tools."""
 
