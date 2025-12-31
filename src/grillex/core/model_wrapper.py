@@ -684,6 +684,7 @@ class StructuralModel:
             node_tolerance: Tolerance for node merging (default: 1mm)
         """
         self.name = name
+        self._tolerance = node_tolerance
         self._cpp_model = _CppModel(node_tolerance=node_tolerance)
         self.beams: List[Beam] = []
         self.cargos: List[Cargo] = []

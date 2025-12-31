@@ -607,7 +607,7 @@ class TestEC3AxialCheck:
 
         # N_Rd = 0.01 * 355000 / 1.0 = 3550 kN
         actions = {"N": 1775.0}  # 50% utilization
-        util = check.compute_utilization(actions, section, material)
+        util = check.compute_utilization(actions, section, material, gamma_M0=1.0)
         assert pytest.approx(util, rel=1e-6) == 0.5
 
     def test_axial_utilization_with_gamma(self):
@@ -678,7 +678,7 @@ class TestEC3BendingChecks:
 
         # M_Rd = 0.001 * 355000 = 355 kNm
         actions = {"My": 177.5}  # 50% utilization
-        util = check.compute_utilization(actions, section, material, W_el_y=0.001)
+        util = check.compute_utilization(actions, section, material, W_el_y=0.001, gamma_M0=1.0)
         assert pytest.approx(util, rel=1e-6) == 0.5
 
     def test_bending_z_utilization(self):
@@ -691,7 +691,7 @@ class TestEC3BendingChecks:
 
         # M_Rd = 0.0005 * 355000 = 177.5 kNm
         actions = {"Mz": 88.75}  # 50% utilization
-        util = check.compute_utilization(actions, section, material, W_el_z=0.0005)
+        util = check.compute_utilization(actions, section, material, W_el_z=0.0005, gamma_M0=1.0)
         assert pytest.approx(util, rel=1e-6) == 0.5
 
 
@@ -726,7 +726,7 @@ class TestEC3ShearChecks:
         # Av = 0.6 * 0.01 = 0.006 m² (default)
         # V_Rd = 0.006 * (355000 / sqrt(3)) = 1229.5 kN
         actions = {"Vy": 614.75}  # 50% utilization
-        util = check.compute_utilization(actions, section, material)
+        util = check.compute_utilization(actions, section, material, gamma_M0=1.0)
         assert pytest.approx(util, rel=1e-3) == 0.5
 
 
@@ -753,7 +753,7 @@ class TestEC3CombinedCheck:
         # 20% axial + 30% My + 0% Mz = 50% combined
         actions = {"N": 710.0, "My": 106.5, "Mz": 0.0}
         util = check.compute_utilization(
-            actions, section, material, W_el_y=0.001, W_el_z=0.0005
+            actions, section, material, W_el_y=0.001, W_el_z=0.0005, gamma_M0=1.0
         )
         assert pytest.approx(util, rel=1e-3) == 0.5
 
@@ -768,7 +768,7 @@ class TestEC3CombinedCheck:
         # 20% + 20% + 20% = 60%
         actions = {"N": 710.0, "My": 71.0, "Mz": 35.5}
         util = check.compute_utilization(
-            actions, section, material, W_el_y=0.001, W_el_z=0.0005
+            actions, section, material, W_el_y=0.001, W_el_z=0.0005, gamma_M0=1.0
         )
         assert pytest.approx(util, rel=1e-2) == 0.6
 
@@ -870,10 +870,11 @@ class TestEurocode3:
         """Test that utilizations are computed correctly (acceptance criterion)."""
         from grillex.design_codes import Eurocode3
 
-        code = Eurocode3()
+        # Use gamma_M0=1.0 for simple test verification
+        code = Eurocode3(gamma_M0=1.0)
         beam = MockBeam(id=1, section=MockSection(A=0.01), material=MockMaterial(fy=355000.0))
 
-        # 50% axial load: N = 1775 kN (N_Rd = 3550 kN)
+        # 50% axial load: N = 1775 kN (N_Rd = 3550 kN with gamma_M0=1.0)
         result_case = MockResultCase(
             {
                 (1, 0.0): {"N": 1775.0, "Vy": 0.0, "Vz": 0.0, "My": 0.0, "Mz": 0.0},
