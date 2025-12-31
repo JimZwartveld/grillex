@@ -105,6 +105,7 @@ class MeshStatistics:
         n_rigid_links: Number of rigid link constraints created.
         n_support_dofs: Number of DOFs restrained by support curves.
     """
+
     n_plate_nodes: int = 0
     n_plate_elements: int = 0
     n_quad_elements: int = 0
@@ -140,7 +141,7 @@ class Beam:
         end_pos: List[float],
         section: _CppSection,
         material: _CppMaterial,
-        beam_id: Optional[int] = None
+        beam_id: Optional[int] = None,
     ):
         """Initialize a Beam.
 
@@ -176,9 +177,11 @@ class Beam:
         return direction / np.linalg.norm(direction)
 
     def __repr__(self) -> str:
-        return (f"Beam(id={self.beam_id}, start={self.start_pos.tolist()}, "
-                f"end={self.end_pos.tolist()}, length={self.length:.3f}m, "
-                f"n_elements={len(self.elements)})")
+        return (
+            f"Beam(id={self.beam_id}, start={self.start_pos.tolist()}, "
+            f"end={self.end_pos.tolist()}, length={self.length:.3f}m, "
+            f"n_elements={len(self.elements)})"
+        )
 
     # ===== Check Locations (Task 7.3) =====
 
@@ -252,8 +255,8 @@ class Beam:
     def get_internal_actions_at(
         self,
         x: float,
-        model: 'StructuralModel',
-        load_case: Optional[_CppLoadCase] = None
+        model: "StructuralModel",
+        load_case: Optional[_CppLoadCase] = None,
     ) -> InternalActions:
         """
         Get internal actions at position x along beam.
@@ -283,12 +286,12 @@ class Beam:
         if load_case is None:
             load_case = model._cpp_model.get_default_load_case()
 
-        return element.get_internal_actions(local_x, displacements, dof_handler, load_case)
+        return element.get_internal_actions(
+            local_x, displacements, dof_handler, load_case
+        )
 
     def get_internal_actions_at_check_locations(
-        self,
-        model: 'StructuralModel',
-        load_case: Optional[_CppLoadCase] = None
+        self, model: "StructuralModel", load_case: Optional[_CppLoadCase] = None
     ) -> List[Tuple[float, InternalActions]]:
         """
         Get internal actions at all check locations.
@@ -307,7 +310,6 @@ class Beam:
             results.append((x_global, actions))
         return results
 
-
     # ===== Phase 7: Internal Actions - Multi-Element Beam Plotting =====
 
     def _validate_connectivity(self) -> None:
@@ -316,9 +318,11 @@ class Beam:
             return
         for i in range(len(self.elements) - 1):
             if self.elements[i].node_j.id != self.elements[i + 1].node_i.id:
-                raise ValueError(f"Elements {i} and {i+1} are not connected")
+                raise ValueError(f"Elements {i} and {i + 1} are not connected")
 
-    def _find_element_at_position(self, x_global: float) -> Tuple[_CppBeamElement, float]:
+    def _find_element_at_position(
+        self, x_global: float
+    ) -> Tuple[_CppBeamElement, float]:
         """Find which element contains x_global.
 
         Args:
@@ -353,10 +357,7 @@ class Beam:
     # This duplicate was removed to avoid method shadowing.
 
     def get_moment_line(
-        self,
-        axis: str,
-        model: 'StructuralModel',
-        num_points: int = 100
+        self, axis: str, model: "StructuralModel", num_points: int = 100
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get moment diagram for plotting.
 
@@ -373,7 +374,7 @@ class Beam:
 
         for i, x in enumerate(x_positions):
             actions = self.get_internal_actions_at(x, model)
-            if axis.lower() == 'y':
+            if axis.lower() == "y":
                 moments[i] = actions.My
             else:
                 moments[i] = actions.Mz
@@ -381,10 +382,7 @@ class Beam:
         return x_positions, moments
 
     def get_shear_line(
-        self,
-        axis: str,
-        model: 'StructuralModel',
-        num_points: int = 100
+        self, axis: str, model: "StructuralModel", num_points: int = 100
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get shear diagram for plotting.
 
@@ -401,7 +399,7 @@ class Beam:
 
         for i, x in enumerate(x_positions):
             actions = self.get_internal_actions_at(x, model)
-            if axis.lower() == 'y':
+            if axis.lower() == "y":
                 shears[i] = actions.Vy
             else:
                 shears[i] = actions.Vz
@@ -409,9 +407,7 @@ class Beam:
         return x_positions, shears
 
     def get_axial_force_line(
-        self,
-        model: 'StructuralModel',
-        num_points: int = 100
+        self, model: "StructuralModel", num_points: int = 100
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get axial force diagram for plotting.
 
@@ -432,9 +428,7 @@ class Beam:
         return x_positions, axial_forces
 
     def get_torsion_line(
-        self,
-        model: 'StructuralModel',
-        num_points: int = 100
+        self, model: "StructuralModel", num_points: int = 100
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get torsion moment diagram for plotting.
 
@@ -455,10 +449,7 @@ class Beam:
         return x_positions, torsions
 
     def get_displacement_line(
-        self,
-        component: str,
-        model: 'StructuralModel',
-        num_points: int = 100
+        self, component: str, model: "StructuralModel", num_points: int = 100
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get displacement diagram for plotting.
 
@@ -481,20 +472,20 @@ class Beam:
             disp = element.get_displacements_at(
                 x_local,
                 model.get_all_displacements(),
-                model._cpp_model.get_dof_handler()
+                model._cpp_model.get_dof_handler(),
             )
 
-            if component == 'u':
+            if component == "u":
                 displacements[i] = disp.u
-            elif component == 'v':
+            elif component == "v":
                 displacements[i] = disp.v
-            elif component == 'w':
+            elif component == "w":
                 displacements[i] = disp.w
-            elif component == 'theta_x':
+            elif component == "theta_x":
                 displacements[i] = disp.theta_x
-            elif component == 'theta_y':
+            elif component == "theta_y":
                 displacements[i] = disp.theta_y
-            elif component == 'theta_z':
+            elif component == "theta_z":
                 displacements[i] = disp.theta_z
             else:
                 raise ValueError(f"Unknown displacement component: {component}")
@@ -502,9 +493,7 @@ class Beam:
         return x_positions, displacements
 
     def find_moment_extrema(
-        self,
-        axis: str,
-        model: 'StructuralModel'
+        self, axis: str, model: "StructuralModel"
     ) -> List[Tuple[float, float]]:
         """Find all moment extrema across entire beam.
 
@@ -524,9 +513,7 @@ class Beam:
         for element in self.elements:
             # Find extrema within this element
             elem_extrema = element.find_moment_extremes(
-                axis,
-                model.get_all_displacements(),
-                model._cpp_model.get_dof_handler()
+                axis, model.get_all_displacements(), model._cpp_model.get_dof_handler()
             )
 
             # elem_extrema is a pair of (min, max) ActionExtreme objects
@@ -571,10 +558,10 @@ class Beam:
 
     def plot_internal_actions(
         self,
-        model: 'StructuralModel',
+        model: "StructuralModel",
         components: List[str] = None,
         figsize: Tuple[float, float] = (12, 8),
-        num_points: int = 100
+        num_points: int = 100,
     ):
         """Create matplotlib plots of internal actions.
 
@@ -591,10 +578,12 @@ class Beam:
         try:
             import matplotlib.pyplot as plt
         except ImportError:
-            raise ImportError("matplotlib is required for plotting. Install with: pip install matplotlib")
+            raise ImportError(
+                "matplotlib is required for plotting. Install with: pip install matplotlib"
+            )
 
         if components is None:
-            components = ['Mz', 'Vy', 'N']
+            components = ["Mz", "Vy", "N"]
 
         num_plots = len(components)
         fig, axes = plt.subplots(num_plots, 1, figsize=figsize, squeeze=False)
@@ -602,51 +591,60 @@ class Beam:
 
         for ax, component in zip(axes, components):
             # Get line data
-            if component == 'Mz':
-                x, values = self.get_moment_line('z', model, num_points)
-                units = 'kN·m'
-            elif component == 'My':
-                x, values = self.get_moment_line('y', model, num_points)
-                units = 'kN·m'
-            elif component == 'Vy':
-                x, values = self.get_shear_line('y', model, num_points)
-                units = 'kN'
-            elif component == 'Vz':
-                x, values = self.get_shear_line('z', model, num_points)
-                units = 'kN'
-            elif component == 'N':
+            if component == "Mz":
+                x, values = self.get_moment_line("z", model, num_points)
+                units = "kN·m"
+            elif component == "My":
+                x, values = self.get_moment_line("y", model, num_points)
+                units = "kN·m"
+            elif component == "Vy":
+                x, values = self.get_shear_line("y", model, num_points)
+                units = "kN"
+            elif component == "Vz":
+                x, values = self.get_shear_line("z", model, num_points)
+                units = "kN"
+            elif component == "N":
                 x, values = self.get_axial_force_line(model, num_points)
-                units = 'kN'
-            elif component == 'Mx':
+                units = "kN"
+            elif component == "Mx":
                 x, values = self.get_torsion_line(model, num_points)
-                units = 'kN·m'
+                units = "kN·m"
             else:
                 raise ValueError(f"Unknown component: {component}")
 
             # Plot
-            ax.plot(x, values, 'b-', linewidth=2)
-            ax.axhline(0, color='k', linestyle='--', linewidth=0.5)
+            ax.plot(x, values, "b-", linewidth=2)
+            ax.axhline(0, color="k", linestyle="--", linewidth=0.5)
             ax.grid(True, alpha=0.3)
-            ax.set_ylabel(f'{component} [{units}]')
-            ax.set_title(f'{component} diagram')
+            ax.set_ylabel(f"{component} [{units}]")
+            ax.set_title(f"{component} diagram")
 
             # Mark element boundaries
             boundaries = self.get_element_boundaries()
             for i, x_bound in enumerate(boundaries):
-                ax.axvline(x_bound, color='gray', linestyle=':', alpha=0.5,
-                           label='Element boundary' if i == 0 else '')
+                ax.axvline(
+                    x_bound,
+                    color="gray",
+                    linestyle=":",
+                    alpha=0.5,
+                    label="Element boundary" if i == 0 else "",
+                )
 
             # Mark extrema for moment diagrams
-            if component in ['Mz', 'My']:
+            if component in ["Mz", "My"]:
                 axis_char = component[1].lower()
                 extrema = self.find_moment_extrema(axis_char, model)
                 for x_ext, val_ext in extrema:
-                    ax.plot(x_ext, val_ext, 'ro', markersize=6)
-                    ax.annotate(f'{val_ext:.2f}', xy=(x_ext, val_ext),
-                                xytext=(5, 5), textcoords='offset points',
-                                fontsize=8)
+                    ax.plot(x_ext, val_ext, "ro", markersize=6)
+                    ax.annotate(
+                        f"{val_ext:.2f}",
+                        xy=(x_ext, val_ext),
+                        xytext=(5, 5),
+                        textcoords="offset points",
+                        fontsize=8,
+                    )
 
-        axes[-1].set_xlabel('Position along beam [m]')
+        axes[-1].set_xlabel("Position along beam [m]")
         plt.tight_layout()
 
         return fig
@@ -671,11 +669,7 @@ class StructuralModel:
         _node_map: Dictionary mapping (x,y,z) tuples to Node objects
     """
 
-    def __init__(
-        self,
-        name: str = "Unnamed Model",
-        node_tolerance: float = 1e-6
-    ):
+    def __init__(self, name: str = "Unnamed Model", node_tolerance: float = 1e-6):
         """Initialize a StructuralModel.
 
         Args:
@@ -704,7 +698,7 @@ class StructuralModel:
         nu: float,
         rho: float = 7.85,
         fy: float = 0.0,
-        fu: float = 0.0
+        fu: float = 0.0,
     ) -> _CppMaterial:
         """Add a material to the model library.
 
@@ -731,13 +725,7 @@ class StructuralModel:
         return mat
 
     def add_section(
-        self,
-        name: str,
-        A: float,
-        Iy: float,
-        Iz: float,
-        J: float,
-        **kwargs
+        self, name: str, A: float, Iy: float, Iz: float, J: float, **kwargs
     ) -> _CppSection:
         """Add a section to the model library.
 
@@ -787,7 +775,9 @@ class StructuralModel:
 
         return self._node_map[key]
 
-    def find_node_at(self, position: List[float], tolerance: Optional[float] = None) -> Optional[Node]:
+    def find_node_at(
+        self, position: List[float], tolerance: Optional[float] = None
+    ) -> Optional[Node]:
         """Find a node at the specified position.
 
         Args:
@@ -813,7 +803,7 @@ class StructuralModel:
             dx = node.x - x
             dy = node.y - y
             dz = node.z - z
-            dist_sq = dx*dx + dy*dy + dz*dz
+            dist_sq = dx * dx + dy * dy + dz * dz
             if dist_sq <= tol_sq:
                 return node
 
@@ -827,7 +817,7 @@ class StructuralModel:
         end_pos: List[float],
         section_name: str,
         material_name: str,
-        **kwargs
+        **kwargs,
     ) -> Beam:
         """Add a beam using endpoint coordinates.
 
@@ -847,11 +837,15 @@ class StructuralModel:
         # Get material and section
         material = self.get_material(material_name)
         if material is None:
-            raise ValueError(f"Material '{material_name}' not found. Add it first with add_material().")
+            raise ValueError(
+                f"Material '{material_name}' not found. Add it first with add_material()."
+            )
 
         section = self.get_section(section_name)
         if section is None:
-            raise ValueError(f"Section '{section_name}' not found. Add it first with add_section().")
+            raise ValueError(
+                f"Section '{section_name}' not found. Add it first with add_section()."
+            )
 
         # Create nodes
         node1 = self.get_or_create_node(*start_pos)
@@ -861,7 +855,9 @@ class StructuralModel:
         cpp_element = self._cpp_model.create_beam(node1, node2, material, section)
 
         # Create Python Beam object
-        beam = Beam(start_pos, end_pos, section, material, beam_id=self._beam_id_counter)
+        beam = Beam(
+            start_pos, end_pos, section, material, beam_id=self._beam_id_counter
+        )
         self._beam_id_counter += 1
         beam.add_element(cpp_element)
         self.beams.append(beam)
@@ -926,7 +922,7 @@ class StructuralModel:
         node3: List[float],
         node4: List[float],
         thickness: float,
-        material: str
+        material: str,
     ):
         """Add a single 4-node plate element to the model.
 
@@ -965,7 +961,9 @@ class StructuralModel:
         """
         mat = self.get_material(material)
         if mat is None:
-            raise ValueError(f"Material '{material}' not found. Add it first with add_material().")
+            raise ValueError(
+                f"Material '{material}' not found. Add it first with add_material()."
+            )
 
         n1 = self.get_or_create_node(*node1)
         n2 = self.get_or_create_node(*node2)
@@ -997,7 +995,7 @@ class StructuralModel:
         material: str,
         mesh_size: float = 0.5,
         element_type: str = "MITC4",
-        name: Optional[str] = None
+        name: Optional[str] = None,
     ) -> Plate:
         """Add a plate region to the model.
 
@@ -1031,7 +1029,9 @@ class StructuralModel:
         """
         # Validate material exists
         if self.get_material(material) is None:
-            raise ValueError(f"Material '{material}' not found. Add it first with add_material().")
+            raise ValueError(
+                f"Material '{material}' not found. Add it first with add_material()."
+            )
 
         # Validate element type
         get_element_type(element_type)  # Raises ValueError if invalid
@@ -1043,7 +1043,7 @@ class StructuralModel:
             material=material,
             mesh_size=mesh_size,
             element_type=element_type,
-            name=name or f"Plate_{len(self._plates) + 1}"
+            name=name or f"Plate_{len(self._plates) + 1}",
         )
 
         # Validate geometry
@@ -1054,10 +1054,7 @@ class StructuralModel:
         return plate
 
     def set_edge_divisions(
-        self,
-        plate: Plate,
-        edge_index: int,
-        n_elements: int
+        self, plate: Plate, edge_index: int, n_elements: int
     ) -> None:
         """Set the number of elements along a plate edge.
 
@@ -1095,7 +1092,7 @@ class StructuralModel:
         edge_index: int,
         beam: "Beam",
         offset: Optional[List[float]] = None,
-        releases: Optional[Dict[str, bool]] = None
+        releases: Optional[Dict[str, bool]] = None,
     ) -> "PlateBeamCoupling":
         """Couple a plate edge to a beam using rigid links.
 
@@ -1142,7 +1139,7 @@ class StructuralModel:
             edge_index=edge_index,
             beam=beam,
             offset=offset or [0.0, 0.0, 0.0],
-            releases=releases or {}
+            releases=releases or {},
         )
 
         plate.beam_couplings.append(coupling)
@@ -1155,7 +1152,7 @@ class StructuralModel:
         ux: bool = False,
         uy: bool = False,
         uz: bool = False,
-        rotation_about_edge: bool = False
+        rotation_about_edge: bool = False,
     ) -> "SupportCurve":
         """Add a support along a plate edge.
 
@@ -1193,7 +1190,7 @@ class StructuralModel:
             ux=ux,
             uy=uy,
             uz=uz,
-            rotation_about_edge=rotation_about_edge
+            rotation_about_edge=rotation_about_edge,
         )
 
         plate.support_curves.append(support)
@@ -1237,21 +1234,27 @@ class StructuralModel:
             return stats
 
         # Track nodes created per plate for element creation
-        plate_node_map: Dict[int, Dict[int, Node]] = {}  # plate_idx -> mesh_node_idx -> Node
+        plate_node_map: Dict[
+            int, Dict[int, Node]
+        ] = {}  # plate_idx -> mesh_node_idx -> Node
         # Also track node ID to Node object for coupling
         node_id_to_node: Dict[int, Node] = {}
 
         with GmshPlateMesher() as mesher:
             for plate_idx, plate in enumerate(self._plates):
                 if verbose:
-                    print(f"Meshing plate {plate_idx + 1}/{len(self._plates)}: {plate.name}")
+                    print(
+                        f"Meshing plate {plate_idx + 1}/{len(self._plates)}: {plate.name}"
+                    )
 
                 # Generate mesh
                 mesh_result = mesher.mesh_plate_from_geometry(plate)
 
                 if verbose:
-                    print(f"  Generated {mesh_result.n_nodes} nodes, "
-                          f"{mesh_result.n_quads} quads, {mesh_result.n_triangles} triangles")
+                    print(
+                        f"  Generated {mesh_result.n_nodes} nodes, "
+                        f"{mesh_result.n_quads} quads, {mesh_result.n_triangles} triangles"
+                    )
 
                 # Create nodes in model
                 node_map: Dict[int, Node] = {}
@@ -1289,8 +1292,12 @@ class StructuralModel:
                     for quad_conn in mesh_result.quads:
                         nodes = [node_map[idx] for idx in quad_conn]
                         self._cpp_model.create_plate(
-                            nodes[0], nodes[1], nodes[2], nodes[3],
-                            plate.thickness, material
+                            nodes[0],
+                            nodes[1],
+                            nodes[2],
+                            nodes[3],
+                            plate.thickness,
+                            material,
                         )
                         created_quads += 1
 
@@ -1299,9 +1306,16 @@ class StructuralModel:
                     for quad_conn in mesh_result.quads_8:
                         nodes = [node_map[idx] for idx in quad_conn]
                         self._cpp_model.create_plate_8(
-                            nodes[0], nodes[1], nodes[2], nodes[3],
-                            nodes[4], nodes[5], nodes[6], nodes[7],
-                            plate.thickness, material
+                            nodes[0],
+                            nodes[1],
+                            nodes[2],
+                            nodes[3],
+                            nodes[4],
+                            nodes[5],
+                            nodes[6],
+                            nodes[7],
+                            plate.thickness,
+                            material,
                         )
                         created_quads += 1
 
@@ -1310,9 +1324,17 @@ class StructuralModel:
                     for quad_conn in mesh_result.quads_9:
                         nodes = [node_map[idx] for idx in quad_conn]
                         self._cpp_model.create_plate_9(
-                            nodes[0], nodes[1], nodes[2], nodes[3],
-                            nodes[4], nodes[5], nodes[6], nodes[7], nodes[8],
-                            plate.thickness, material
+                            nodes[0],
+                            nodes[1],
+                            nodes[2],
+                            nodes[3],
+                            nodes[4],
+                            nodes[5],
+                            nodes[6],
+                            nodes[7],
+                            nodes[8],
+                            plate.thickness,
+                            material,
                         )
                         created_quads += 1
 
@@ -1321,8 +1343,7 @@ class StructuralModel:
                     for tri_conn in mesh_result.triangles:
                         nodes = [node_map[idx] for idx in tri_conn]
                         self._cpp_model.create_plate_tri(
-                            nodes[0], nodes[1], nodes[2],
-                            plate.thickness, material
+                            nodes[0], nodes[1], nodes[2], plate.thickness, material
                         )
                         created_tris += 1
                 else:
@@ -1400,9 +1421,7 @@ class StructuralModel:
                     if plate_node.id != beam_node.id:
                         # Create rigid link: plate_node is slave, beam_node is master
                         # Offset is from master (beam) to slave (plate)
-                        self._cpp_model.add_rigid_link(
-                            plate_node, beam_node, offset
-                        )
+                        self._cpp_model.add_rigid_link(plate_node, beam_node, offset)
                         stats.n_rigid_links += 1
 
                 # Subdivide beam if needed (to have nodes at coupling points)
@@ -1564,7 +1583,9 @@ class StructuralModel:
 
         self._cpp_model.boundary_conditions.pin_node(node.id)
 
-    def fix_dof_at(self, position: List[float], dof: DOFIndex, value: float = 0.0) -> None:
+    def fix_dof_at(
+        self, position: List[float], dof: DOFIndex, value: float = 0.0
+    ) -> None:
         """Fix a specific DOF at a node.
 
         Args:
@@ -1581,9 +1602,7 @@ class StructuralModel:
     # ===== Load Application =====
 
     def create_load_case(
-        self,
-        name: str,
-        load_type: LoadCaseType = LoadCaseType.Variable
+        self, name: str, load_type: LoadCaseType = LoadCaseType.Variable
     ) -> _CppLoadCase:
         """Create a new load case.
 
@@ -1606,7 +1625,7 @@ class StructuralModel:
         permanent_factor: float = 1.0,
         variable_factor: float = 1.0,
         environmental_factor: float = 1.0,
-        accidental_factor: float = 0.0
+        accidental_factor: float = 0.0,
     ) -> dict:
         """Create a load combination with type-based factors.
 
@@ -1656,7 +1675,7 @@ class StructuralModel:
         self,
         combination_id: int,
         load_case_id: int,
-        override_factor: Optional[float] = None
+        override_factor: Optional[float] = None,
     ) -> dict:
         """Add a load case to a load combination.
 
@@ -1691,7 +1710,11 @@ class StructuralModel:
                 raise ValueError(f"Load case {load_case_id} already in combination")
 
         # Get load case type name for display
-        type_name = load_case.type.name if hasattr(load_case.type, 'name') else str(load_case.type)
+        type_name = (
+            load_case.type.name
+            if hasattr(load_case.type, "name")
+            else str(load_case.type)
+        )
 
         # Add to combination
         lc_member = {
@@ -1705,9 +1728,7 @@ class StructuralModel:
         return combo
 
     def remove_load_case_from_combination(
-        self,
-        combination_id: int,
-        load_case_id: int
+        self, combination_id: int, load_case_id: int
     ) -> dict:
         """Remove a load case from a load combination.
 
@@ -1739,10 +1760,7 @@ class StructuralModel:
         raise ValueError(f"Load case {load_case_id} not found in combination")
 
     def update_load_case_override(
-        self,
-        combination_id: int,
-        load_case_id: int,
-        override_factor: Optional[float]
+        self, combination_id: int, load_case_id: int, override_factor: Optional[float]
     ) -> dict:
         """Update the override factor for a load case in a combination.
 
@@ -1780,7 +1798,7 @@ class StructuralModel:
         position: List[float],
         force: Optional[List[float]] = None,
         moment: Optional[List[float]] = None,
-        load_case: Optional[_CppLoadCase] = None
+        load_case: Optional[_CppLoadCase] = None,
     ) -> None:
         """Add a point load at a position.
 
@@ -1803,8 +1821,12 @@ class StructuralModel:
         if force is None and moment is None:
             raise ValueError("At least one of 'force' or 'moment' must be provided")
 
-        force_vec = np.array(force if force is not None else [0.0, 0.0, 0.0], dtype=float)
-        moment_vec = np.array(moment if moment is not None else [0.0, 0.0, 0.0], dtype=float)
+        force_vec = np.array(
+            force if force is not None else [0.0, 0.0, 0.0], dtype=float
+        )
+        moment_vec = np.array(
+            moment if moment is not None else [0.0, 0.0, 0.0], dtype=float
+        )
         position_vec = np.array(position, dtype=float)
 
         if load_case is None:
@@ -1817,7 +1839,7 @@ class StructuralModel:
         beam: "Beam",
         w_start: List[float],
         w_end: Optional[List[float]] = None,
-        load_case: Optional[_CppLoadCase] = None
+        load_case: Optional[_CppLoadCase] = None,
     ) -> None:
         """Add a distributed line load to a beam.
 
@@ -1881,7 +1903,7 @@ class StructuralModel:
         end_pos: List[float],
         w_start: List[float],
         w_end: Optional[List[float]] = None,
-        load_case: Optional[_CppLoadCase] = None
+        load_case: Optional[_CppLoadCase] = None,
     ) -> None:
         """Add a distributed line load to a beam identified by its endpoint coordinates.
 
@@ -1904,10 +1926,7 @@ class StructuralModel:
         self.add_line_load(beam, w_start, w_end, load_case)
 
     def find_beam_by_coords(
-        self,
-        start_pos: List[float],
-        end_pos: List[float],
-        tolerance: float = 1e-6
+        self, start_pos: List[float], end_pos: List[float], tolerance: float = 1e-6
     ) -> Optional["Beam"]:
         """Find a beam by its endpoint coordinates.
 
@@ -1924,11 +1943,15 @@ class StructuralModel:
 
         for beam in self.beams:
             # Check if start/end match (in either order)
-            if (np.linalg.norm(beam.start_pos - start) < tolerance and
-                np.linalg.norm(beam.end_pos - end) < tolerance):
+            if (
+                np.linalg.norm(beam.start_pos - start) < tolerance
+                and np.linalg.norm(beam.end_pos - end) < tolerance
+            ):
                 return beam
-            if (np.linalg.norm(beam.start_pos - end) < tolerance and
-                np.linalg.norm(beam.end_pos - start) < tolerance):
+            if (
+                np.linalg.norm(beam.start_pos - end) < tolerance
+                and np.linalg.norm(beam.end_pos - start) < tolerance
+            ):
                 return beam
 
         return None
@@ -1948,8 +1971,7 @@ class StructuralModel:
         return self._cpp_model.is_analyzed()
 
     def analyze_with_nonlinear_springs(
-        self,
-        settings: Optional[NonlinearSolverSettings] = None
+        self, settings: Optional[NonlinearSolverSettings] = None
     ) -> Dict[int, LoadCaseResult]:
         """Run analysis with support for nonlinear (tension/compression-only) springs.
 
@@ -2007,7 +2029,7 @@ class StructuralModel:
     def analyze_load_combination(
         self,
         combination: LoadCombination,
-        settings: Optional[NonlinearSolverSettings] = None
+        settings: Optional[NonlinearSolverSettings] = None,
     ) -> LoadCombinationResult:
         """Analyze a specific load combination with nonlinear spring support.
 
@@ -2071,7 +2093,7 @@ class StructuralModel:
         tolerance: float = 1e-8,
         max_iterations: int = 100,
         compute_participation: bool = True,
-        mass_normalize: bool = True
+        mass_normalize: bool = True,
     ) -> bool:
         """Run eigenvalue analysis to compute natural frequencies and mode shapes.
 
@@ -2105,7 +2127,9 @@ class StructuralModel:
                 mode1 = model.get_mode_shape(1)
         """
         if EigensolverSettings is None:
-            raise RuntimeError("Eigenvalue analysis not available - C++ module needs rebuild")
+            raise RuntimeError(
+                "Eigenvalue analysis not available - C++ module needs rebuild"
+            )
 
         settings = EigensolverSettings()
         settings.n_modes = n_modes
@@ -2178,9 +2202,7 @@ class StructuralModel:
         return self._cpp_model.get_eigenvalue_result()
 
     def get_mode_displacement_at(
-        self,
-        mode_number: int,
-        position: List[float]
+        self, mode_number: int, position: List[float]
     ) -> Dict[str, float]:
         """Get mode shape displacement components at a specific node.
 
@@ -2205,9 +2227,17 @@ class StructuralModel:
         dof_handler = self._cpp_model.get_dof_handler()
 
         result = {}
-        dof_names = ['UX', 'UY', 'UZ', 'RX', 'RY', 'RZ']
-        for i, dof in enumerate([DOFIndex.UX, DOFIndex.UY, DOFIndex.UZ,
-                                  DOFIndex.RX, DOFIndex.RY, DOFIndex.RZ]):
+        dof_names = ["UX", "UY", "UZ", "RX", "RY", "RZ"]
+        for i, dof in enumerate(
+            [
+                DOFIndex.UX,
+                DOFIndex.UY,
+                DOFIndex.UZ,
+                DOFIndex.RX,
+                DOFIndex.RY,
+                DOFIndex.RZ,
+            ]
+        ):
             global_dof = dof_handler.get_global_dof(node.id, dof)
             if global_dof >= 0 and global_dof < len(mode_shape):
                 result[dof_names[i]] = mode_shape[global_dof]
@@ -2256,26 +2286,26 @@ class StructuralModel:
             cumulative_y += mode.effective_mass_pct_y
             cumulative_z += mode.effective_mass_pct_z
 
-            rows.append({
-                'mode': mode.mode_number,
-                'frequency_hz': mode.frequency_hz,
-                'period_s': mode.period_s,
-                'eff_mass_x_pct': mode.effective_mass_pct_x,
-                'eff_mass_y_pct': mode.effective_mass_pct_y,
-                'eff_mass_z_pct': mode.effective_mass_pct_z,
-                'cumulative_x_pct': cumulative_x,
-                'cumulative_y_pct': cumulative_y,
-                'cumulative_z_pct': cumulative_z,
-            })
+            rows.append(
+                {
+                    "mode": mode.mode_number,
+                    "frequency_hz": mode.frequency_hz,
+                    "period_s": mode.period_s,
+                    "eff_mass_x_pct": mode.effective_mass_pct_x,
+                    "eff_mass_y_pct": mode.effective_mass_pct_y,
+                    "eff_mass_z_pct": mode.effective_mass_pct_z,
+                    "cumulative_x_pct": cumulative_x,
+                    "cumulative_y_pct": cumulative_y,
+                    "cumulative_z_pct": cumulative_z,
+                }
+            )
 
         return pd.DataFrame(rows)
 
     # ===== Spring Results Access =====
 
     def get_spring_state(
-        self,
-        spring_id: int,
-        load_case: Optional[_CppLoadCase] = None
+        self, spring_id: int, load_case: Optional[_CppLoadCase] = None
     ) -> Dict[str, bool]:
         """Get active/inactive state for each DOF of a spring.
 
@@ -2307,7 +2337,7 @@ class StructuralModel:
         result = results[active_lc.id]
 
         # Find the spring in the results
-        dof_names = ['UX', 'UY', 'UZ', 'RX', 'RY', 'RZ']
+        dof_names = ["UX", "UY", "UZ", "RX", "RY", "RZ"]
         for sid, states in result.spring_states:
             if sid == spring_id:
                 return {dof_names[i]: states[i] for i in range(6)}
@@ -2315,9 +2345,7 @@ class StructuralModel:
         raise ValueError(f"Spring {spring_id} not found in results")
 
     def get_spring_force(
-        self,
-        spring_id: int,
-        load_case: Optional[_CppLoadCase] = None
+        self, spring_id: int, load_case: Optional[_CppLoadCase] = None
     ) -> Dict[str, float]:
         """Get spring forces for each DOF.
 
@@ -2346,17 +2374,14 @@ class StructuralModel:
         result = results[active_lc.id]
 
         # Find the spring in the results
-        dof_names = ['UX', 'UY', 'UZ', 'RX', 'RY', 'RZ']
+        dof_names = ["UX", "UY", "UZ", "RX", "RY", "RZ"]
         for sid, forces in result.spring_forces:
             if sid == spring_id:
                 return {dof_names[i]: forces[i] for i in range(6)}
 
         raise ValueError(f"Spring {spring_id} not found in results")
 
-    def get_spring_summary(
-        self,
-        load_case: Optional[_CppLoadCase] = None
-    ):
+    def get_spring_summary(self, load_case: Optional[_CppLoadCase] = None):
         """Get summary of all spring states and forces.
 
         Args:
@@ -2387,7 +2412,7 @@ class StructuralModel:
             raise RuntimeError("No results available. Run analyze first.")
 
         result = results[active_lc.id]
-        dof_names = ['UX', 'UY', 'UZ', 'RX', 'RY', 'RZ']
+        dof_names = ["UX", "UY", "UZ", "RX", "RY", "RZ"]
 
         # Build state dict
         states_by_id = {sid: states for sid, states in result.spring_states}
@@ -2395,13 +2420,13 @@ class StructuralModel:
 
         rows = []
         for spring_id in states_by_id:
-            row = {'spring_id': spring_id}
+            row = {"spring_id": spring_id}
             states = states_by_id[spring_id]
             forces = forces_by_id.get(spring_id, [0.0] * 6)
 
             for i, name in enumerate(dof_names):
-                row[f'{name}_active'] = states[i]
-                row[f'{name}_force'] = forces[i]
+                row[f"{name}_active"] = states[i]
+                row[f"{name}_force"] = forces[i]
 
             rows.append(row)
 
@@ -2413,7 +2438,7 @@ class StructuralModel:
         self,
         position: List[float],
         dof: DOFIndex,
-        load_case: Optional[_CppLoadCase] = None
+        load_case: Optional[_CppLoadCase] = None,
     ) -> float:
         """Get displacement at a node for a specific DOF.
 
@@ -2434,7 +2459,9 @@ class StructuralModel:
 
         return self._cpp_model.get_node_displacement(node.id, dof)
 
-    def get_all_displacements(self, load_case: Optional[_CppLoadCase] = None) -> np.ndarray:
+    def get_all_displacements(
+        self, load_case: Optional[_CppLoadCase] = None
+    ) -> np.ndarray:
         """Get global displacement vector.
 
         Args:
@@ -2463,9 +2490,7 @@ class StructuralModel:
         return self._cpp_model.get_reactions()
 
     def get_reactions_at(
-        self,
-        position: List[float],
-        load_case: Optional[_CppLoadCase] = None
+        self, position: List[float], load_case: Optional[_CppLoadCase] = None
     ) -> Dict[DOFIndex, float]:
         """Get reaction forces at a node.
 
@@ -2487,8 +2512,14 @@ class StructuralModel:
         dof_handler = self._cpp_model.get_dof_handler()
 
         result = {}
-        for dof in [DOFIndex.UX, DOFIndex.UY, DOFIndex.UZ,
-                    DOFIndex.RX, DOFIndex.RY, DOFIndex.RZ]:
+        for dof in [
+            DOFIndex.UX,
+            DOFIndex.UY,
+            DOFIndex.UZ,
+            DOFIndex.RX,
+            DOFIndex.RY,
+            DOFIndex.RZ,
+        ]:
             global_dof = dof_handler.get_global_dof(node.id, dof)
             if global_dof >= 0 and global_dof < len(reactions):
                 result[dof] = reactions[global_dof]
@@ -2512,7 +2543,7 @@ class StructuralModel:
         plate_element,
         xi: float = 0.0,
         eta: float = 0.0,
-        load_case: Optional[_CppLoadCase] = None
+        load_case: Optional[_CppLoadCase] = None,
     ) -> Dict[str, float]:
         """Get displacement at a point within a plate element.
 
@@ -2549,8 +2580,14 @@ class StructuralModel:
         # Build nodal displacement vector
         nodal_disp = []
         for node in nodes:
-            for dof in [DOFIndex.UX, DOFIndex.UY, DOFIndex.UZ,
-                        DOFIndex.RX, DOFIndex.RY, DOFIndex.RZ]:
+            for dof in [
+                DOFIndex.UX,
+                DOFIndex.UY,
+                DOFIndex.UZ,
+                DOFIndex.RX,
+                DOFIndex.RY,
+                DOFIndex.RZ,
+            ]:
                 global_dof = dof_handler.get_global_dof(node.id, dof)
                 if global_dof >= 0 and global_dof < len(u_global):
                     nodal_disp.append(u_global[global_dof])
@@ -2565,12 +2602,14 @@ class StructuralModel:
             L3 = eta
             N = np.array([L1, L2, L3])
         elif n_nodes == 4:  # Bilinear quad
-            N = np.array([
-                0.25 * (1 - xi) * (1 - eta),
-                0.25 * (1 + xi) * (1 - eta),
-                0.25 * (1 + xi) * (1 + eta),
-                0.25 * (1 - xi) * (1 + eta)
-            ])
+            N = np.array(
+                [
+                    0.25 * (1 - xi) * (1 - eta),
+                    0.25 * (1 + xi) * (1 - eta),
+                    0.25 * (1 + xi) * (1 + eta),
+                    0.25 * (1 - xi) * (1 + eta),
+                ]
+            )
         elif n_nodes == 8:  # Serendipity quad
             # Corner nodes
             N1 = 0.25 * (1 - xi) * (1 - eta) * (-1 - xi - eta)
@@ -2586,23 +2625,25 @@ class StructuralModel:
         elif n_nodes == 9:  # Lagrangian quad
             # Helper 1D Lagrange polynomials
             L_m1 = 0.5 * xi * (xi - 1)  # at xi = -1
-            L_0 = 1 - xi**2              # at xi = 0
+            L_0 = 1 - xi**2  # at xi = 0
             L_p1 = 0.5 * xi * (xi + 1)  # at xi = 1
             M_m1 = 0.5 * eta * (eta - 1)
             M_0 = 1 - eta**2
             M_p1 = 0.5 * eta * (eta + 1)
 
-            N = np.array([
-                L_m1 * M_m1,  # Node 1 (-1, -1)
-                L_p1 * M_m1,  # Node 2 (+1, -1)
-                L_p1 * M_p1,  # Node 3 (+1, +1)
-                L_m1 * M_p1,  # Node 4 (-1, +1)
-                L_0 * M_m1,   # Node 5 (0, -1)
-                L_p1 * M_0,   # Node 6 (+1, 0)
-                L_0 * M_p1,   # Node 7 (0, +1)
-                L_m1 * M_0,   # Node 8 (-1, 0)
-                L_0 * M_0     # Node 9 (0, 0)
-            ])
+            N = np.array(
+                [
+                    L_m1 * M_m1,  # Node 1 (-1, -1)
+                    L_p1 * M_m1,  # Node 2 (+1, -1)
+                    L_p1 * M_p1,  # Node 3 (+1, +1)
+                    L_m1 * M_p1,  # Node 4 (-1, +1)
+                    L_0 * M_m1,  # Node 5 (0, -1)
+                    L_p1 * M_0,  # Node 6 (+1, 0)
+                    L_0 * M_p1,  # Node 7 (0, +1)
+                    L_m1 * M_0,  # Node 8 (-1, 0)
+                    L_0 * M_0,  # Node 9 (0, 0)
+                ]
+            )
         else:
             raise ValueError(f"Unsupported element with {n_nodes} nodes")
 
@@ -2620,7 +2661,7 @@ class StructuralModel:
         plate_element,
         xi: float = 0.0,
         eta: float = 0.0,
-        load_case: Optional[_CppLoadCase] = None
+        load_case: Optional[_CppLoadCase] = None,
     ) -> Dict[str, float]:
         """Get internal moments at a point within a plate element.
 
@@ -2693,15 +2734,21 @@ class StructuralModel:
         if n_nodes >= 4:
             # Use corner nodes for gradient estimation
             # Curvature estimates from nodal rotation differences
-            d_theta_y_dx = (np.mean([ry_nodal[1], ry_nodal[2]]) -
-                           np.mean([ry_nodal[0], ry_nodal[3]])) / max(lx, 1e-6)
-            d_theta_x_dy = (np.mean([rx_nodal[2], rx_nodal[3]]) -
-                           np.mean([rx_nodal[0], rx_nodal[1]])) / max(ly, 1e-6)
+            d_theta_y_dx = (
+                np.mean([ry_nodal[1], ry_nodal[2]])
+                - np.mean([ry_nodal[0], ry_nodal[3]])
+            ) / max(lx, 1e-6)
+            d_theta_x_dy = (
+                np.mean([rx_nodal[2], rx_nodal[3]])
+                - np.mean([rx_nodal[0], rx_nodal[1]])
+            ) / max(ly, 1e-6)
 
             kappa_x = d_theta_y_dx  # -∂²w/∂x²
             kappa_y = -d_theta_x_dy  # -∂²w/∂y²
-            kappa_xy = 0.5 * ((ry_nodal[1] - ry_nodal[0]) / max(ly, 1e-6) +
-                              (rx_nodal[3] - rx_nodal[0]) / max(lx, 1e-6))
+            kappa_xy = 0.5 * (
+                (ry_nodal[1] - ry_nodal[0]) / max(ly, 1e-6)
+                + (rx_nodal[3] - rx_nodal[0]) / max(lx, 1e-6)
+            )
         else:
             # Triangle - simplified
             kappa_x = 0.0
@@ -2724,7 +2771,7 @@ class StructuralModel:
         surface: str = "middle",
         xi: float = 0.0,
         eta: float = 0.0,
-        load_case: Optional[_CppLoadCase] = None
+        load_case: Optional[_CppLoadCase] = None,
     ) -> Dict[str, float]:
         """Get stress at a point within a plate element.
 
@@ -2767,7 +2814,9 @@ class StructuralModel:
         elif surface == "middle":
             z = 0.0
         else:
-            raise ValueError(f"Surface must be 'top', 'bottom', or 'middle', got '{surface}'")
+            raise ValueError(
+                f"Surface must be 'top', 'bottom', or 'middle', got '{surface}'"
+            )
 
         # Stress from bending: σ = M * z / I, where I = t³/12 per unit width
         # So σ = M * z / (t³/12) = 12 * M * z / t³
@@ -2803,12 +2852,14 @@ class StructuralModel:
         return len(self.beams)
 
     def __repr__(self) -> str:
-        return (f"StructuralModel(name='{self.name}', "
-                f"nodes={self.num_nodes()}, "
-                f"beams={self.num_beams()}, "
-                f"elements={self.num_elements()}, "
-                f"dofs={self.total_dofs()}, "
-                f"analyzed={self.is_analyzed()})")
+        return (
+            f"StructuralModel(name='{self.name}', "
+            f"nodes={self.num_nodes()}, "
+            f"beams={self.num_beams()}, "
+            f"elements={self.num_elements()}, "
+            f"dofs={self.total_dofs()}, "
+            f"analyzed={self.is_analyzed()})"
+        )
 
     # ===== Access to underlying C++ model =====
 
@@ -2829,7 +2880,7 @@ class StructuralModel:
         point: np.ndarray,
         line_start: np.ndarray,
         line_end: np.ndarray,
-        tolerance: float = 1e-6
+        tolerance: float = 1e-6,
     ) -> Tuple[bool, float]:
         """Check if a point lies on a line segment.
 
@@ -2907,9 +2958,7 @@ class StructuralModel:
             node_pos = np.array([node.x, node.y, node.z])
 
             # Check if node lies on the beam line segment
-            is_on_line, t = self._point_on_line_segment(
-                node_pos, start_pos, end_pos
-            )
+            is_on_line, t = self._point_on_line_segment(node_pos, start_pos, end_pos)
 
             if is_on_line:
                 # Distance from start
@@ -2922,9 +2971,7 @@ class StructuralModel:
         return internal_nodes
 
     def _split_beam_at_nodes(
-        self,
-        beam: Beam,
-        internal_nodes: List[Tuple[float, Node]]
+        self, beam: Beam, internal_nodes: List[Tuple[float, Node]]
     ) -> List[Beam]:
         """Split a beam at internal nodes into multiple sub-beams.
 
@@ -2968,7 +3015,9 @@ class StructuralModel:
             cpp_element = self._cpp_model.create_beam(node_i, node_j, material, section)
 
             # Create Python Beam object
-            sub_beam = Beam(start_pos, end_pos, section, material, beam_id=self._beam_id_counter)
+            sub_beam = Beam(
+                start_pos, end_pos, section, material, beam_id=self._beam_id_counter
+            )
             self._beam_id_counter += 1
             sub_beam.add_element(cpp_element)
             new_beams.append(sub_beam)

@@ -32,6 +32,7 @@ from grillex.core import StructuralModel, DOFIndex, LoadCaseType, SpringBehavior
 # Tool Result Types
 # =============================================================================
 
+
 @dataclass
 class ToolResult:
     """Result of a tool execution.
@@ -42,6 +43,7 @@ class ToolResult:
         error: Error message if success is False.
         suggestion: Suggested fix if there was an error.
     """
+
     success: bool
     result: Optional[Any] = None
     error: Optional[str] = None
@@ -75,17 +77,16 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Name of the model (e.g., 'Bridge Deck', 'Barge Structure')"
+                    "description": "Name of the model (e.g., 'Bridge Deck', 'Barge Structure')",
                 },
                 "node_tolerance": {
                     "type": "number",
-                    "description": "Tolerance for node merging in meters. Default 1e-6 (1 micrometer)."
-                }
+                    "description": "Tolerance for node merging in meters. Default 1e-6 (1 micrometer).",
+                },
             },
-            "required": ["name"]
-        }
+            "required": ["name"],
+        },
     },
-
     # =========================================================================
     # Materials and Sections
     # =========================================================================
@@ -97,31 +98,31 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Material name (e.g., 'Steel', 'Aluminum')"
+                    "description": "Material name (e.g., 'Steel', 'Aluminum')",
                 },
                 "E": {
                     "type": "number",
-                    "description": "Young's modulus in kN/m². Steel is typically 210000000 (210 GPa)."
+                    "description": "Young's modulus in kN/m². Steel is typically 210000000 (210 GPa).",
                 },
                 "nu": {
                     "type": "number",
-                    "description": "Poisson's ratio (dimensionless). Steel is typically 0.3."
+                    "description": "Poisson's ratio (dimensionless). Steel is typically 0.3.",
                 },
                 "rho": {
                     "type": "number",
-                    "description": "Density in mT/m³ (metric tonnes per cubic meter). Steel is 7.85."
+                    "description": "Density in mT/m³ (metric tonnes per cubic meter). Steel is 7.85.",
                 },
                 "fy": {
                     "type": "number",
-                    "description": "Yield stress in kN/m². Optional. Steel S355 is typically 355000."
+                    "description": "Yield stress in kN/m². Optional. Steel S355 is typically 355000.",
                 },
                 "fu": {
                     "type": "number",
-                    "description": "Ultimate tensile strength in kN/m². Optional. Steel S355 is typically 470000-630000."
-                }
+                    "description": "Ultimate tensile strength in kN/m². Optional. Steel S355 is typically 470000-630000.",
+                },
             },
-            "required": ["name", "E", "nu", "rho"]
-        }
+            "required": ["name", "E", "nu", "rho"],
+        },
     },
     {
         "name": "add_section",
@@ -131,29 +132,25 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Section name (e.g., 'IPE300', 'HEB200')"
+                    "description": "Section name (e.g., 'IPE300', 'HEB200')",
                 },
-                "A": {
-                    "type": "number",
-                    "description": "Cross-sectional area in m²"
-                },
+                "A": {"type": "number", "description": "Cross-sectional area in m²"},
                 "Iy": {
                     "type": "number",
-                    "description": "Second moment of area about local y-axis (strong axis) in m⁴"
+                    "description": "Second moment of area about local y-axis (strong axis) in m⁴",
                 },
                 "Iz": {
                     "type": "number",
-                    "description": "Second moment of area about local z-axis (weak axis) in m⁴"
+                    "description": "Second moment of area about local z-axis (weak axis) in m⁴",
                 },
                 "J": {
                     "type": "number",
-                    "description": "Torsional constant (St. Venant) in m⁴"
-                }
+                    "description": "Torsional constant (St. Venant) in m⁴",
+                },
             },
-            "required": ["name", "A", "Iy", "Iz", "J"]
-        }
+            "required": ["name", "A", "Iy", "Iz", "J"],
+        },
     },
-
     # =========================================================================
     # Beam Creation
     # =========================================================================
@@ -168,28 +165,27 @@ TOOLS: List[Dict[str, Any]] = [
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Start point [x, y, z] in meters"
+                    "description": "Start point [x, y, z] in meters",
                 },
                 "end_position": {
                     "type": "array",
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "End point [x, y, z] in meters"
+                    "description": "End point [x, y, z] in meters",
                 },
                 "section": {
                     "type": "string",
-                    "description": "Name of section to use (must exist in model)"
+                    "description": "Name of section to use (must exist in model)",
                 },
                 "material": {
                     "type": "string",
-                    "description": "Name of material to use (must exist in model)"
-                }
+                    "description": "Name of material to use (must exist in model)",
+                },
             },
-            "required": ["start_position", "end_position", "section", "material"]
-        }
+            "required": ["start_position", "end_position", "section", "material"],
+        },
     },
-
     # =========================================================================
     # Boundary Conditions
     # =========================================================================
@@ -204,11 +200,11 @@ TOOLS: List[Dict[str, Any]] = [
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Node position [x, y, z] in meters. Must match an existing node."
+                    "description": "Node position [x, y, z] in meters. Must match an existing node.",
                 }
             },
-            "required": ["position"]
-        }
+            "required": ["position"],
+        },
     },
     {
         "name": "pin_node",
@@ -221,11 +217,11 @@ TOOLS: List[Dict[str, Any]] = [
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Node position [x, y, z] in meters. Must match an existing node."
+                    "description": "Node position [x, y, z] in meters. Must match an existing node.",
                 }
             },
-            "required": ["position"]
-        }
+            "required": ["position"],
+        },
     },
     {
         "name": "fix_dof",
@@ -238,22 +234,21 @@ TOOLS: List[Dict[str, Any]] = [
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Node position [x, y, z] in meters"
+                    "description": "Node position [x, y, z] in meters",
                 },
                 "dof": {
                     "type": "string",
                     "enum": ["UX", "UY", "UZ", "RX", "RY", "RZ"],
-                    "description": "Degree of freedom to fix: UX/UY/UZ (translations), RX/RY/RZ (rotations)"
+                    "description": "Degree of freedom to fix: UX/UY/UZ (translations), RX/RY/RZ (rotations)",
                 },
                 "value": {
                     "type": "number",
-                    "description": "Prescribed value. Default 0.0 for zero displacement."
-                }
+                    "description": "Prescribed value. Default 0.0 for zero displacement.",
+                },
             },
-            "required": ["position", "dof"]
-        }
+            "required": ["position", "dof"],
+        },
     },
-
     # =========================================================================
     # Loads
     # =========================================================================
@@ -268,25 +263,25 @@ TOOLS: List[Dict[str, Any]] = [
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Position [x, y, z] in meters"
+                    "description": "Position [x, y, z] in meters",
                 },
                 "force": {
                     "type": "array",
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Force vector [Fx, Fy, Fz] in kN. Default: [0, 0, 0]"
+                    "description": "Force vector [Fx, Fy, Fz] in kN. Default: [0, 0, 0]",
                 },
                 "moment": {
                     "type": "array",
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Moment vector [Mx, My, Mz] in kNm. Default: [0, 0, 0]"
-                }
+                    "description": "Moment vector [Mx, My, Mz] in kNm. Default: [0, 0, 0]",
+                },
             },
-            "required": ["position"]
-        }
+            "required": ["position"],
+        },
     },
     {
         "name": "add_line_load",
@@ -299,32 +294,32 @@ TOOLS: List[Dict[str, Any]] = [
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Start position of beam [x, y, z] in meters"
+                    "description": "Start position of beam [x, y, z] in meters",
                 },
                 "beam_end": {
                     "type": "array",
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "End position of beam [x, y, z] in meters"
+                    "description": "End position of beam [x, y, z] in meters",
                 },
                 "load_start": {
                     "type": "array",
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Load intensity at start [wx, wy, wz] in kN/m. Negative Z = downward."
+                    "description": "Load intensity at start [wx, wy, wz] in kN/m. Negative Z = downward.",
                 },
                 "load_end": {
                     "type": "array",
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Load intensity at end [wx, wy, wz] in kN/m. If omitted, uses load_start (uniform)."
-                }
+                    "description": "Load intensity at end [wx, wy, wz] in kN/m. If omitted, uses load_start (uniform).",
+                },
             },
-            "required": ["beam_start", "beam_end", "load_start"]
-        }
+            "required": ["beam_start", "beam_end", "load_start"],
+        },
     },
     {
         "name": "add_load_case",
@@ -334,17 +329,17 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Name of the load case (e.g., 'Dead Load', 'Live Load 1', 'Wind X+')"
+                    "description": "Name of the load case (e.g., 'Dead Load', 'Live Load 1', 'Wind X+')",
                 },
                 "load_case_type": {
                     "type": "string",
                     "enum": ["permanent", "variable", "environmental", "accidental"],
                     "description": "Type of load case for combination factors: permanent (dead loads), variable (live loads), environmental (wind/wave), accidental. Default 'variable'.",
-                    "default": "variable"
-                }
+                    "default": "variable",
+                },
             },
-            "required": ["name"]
-        }
+            "required": ["name"],
+        },
     },
     {
         "name": "add_load_combination",
@@ -354,31 +349,31 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Name of the combination (e.g., 'ULS-a', 'SLS', 'ALS')"
+                    "description": "Name of the combination (e.g., 'ULS-a', 'SLS', 'ALS')",
                 },
                 "permanent_factor": {
                     "type": "number",
                     "description": "Factor for permanent load cases. Default 1.0.",
-                    "default": 1.0
+                    "default": 1.0,
                 },
                 "variable_factor": {
                     "type": "number",
                     "description": "Factor for variable load cases. Default 1.0.",
-                    "default": 1.0
+                    "default": 1.0,
                 },
                 "environmental_factor": {
                     "type": "number",
                     "description": "Factor for environmental load cases (wind/wave). Default 1.0.",
-                    "default": 1.0
+                    "default": 1.0,
                 },
                 "accidental_factor": {
                     "type": "number",
                     "description": "Factor for accidental load cases. Default 0.0.",
-                    "default": 0.0
-                }
+                    "default": 0.0,
+                },
             },
-            "required": ["name"]
-        }
+            "required": ["name"],
+        },
     },
     {
         "name": "add_load_case_to_combination",
@@ -388,19 +383,19 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "combination_id": {
                     "type": "integer",
-                    "description": "ID of the load combination"
+                    "description": "ID of the load combination",
                 },
                 "load_case_id": {
                     "type": "integer",
-                    "description": "ID of the load case to add"
+                    "description": "ID of the load case to add",
                 },
                 "override_factor": {
                     "type": "number",
-                    "description": "Optional override factor. If not provided, uses type-based factor from the combination."
-                }
+                    "description": "Optional override factor. If not provided, uses type-based factor from the combination.",
+                },
             },
-            "required": ["combination_id", "load_case_id"]
-        }
+            "required": ["combination_id", "load_case_id"],
+        },
     },
     {
         "name": "remove_load_case_from_combination",
@@ -410,15 +405,15 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "combination_id": {
                     "type": "integer",
-                    "description": "ID of the load combination"
+                    "description": "ID of the load combination",
                 },
                 "load_case_id": {
                     "type": "integer",
-                    "description": "ID of the load case to remove"
-                }
+                    "description": "ID of the load case to remove",
+                },
             },
-            "required": ["combination_id", "load_case_id"]
-        }
+            "required": ["combination_id", "load_case_id"],
+        },
     },
     {
         "name": "update_load_case_override",
@@ -428,19 +423,19 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "combination_id": {
                     "type": "integer",
-                    "description": "ID of the load combination"
+                    "description": "ID of the load combination",
                 },
                 "load_case_id": {
                     "type": "integer",
-                    "description": "ID of the load case"
+                    "description": "ID of the load case",
                 },
                 "override_factor": {
                     "type": ["number", "null"],
-                    "description": "New override factor, or null to remove override and use type-based factor"
-                }
+                    "description": "New override factor, or null to remove override and use type-based factor",
+                },
             },
-            "required": ["combination_id", "load_case_id", "override_factor"]
-        }
+            "required": ["combination_id", "load_case_id", "override_factor"],
+        },
     },
     {
         "name": "delete_load_combination",
@@ -450,24 +445,19 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "combination_id": {
                     "type": "integer",
-                    "description": "ID of the load combination to delete"
+                    "description": "ID of the load combination to delete",
                 }
             },
-            "required": ["combination_id"]
-        }
+            "required": ["combination_id"],
+        },
     },
-
     # =========================================================================
     # Analysis
     # =========================================================================
     {
         "name": "analyze",
         "description": "Run linear static analysis on the model. Must be called after adding all elements, BCs, and loads.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+        "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "analyze_modes",
@@ -478,17 +468,17 @@ TOOLS: List[Dict[str, Any]] = [
                 "n_modes": {
                     "type": "integer",
                     "description": "Number of modes to compute (lowest frequencies first). Default 10.",
-                    "default": 10
+                    "default": 10,
                 },
                 "method": {
                     "type": "string",
                     "enum": ["dense", "subspace", "shift_invert"],
                     "description": "Solver method. Use 'subspace' for large models (>500 DOFs). Default 'subspace'.",
-                    "default": "subspace"
-                }
+                    "default": "subspace",
+                },
             },
-            "required": []
-        }
+            "required": [],
+        },
     },
     {
         "name": "get_modal_summary",
@@ -499,11 +489,11 @@ TOOLS: List[Dict[str, Any]] = [
                 "n_modes_to_show": {
                     "type": "integer",
                     "description": "Number of modes to include in summary. Default shows all computed modes.",
-                    "default": 10
+                    "default": 10,
                 }
             },
-            "required": []
-        }
+            "required": [],
+        },
     },
     {
         "name": "check_resonance",
@@ -513,16 +503,16 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "excitation_frequency": {
                     "type": "number",
-                    "description": "Excitation frequency to check against [Hz]"
+                    "description": "Excitation frequency to check against [Hz]",
                 },
                 "tolerance_percent": {
                     "type": "number",
                     "description": "Percentage band around excitation frequency. Default 15%.",
-                    "default": 15
-                }
+                    "default": 15,
+                },
             },
-            "required": ["excitation_frequency"]
-        }
+            "required": ["excitation_frequency"],
+        },
     },
     {
         "name": "get_mode_shape",
@@ -532,20 +522,19 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "mode_number": {
                     "type": "integer",
-                    "description": "Mode number (1-based, 1 = fundamental mode)"
+                    "description": "Mode number (1-based, 1 = fundamental mode)",
                 },
                 "position": {
                     "type": "array",
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Node position [x, y, z] in meters"
-                }
+                    "description": "Node position [x, y, z] in meters",
+                },
             },
-            "required": ["mode_number", "position"]
-        }
+            "required": ["mode_number", "position"],
+        },
     },
-
     # =========================================================================
     # Results
     # =========================================================================
@@ -560,16 +549,16 @@ TOOLS: List[Dict[str, Any]] = [
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Node position [x, y, z] in meters"
+                    "description": "Node position [x, y, z] in meters",
                 },
                 "dof": {
                     "type": "string",
                     "enum": ["UX", "UY", "UZ", "RX", "RY", "RZ"],
-                    "description": "Degree of freedom: UX/UY/UZ (displacements in m), RX/RY/RZ (rotations in rad)"
-                }
+                    "description": "Degree of freedom: UX/UY/UZ (displacements in m), RX/RY/RZ (rotations in rad)",
+                },
             },
-            "required": ["position", "dof"]
-        }
+            "required": ["position", "dof"],
+        },
     },
     {
         "name": "get_reactions",
@@ -582,11 +571,11 @@ TOOLS: List[Dict[str, Any]] = [
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Node position [x, y, z] in meters (must be a supported node)"
+                    "description": "Node position [x, y, z] in meters (must be a supported node)",
                 }
             },
-            "required": ["position"]
-        }
+            "required": ["position"],
+        },
     },
     {
         "name": "get_internal_actions",
@@ -599,24 +588,23 @@ TOOLS: List[Dict[str, Any]] = [
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Start position of beam [x, y, z]"
+                    "description": "Start position of beam [x, y, z]",
                 },
                 "beam_end": {
                     "type": "array",
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "End position of beam [x, y, z]"
+                    "description": "End position of beam [x, y, z]",
                 },
                 "position_along_beam": {
                     "type": "number",
-                    "description": "Position along beam in meters from start (0 = start, L = end)"
-                }
+                    "description": "Position along beam in meters from start (0 = start, L = end)",
+                },
             },
-            "required": ["beam_start", "beam_end", "position_along_beam"]
-        }
+            "required": ["beam_start", "beam_end", "position_along_beam"],
+        },
     },
-
     # =========================================================================
     # Spring Elements (Nonlinear)
     # =========================================================================
@@ -631,51 +619,51 @@ TOOLS: List[Dict[str, Any]] = [
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "First node position [x, y, z] in meters"
+                    "description": "First node position [x, y, z] in meters",
                 },
                 "position2": {
                     "type": "array",
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Second node position [x, y, z] in meters"
+                    "description": "Second node position [x, y, z] in meters",
                 },
                 "kx": {
                     "type": "number",
-                    "description": "Translational stiffness in X direction [kN/m]. Default 0."
+                    "description": "Translational stiffness in X direction [kN/m]. Default 0.",
                 },
                 "ky": {
                     "type": "number",
-                    "description": "Translational stiffness in Y direction [kN/m]. Default 0."
+                    "description": "Translational stiffness in Y direction [kN/m]. Default 0.",
                 },
                 "kz": {
                     "type": "number",
-                    "description": "Translational stiffness in Z direction [kN/m]. Default 0."
+                    "description": "Translational stiffness in Z direction [kN/m]. Default 0.",
                 },
                 "krx": {
                     "type": "number",
-                    "description": "Rotational stiffness about X axis [kN·m/rad]. Default 0."
+                    "description": "Rotational stiffness about X axis [kN·m/rad]. Default 0.",
                 },
                 "kry": {
                     "type": "number",
-                    "description": "Rotational stiffness about Y axis [kN·m/rad]. Default 0."
+                    "description": "Rotational stiffness about Y axis [kN·m/rad]. Default 0.",
                 },
                 "krz": {
                     "type": "number",
-                    "description": "Rotational stiffness about Z axis [kN·m/rad]. Default 0."
+                    "description": "Rotational stiffness about Z axis [kN·m/rad]. Default 0.",
                 },
                 "behavior": {
                     "type": "string",
                     "enum": ["Linear", "TensionOnly", "CompressionOnly"],
-                    "description": "Spring behavior: Linear (bidirectional), TensionOnly (cables/hooks), CompressionOnly (bearing pads). Default Linear."
+                    "description": "Spring behavior: Linear (bidirectional), TensionOnly (cables/hooks), CompressionOnly (bearing pads). Default Linear.",
                 },
                 "gap": {
                     "type": "number",
-                    "description": "Gap before spring engages [m for translation, rad for rotation]. Use for contact with clearance. Default 0."
-                }
+                    "description": "Gap before spring engages [m for translation, rad for rotation]. Use for contact with clearance. Default 0.",
+                },
             },
-            "required": ["position1", "position2"]
-        }
+            "required": ["position1", "position2"],
+        },
     },
     {
         "name": "analyze_nonlinear",
@@ -685,26 +673,21 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "max_iterations": {
                     "type": "integer",
-                    "description": "Maximum solver iterations. Default 50."
+                    "description": "Maximum solver iterations. Default 50.",
                 },
                 "gap_tolerance": {
                     "type": "number",
-                    "description": "Tolerance for gap state changes [m]. Default 1e-6."
-                }
+                    "description": "Tolerance for gap state changes [m]. Default 1e-6.",
+                },
             },
-            "required": []
-        }
+            "required": [],
+        },
     },
     {
         "name": "get_spring_states",
         "description": "Get the state and forces of all springs after nonlinear analysis. Shows which springs are active/inactive and their forces.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+        "input_schema": {"type": "object", "properties": {}, "required": []},
     },
-
     # =========================================================================
     # Element Modification
     # =========================================================================
@@ -716,31 +699,31 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Name of the material to update"
+                    "description": "Name of the material to update",
                 },
                 "E": {
                     "type": "number",
-                    "description": "New Young's modulus in kN/m². Optional."
+                    "description": "New Young's modulus in kN/m². Optional.",
                 },
                 "nu": {
                     "type": "number",
-                    "description": "New Poisson's ratio. Optional."
+                    "description": "New Poisson's ratio. Optional.",
                 },
                 "rho": {
                     "type": "number",
-                    "description": "New density in mT/m³. Optional."
+                    "description": "New density in mT/m³. Optional.",
                 },
                 "fy": {
                     "type": "number",
-                    "description": "New yield stress in kN/m². Optional."
+                    "description": "New yield stress in kN/m². Optional.",
                 },
                 "fu": {
                     "type": "number",
-                    "description": "New ultimate tensile strength in kN/m². Optional."
-                }
+                    "description": "New ultimate tensile strength in kN/m². Optional.",
+                },
             },
-            "required": ["name"]
-        }
+            "required": ["name"],
+        },
     },
     {
         "name": "delete_material",
@@ -750,11 +733,11 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Name of the material to delete"
+                    "description": "Name of the material to delete",
                 }
             },
-            "required": ["name"]
-        }
+            "required": ["name"],
+        },
     },
     {
         "name": "update_section",
@@ -764,27 +747,27 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Name of the section to update"
+                    "description": "Name of the section to update",
                 },
                 "A": {
                     "type": "number",
-                    "description": "New cross-sectional area in m². Optional."
+                    "description": "New cross-sectional area in m². Optional.",
                 },
                 "Iy": {
                     "type": "number",
-                    "description": "New second moment of area about y-axis in m⁴. Optional."
+                    "description": "New second moment of area about y-axis in m⁴. Optional.",
                 },
                 "Iz": {
                     "type": "number",
-                    "description": "New second moment of area about z-axis in m⁴. Optional."
+                    "description": "New second moment of area about z-axis in m⁴. Optional.",
                 },
                 "J": {
                     "type": "number",
-                    "description": "New torsional constant in m⁴. Optional."
-                }
+                    "description": "New torsional constant in m⁴. Optional.",
+                },
             },
-            "required": ["name"]
-        }
+            "required": ["name"],
+        },
     },
     {
         "name": "delete_section",
@@ -794,11 +777,11 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Name of the section to delete"
+                    "description": "Name of the section to delete",
                 }
             },
-            "required": ["name"]
-        }
+            "required": ["name"],
+        },
     },
     {
         "name": "update_beam",
@@ -808,19 +791,19 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "beam_id": {
                     "type": "integer",
-                    "description": "ID of the beam to update"
+                    "description": "ID of the beam to update",
                 },
                 "material": {
                     "type": "string",
-                    "description": "New material name (must exist in model). Optional - only provide if changing."
+                    "description": "New material name (must exist in model). Optional - only provide if changing.",
                 },
                 "section": {
                     "type": "string",
-                    "description": "New section name (must exist in model). Optional - only provide if changing."
-                }
+                    "description": "New section name (must exist in model). Optional - only provide if changing.",
+                },
             },
-            "required": ["beam_id"]
-        }
+            "required": ["beam_id"],
+        },
     },
     {
         "name": "delete_beam",
@@ -830,11 +813,11 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "beam_id": {
                     "type": "integer",
-                    "description": "ID of the beam to delete"
+                    "description": "ID of the beam to delete",
                 }
             },
-            "required": ["beam_id"]
-        }
+            "required": ["beam_id"],
+        },
     },
     {
         "name": "remove_boundary_condition",
@@ -847,16 +830,16 @@ TOOLS: List[Dict[str, Any]] = [
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Node position [x, y, z] in meters"
+                    "description": "Node position [x, y, z] in meters",
                 },
                 "dof": {
                     "type": "string",
                     "enum": ["UX", "UY", "UZ", "RX", "RY", "RZ", "ALL"],
-                    "description": "Specific DOF to unfix, or 'ALL' to remove all BCs at this node"
-                }
+                    "description": "Specific DOF to unfix, or 'ALL' to remove all BCs at this node",
+                },
             },
-            "required": ["position", "dof"]
-        }
+            "required": ["position", "dof"],
+        },
     },
     {
         "name": "update_cargo",
@@ -866,19 +849,19 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "cargo_id": {
                     "type": "integer",
-                    "description": "ID of the cargo to update"
+                    "description": "ID of the cargo to update",
                 },
                 "name": {
                     "type": "string",
-                    "description": "New name for the cargo. Optional."
+                    "description": "New name for the cargo. Optional.",
                 },
                 "mass": {
                     "type": "number",
-                    "description": "New mass in metric tonnes (mT). Optional."
-                }
+                    "description": "New mass in metric tonnes (mT). Optional.",
+                },
             },
-            "required": ["cargo_id"]
-        }
+            "required": ["cargo_id"],
+        },
     },
     {
         "name": "delete_cargo",
@@ -888,26 +871,20 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "cargo_id": {
                     "type": "integer",
-                    "description": "ID of the cargo to delete"
+                    "description": "ID of the cargo to delete",
                 }
             },
-            "required": ["cargo_id"]
-        }
+            "required": ["cargo_id"],
+        },
     },
-
     # =========================================================================
     # Model Information
     # =========================================================================
     {
         "name": "get_model_info",
         "description": "Get summary information about the current model state.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+        "input_schema": {"type": "object", "properties": {}, "required": []},
     },
-
     # =========================================================================
     # Plate Meshing (Phase 19)
     # =========================================================================
@@ -920,32 +897,32 @@ TOOLS: List[Dict[str, Any]] = [
                 "corners": {
                     "type": "array",
                     "items": {"type": "array", "items": {"type": "number"}},
-                    "description": "List of [x, y, z] corner coordinates in meters. At least 3 corners for triangular plate, 4 for quadrilateral."
+                    "description": "List of [x, y, z] corner coordinates in meters. At least 3 corners for triangular plate, 4 for quadrilateral.",
                 },
                 "thickness": {
                     "type": "number",
-                    "description": "Plate thickness in meters"
+                    "description": "Plate thickness in meters",
                 },
                 "material": {
                     "type": "string",
-                    "description": "Name of material to use (must already exist in model)"
+                    "description": "Name of material to use (must already exist in model)",
                 },
                 "name": {
                     "type": "string",
-                    "description": "Optional name for the plate"
+                    "description": "Optional name for the plate",
                 },
                 "mesh_size": {
                     "type": "number",
-                    "description": "Target element size in meters (default 0.5)"
+                    "description": "Target element size in meters (default 0.5)",
                 },
                 "element_type": {
                     "type": "string",
                     "enum": ["MITC4", "MITC8", "MITC9", "DKT"],
-                    "description": "Plate element type. MITC4 (default) is a 4-node Mindlin plate. DKT is a 3-node thin plate (Kirchhoff)."
-                }
+                    "description": "Plate element type. MITC4 (default) is a 4-node Mindlin plate. DKT is a 3-node thin plate (Kirchhoff).",
+                },
             },
-            "required": ["corners", "thickness", "material"]
-        }
+            "required": ["corners", "thickness", "material"],
+        },
     },
     {
         "name": "set_edge_divisions",
@@ -953,21 +930,18 @@ TOOLS: List[Dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "plate_name": {
-                    "type": "string",
-                    "description": "Name of the plate"
-                },
+                "plate_name": {"type": "string", "description": "Name of the plate"},
                 "edge_index": {
                     "type": "integer",
-                    "description": "Edge index (0-based, edge i goes from corner i to corner i+1)"
+                    "description": "Edge index (0-based, edge i goes from corner i to corner i+1)",
                 },
                 "n_elements": {
                     "type": "integer",
-                    "description": "Number of elements along this edge"
-                }
+                    "description": "Number of elements along this edge",
+                },
             },
-            "required": ["plate_name", "edge_index", "n_elements"]
-        }
+            "required": ["plate_name", "edge_index", "n_elements"],
+        },
     },
     {
         "name": "couple_plate_to_beam",
@@ -975,26 +949,23 @@ TOOLS: List[Dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "plate_name": {
-                    "type": "string",
-                    "description": "Name of the plate"
-                },
+                "plate_name": {"type": "string", "description": "Name of the plate"},
                 "edge_index": {
                     "type": "integer",
-                    "description": "Edge index (0-based)"
+                    "description": "Edge index (0-based)",
                 },
                 "beam_name": {
                     "type": "string",
-                    "description": "Name of the beam to couple to"
+                    "description": "Name of the beam to couple to",
                 },
                 "offset": {
                     "type": "array",
                     "items": {"type": "number"},
-                    "description": "[dx, dy, dz] offset from plate edge to beam centroid in meters"
-                }
+                    "description": "[dx, dy, dz] offset from plate edge to beam centroid in meters",
+                },
             },
-            "required": ["plate_name", "edge_index", "beam_name"]
-        }
+            "required": ["plate_name", "edge_index", "beam_name"],
+        },
     },
     {
         "name": "add_support_curve",
@@ -1002,33 +973,30 @@ TOOLS: List[Dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "plate_name": {
-                    "type": "string",
-                    "description": "Name of the plate"
-                },
+                "plate_name": {"type": "string", "description": "Name of the plate"},
                 "edge_index": {
                     "type": "integer",
-                    "description": "Edge index (0-based)"
+                    "description": "Edge index (0-based)",
                 },
                 "ux": {
                     "type": "boolean",
-                    "description": "Restrain X translation (default false)"
+                    "description": "Restrain X translation (default false)",
                 },
                 "uy": {
                     "type": "boolean",
-                    "description": "Restrain Y translation (default false)"
+                    "description": "Restrain Y translation (default false)",
                 },
                 "uz": {
                     "type": "boolean",
-                    "description": "Restrain Z translation (default false)"
+                    "description": "Restrain Z translation (default false)",
                 },
                 "rotation_about_edge": {
                     "type": "boolean",
-                    "description": "Restrain rotation about the edge (default false)"
-                }
+                    "description": "Restrain rotation about the edge (default false)",
+                },
             },
-            "required": ["plate_name", "edge_index"]
-        }
+            "required": ["plate_name", "edge_index"],
+        },
     },
     {
         "name": "mesh_model",
@@ -1038,11 +1006,11 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "verbose": {
                     "type": "boolean",
-                    "description": "Print meshing progress (default false)"
+                    "description": "Print meshing progress (default false)",
                 }
             },
-            "required": []
-        }
+            "required": [],
+        },
     },
     {
         "name": "get_plate_displacement",
@@ -1050,21 +1018,18 @@ TOOLS: List[Dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "element_id": {
-                    "type": "integer",
-                    "description": "Plate element ID"
-                },
+                "element_id": {"type": "integer", "description": "Plate element ID"},
                 "xi": {
                     "type": "number",
-                    "description": "Natural coordinate xi (-1 to 1 for quads, 0 to 1 for triangles). Default 0."
+                    "description": "Natural coordinate xi (-1 to 1 for quads, 0 to 1 for triangles). Default 0.",
                 },
                 "eta": {
                     "type": "number",
-                    "description": "Natural coordinate eta (-1 to 1 for quads, 0 to 1 for triangles). Default 0."
-                }
+                    "description": "Natural coordinate eta (-1 to 1 for quads, 0 to 1 for triangles). Default 0.",
+                },
             },
-            "required": ["element_id"]
-        }
+            "required": ["element_id"],
+        },
     },
     {
         "name": "get_plate_moments",
@@ -1072,21 +1037,18 @@ TOOLS: List[Dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "element_id": {
-                    "type": "integer",
-                    "description": "Plate element ID"
-                },
+                "element_id": {"type": "integer", "description": "Plate element ID"},
                 "xi": {
                     "type": "number",
-                    "description": "Natural coordinate xi. Default 0."
+                    "description": "Natural coordinate xi. Default 0.",
                 },
                 "eta": {
                     "type": "number",
-                    "description": "Natural coordinate eta. Default 0."
-                }
+                    "description": "Natural coordinate eta. Default 0.",
+                },
             },
-            "required": ["element_id"]
-        }
+            "required": ["element_id"],
+        },
     },
     {
         "name": "get_plate_stress",
@@ -1094,26 +1056,23 @@ TOOLS: List[Dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "element_id": {
-                    "type": "integer",
-                    "description": "Plate element ID"
-                },
+                "element_id": {"type": "integer", "description": "Plate element ID"},
                 "surface": {
                     "type": "string",
                     "enum": ["top", "bottom", "middle"],
-                    "description": "Surface to evaluate stress at (default 'top')"
+                    "description": "Surface to evaluate stress at (default 'top')",
                 },
                 "xi": {
                     "type": "number",
-                    "description": "Natural coordinate xi. Default 0."
+                    "description": "Natural coordinate xi. Default 0.",
                 },
                 "eta": {
                     "type": "number",
-                    "description": "Natural coordinate eta. Default 0."
-                }
+                    "description": "Natural coordinate eta. Default 0.",
+                },
             },
-            "required": ["element_id"]
-        }
+            "required": ["element_id"],
+        },
     },
 ]
 
@@ -1121,6 +1080,7 @@ TOOLS: List[Dict[str, Any]] = [
 # =============================================================================
 # Tool Execution
 # =============================================================================
+
 
 def _parse_dof(dof_str: str) -> DOFIndex:
     """Parse DOF string to DOFIndex enum."""
@@ -1178,17 +1138,19 @@ class ToolExecutor:
                 return ToolResult(
                     success=False,
                     error=f"Unknown tool: {tool_name}",
-                    suggestion=f"Available tools: {[t['name'] for t in TOOLS]}"
+                    suggestion=f"Available tools: {[t['name'] for t in TOOLS]}",
                 )
             return method(params)
         except Exception as e:
             return ToolResult(
                 success=False,
                 error=str(e),
-                suggestion=self._get_suggestion_for_error(tool_name, e)
+                suggestion=self._get_suggestion_for_error(tool_name, e),
             )
 
-    def _get_suggestion_for_error(self, tool_name: str, error: Exception) -> Optional[str]:
+    def _get_suggestion_for_error(
+        self, tool_name: str, error: Exception
+    ) -> Optional[str]:
         """Get a suggestion for fixing an error."""
         error_str = str(error).lower()
 
@@ -1217,7 +1179,9 @@ class ToolExecutor:
         # Plate meshing errors
         if "plate" in error_str and "not found" in error_str:
             return "Use add_plate tool first to create a plate, then refer to it by the returned plate_name."
-        if "edge" in error_str and ("index" in error_str or "out of range" in error_str):
+        if "edge" in error_str and (
+            "index" in error_str or "out of range" in error_str
+        ):
             return "Edge index is 0-based. For a quad plate, use 0-3; for a triangle, use 0-2."
         if "coplanar" in error_str:
             return "Plate corner points must all lie in the same plane. Check the z-coordinates."
@@ -1235,13 +1199,15 @@ class ToolExecutor:
         self.model = StructuralModel(name=name, node_tolerance=tolerance)
         return ToolResult(
             success=True,
-            result={"model_name": name, "message": "Model created successfully"}
+            result={"model_name": name, "message": "Model created successfully"},
         )
 
     def _tool_add_material(self, params: Dict[str, Any]) -> ToolResult:
         """Add a material."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         self.model.add_material(
             name=params["name"],
@@ -1249,76 +1215,92 @@ class ToolExecutor:
             nu=params["nu"],
             rho=params["rho"],
             fy=params.get("fy", 0.0),
-            fu=params.get("fu", 0.0)
+            fu=params.get("fu", 0.0),
         )
         return ToolResult(
             success=True,
-            result={"material": params["name"], "message": "Material added successfully"}
+            result={
+                "material": params["name"],
+                "message": "Material added successfully",
+            },
         )
 
     def _tool_add_section(self, params: Dict[str, Any]) -> ToolResult:
         """Add a section."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         self.model.add_section(
             name=params["name"],
             A=params["A"],
             Iy=params["Iy"],
             Iz=params["Iz"],
-            J=params["J"]
+            J=params["J"],
         )
         return ToolResult(
             success=True,
-            result={"section": params["name"], "message": "Section added successfully"}
+            result={"section": params["name"], "message": "Section added successfully"},
         )
 
     def _tool_create_beam(self, params: Dict[str, Any]) -> ToolResult:
         """Create a beam."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         beam = self.model.add_beam_by_coords(
             start_pos=params["start_position"],
             end_pos=params["end_position"],
             section_name=params["section"],
-            material_name=params["material"]
+            material_name=params["material"],
         )
         return ToolResult(
             success=True,
             result={
                 "beam_id": beam.beam_id,
                 "length": beam.length,
-                "message": f"Beam created with length {beam.length:.3f} m"
-            }
+                "message": f"Beam created with length {beam.length:.3f} m",
+            },
         )
 
     def _tool_fix_node(self, params: Dict[str, Any]) -> ToolResult:
         """Fix a node."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         self.model.fix_node_at(params["position"])
         return ToolResult(
             success=True,
-            result={"position": params["position"], "message": "Node fixed (all DOFs)"}
+            result={"position": params["position"], "message": "Node fixed (all DOFs)"},
         )
 
     def _tool_pin_node(self, params: Dict[str, Any]) -> ToolResult:
         """Pin a node."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         self.model.pin_node_at(params["position"])
         return ToolResult(
             success=True,
-            result={"position": params["position"], "message": "Node pinned (translations fixed)"}
+            result={
+                "position": params["position"],
+                "message": "Node pinned (translations fixed)",
+            },
         )
 
     def _tool_fix_dof(self, params: Dict[str, Any]) -> ToolResult:
         """Fix a specific DOF."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         dof = _parse_dof(params["dof"])
         value = params.get("value", 0.0)
@@ -1329,14 +1311,16 @@ class ToolExecutor:
                 "position": params["position"],
                 "dof": params["dof"],
                 "value": value,
-                "message": f"DOF {params['dof']} fixed to {value}"
-            }
+                "message": f"DOF {params['dof']} fixed to {value}",
+            },
         )
 
     def _tool_add_point_load(self, params: Dict[str, Any]) -> ToolResult:
         """Add a point load."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         force = params.get("force")
         moment = params.get("moment")
@@ -1344,7 +1328,7 @@ class ToolExecutor:
         if force is None and moment is None:
             return ToolResult(
                 success=False,
-                error="At least one of 'force' or 'moment' must be provided"
+                error="At least one of 'force' or 'moment' must be provided",
             )
 
         self.model.add_point_load(params["position"], force=force, moment=moment)
@@ -1362,21 +1346,23 @@ class ToolExecutor:
                 "position": params["position"],
                 "force": force,
                 "moment": moment,
-                "message": f"Point load applied: {', '.join(parts)}"
-            }
+                "message": f"Point load applied: {', '.join(parts)}",
+            },
         )
 
     def _tool_add_line_load(self, params: Dict[str, Any]) -> ToolResult:
         """Add a line load."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         load_end = params.get("load_end", params["load_start"])
         self.model.add_line_load_by_coords(
             start_pos=params["beam_start"],
             end_pos=params["beam_end"],
             w_start=params["load_start"],
-            w_end=load_end
+            w_end=load_end,
         )
         return ToolResult(
             success=True,
@@ -1385,14 +1371,16 @@ class ToolExecutor:
                 "beam_end": params["beam_end"],
                 "load_start": params["load_start"],
                 "load_end": load_end,
-                "message": "Line load applied to beam"
-            }
+                "message": "Line load applied to beam",
+            },
         )
 
     def _tool_add_load_case(self, params: Dict[str, Any]) -> ToolResult:
         """Create a new load case."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         name = params["name"]
         load_type_str = params.get("load_case_type", "variable").lower()
@@ -1413,14 +1401,16 @@ class ToolExecutor:
                 "id": load_case.id,
                 "name": name,
                 "type": load_type_str,
-                "message": f"Load case '{name}' created with type '{load_type_str}'"
-            }
+                "message": f"Load case '{name}' created with type '{load_type_str}'",
+            },
         )
 
     def _tool_add_load_combination(self, params: Dict[str, Any]) -> ToolResult:
         """Create a load combination with type-based factors."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         name = params["name"]
         permanent_factor = params.get("permanent_factor", 1.0)
@@ -1433,7 +1423,7 @@ class ToolExecutor:
             permanent_factor,
             variable_factor,
             environmental_factor,
-            accidental_factor
+            accidental_factor,
         )
         return ToolResult(
             success=True,
@@ -1444,14 +1434,16 @@ class ToolExecutor:
                 "variable_factor": variable_factor,
                 "environmental_factor": environmental_factor,
                 "accidental_factor": accidental_factor,
-                "message": f"Load combination '{name}' created"
-            }
+                "message": f"Load combination '{name}' created",
+            },
         )
 
     def _tool_add_load_case_to_combination(self, params: Dict[str, Any]) -> ToolResult:
         """Add a load case to a load combination."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         combination_id = params["combination_id"]
         load_case_id = params["load_case_id"]
@@ -1459,9 +1451,7 @@ class ToolExecutor:
 
         try:
             combo = self.model.add_load_case_to_combination(
-                combination_id,
-                load_case_id,
-                override_factor
+                combination_id, load_case_id, override_factor
             )
             return ToolResult(
                 success=True,
@@ -1471,24 +1461,27 @@ class ToolExecutor:
                     "override_factor": override_factor,
                     "has_override": override_factor is not None,
                     "total_load_cases": len(combo["load_cases"]),
-                    "message": f"Load case {load_case_id} added to combination {combination_id}"
-                }
+                    "message": f"Load case {load_case_id} added to combination {combination_id}",
+                },
             )
         except ValueError as e:
             return ToolResult(success=False, error=str(e))
 
-    def _tool_remove_load_case_from_combination(self, params: Dict[str, Any]) -> ToolResult:
+    def _tool_remove_load_case_from_combination(
+        self, params: Dict[str, Any]
+    ) -> ToolResult:
         """Remove a load case from a load combination."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         combination_id = params["combination_id"]
         load_case_id = params["load_case_id"]
 
         try:
             combo = self.model.remove_load_case_from_combination(
-                combination_id,
-                load_case_id
+                combination_id, load_case_id
             )
             return ToolResult(
                 success=True,
@@ -1496,8 +1489,8 @@ class ToolExecutor:
                     "combination_id": combination_id,
                     "load_case_id": load_case_id,
                     "remaining_load_cases": len(combo["load_cases"]),
-                    "message": f"Load case {load_case_id} removed from combination {combination_id}"
-                }
+                    "message": f"Load case {load_case_id} removed from combination {combination_id}",
+                },
             )
         except ValueError as e:
             return ToolResult(success=False, error=str(e))
@@ -1505,7 +1498,9 @@ class ToolExecutor:
     def _tool_delete_load_combination(self, params: Dict[str, Any]) -> ToolResult:
         """Delete a load combination."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         combination_id = params["combination_id"]
 
@@ -1515,8 +1510,8 @@ class ToolExecutor:
                 success=True,
                 result={
                     "combination_id": combination_id,
-                    "message": f"Load combination {combination_id} deleted"
-                }
+                    "message": f"Load combination {combination_id} deleted",
+                },
             )
         except ValueError as e:
             return ToolResult(success=False, error=str(e))
@@ -1524,7 +1519,9 @@ class ToolExecutor:
     def _tool_update_load_case_override(self, params: Dict[str, Any]) -> ToolResult:
         """Update the override factor for a load case in a combination."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         combination_id = params["combination_id"]
         load_case_id = params["load_case_id"]
@@ -1532,9 +1529,7 @@ class ToolExecutor:
 
         try:
             self.model.update_load_case_override(
-                combination_id,
-                load_case_id,
-                override_factor
+                combination_id, load_case_id, override_factor
             )
             return ToolResult(
                 success=True,
@@ -1543,8 +1538,8 @@ class ToolExecutor:
                     "load_case_id": load_case_id,
                     "override_factor": override_factor,
                     "has_override": override_factor is not None,
-                    "message": f"Override factor updated for load case {load_case_id} in combination {combination_id}"
-                }
+                    "message": f"Override factor updated for load case {load_case_id} in combination {combination_id}",
+                },
             )
         except ValueError as e:
             return ToolResult(success=False, error=str(e))
@@ -1552,7 +1547,9 @@ class ToolExecutor:
     def _tool_analyze(self, params: Dict[str, Any]) -> ToolResult:
         """Run analysis."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         success = self.model.analyze()
         if success:
@@ -1561,20 +1558,22 @@ class ToolExecutor:
                 result={
                     "analyzed": True,
                     "num_dofs": self.model.total_dofs(),
-                    "message": "Analysis completed successfully"
-                }
+                    "message": "Analysis completed successfully",
+                },
             )
         else:
             return ToolResult(
                 success=False,
                 error="Analysis failed. The system may be unstable or unconstrained.",
-                suggestion="Check that boundary conditions prevent all rigid body motion (6 DOFs minimum)."
+                suggestion="Check that boundary conditions prevent all rigid body motion (6 DOFs minimum).",
             )
 
     def _tool_analyze_modes(self, params: Dict[str, Any]) -> ToolResult:
         """Run eigenvalue analysis."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         n_modes = params.get("n_modes", 10)
         # method parameter reserved for future use when multiple solvers are available
@@ -1588,26 +1587,32 @@ class ToolExecutor:
             # Build results summary
             modes_summary = []
             for i, (f, t) in enumerate(zip(frequencies, periods), 1):
-                modes_summary.append({
-                    "mode": i,
-                    "frequency_hz": round(f, 4),
-                    "period_s": round(t, 6) if t < 1e10 else "inf"
-                })
+                modes_summary.append(
+                    {
+                        "mode": i,
+                        "frequency_hz": round(f, 4),
+                        "period_s": round(t, 6) if t < 1e10 else "inf",
+                    }
+                )
 
             return ToolResult(
                 success=True,
                 result={
                     "n_modes_computed": len(frequencies),
-                    "fundamental_frequency_hz": round(frequencies[0], 4) if frequencies else None,
-                    "modes": modes_summary[:min(5, len(modes_summary))],  # Show first 5
-                    "message": f"Computed {len(frequencies)} modes. Fundamental frequency: {frequencies[0]:.2f} Hz"
-                }
+                    "fundamental_frequency_hz": round(frequencies[0], 4)
+                    if frequencies
+                    else None,
+                    "modes": modes_summary[
+                        : min(5, len(modes_summary))
+                    ],  # Show first 5
+                    "message": f"Computed {len(frequencies)} modes. Fundamental frequency: {frequencies[0]:.2f} Hz",
+                },
             )
         else:
             return ToolResult(
                 success=False,
                 error="Eigenvalue analysis failed.",
-                suggestion="Check boundary conditions and ensure material density (rho) is non-zero."
+                suggestion="Check boundary conditions and ensure material density (rho) is non-zero.",
             )
 
     def _tool_get_modal_summary(self, params: Dict[str, Any]) -> ToolResult:
@@ -1620,7 +1625,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error="No modal analysis results available.",
-                suggestion="Run analyze_modes first to compute natural frequencies and mode shapes."
+                suggestion="Run analyze_modes first to compute natural frequencies and mode shapes.",
             )
 
         periods = self.model.get_periods()
@@ -1632,7 +1637,7 @@ class ToolExecutor:
             mode_info = {
                 "mode": i + 1,
                 "frequency_hz": round(frequencies[i], 4),
-                "period_s": round(periods[i], 6) if periods[i] < 1e10 else "inf"
+                "period_s": round(periods[i], 6) if periods[i] < 1e10 else "inf",
             }
             modes.append(mode_info)
 
@@ -1640,7 +1645,7 @@ class ToolExecutor:
         positive_freqs = [f for f in frequencies if f > 0.1]
         freq_range = {
             "min_hz": round(min(positive_freqs), 4) if positive_freqs else 0,
-            "max_hz": round(max(frequencies[:n_modes_to_show]), 4)
+            "max_hz": round(max(frequencies[:n_modes_to_show]), 4),
         }
 
         return ToolResult(
@@ -1649,8 +1654,8 @@ class ToolExecutor:
                 "n_modes": len(frequencies),
                 "frequency_range": freq_range,
                 "modes": modes,
-                "units": {"frequency": "Hz", "period": "s"}
-            }
+                "units": {"frequency": "Hz", "period": "s"},
+            },
         )
 
     def _tool_check_resonance(self, params: Dict[str, Any]) -> ToolResult:
@@ -1663,7 +1668,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error="No modal analysis results available.",
-                suggestion="Run analyze_modes first."
+                suggestion="Run analyze_modes first.",
             )
 
         excitation_freq = params["excitation_frequency"]
@@ -1677,11 +1682,13 @@ class ToolExecutor:
         resonant_modes = []
         for i, f in enumerate(frequencies, 1):
             if f_low <= f <= f_high:
-                resonant_modes.append({
-                    "mode": i,
-                    "frequency_hz": round(f, 4),
-                    "ratio": round(f / excitation_freq, 3)
-                })
+                resonant_modes.append(
+                    {
+                        "mode": i,
+                        "frequency_hz": round(f, 4),
+                        "ratio": round(f / excitation_freq, 3),
+                    }
+                )
 
         has_resonance = len(resonant_modes) > 0
 
@@ -1690,15 +1697,18 @@ class ToolExecutor:
             result={
                 "excitation_frequency_hz": excitation_freq,
                 "tolerance_percent": tolerance_pct,
-                "frequency_band": {"low_hz": round(f_low, 4), "high_hz": round(f_high, 4)},
+                "frequency_band": {
+                    "low_hz": round(f_low, 4),
+                    "high_hz": round(f_high, 4),
+                },
                 "has_resonance_risk": has_resonance,
                 "resonant_modes": resonant_modes,
                 "message": (
                     f"WARNING: {len(resonant_modes)} mode(s) within {tolerance_pct}% of {excitation_freq} Hz"
-                    if has_resonance else
-                    f"No modes within {tolerance_pct}% of {excitation_freq} Hz - OK"
-                )
-            }
+                    if has_resonance
+                    else f"No modes within {tolerance_pct}% of {excitation_freq} Hz - OK"
+                ),
+            },
         )
 
     def _tool_get_mode_shape(self, params: Dict[str, Any]) -> ToolResult:
@@ -1711,7 +1721,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error="No modal analysis results available.",
-                suggestion="Run analyze_modes first."
+                suggestion="Run analyze_modes first.",
             )
 
         mode_number = params["mode_number"]
@@ -1721,7 +1731,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Mode {mode_number} not found. Only {len(frequencies)} modes were computed.",
-                suggestion=f"Use mode_number between 1 and {len(frequencies)}."
+                suggestion=f"Use mode_number between 1 and {len(frequencies)}.",
             )
 
         mode_disp = self.model.get_mode_displacement_at(mode_number, position)
@@ -1738,10 +1748,10 @@ class ToolExecutor:
                     "UZ": float(mode_disp["UZ"]),
                     "RX": float(mode_disp["RX"]),
                     "RY": float(mode_disp["RY"]),
-                    "RZ": float(mode_disp["RZ"])
+                    "RZ": float(mode_disp["RZ"]),
                 },
-                "units": {"translations": "normalized", "rotations": "normalized"}
-            }
+                "units": {"translations": "normalized", "rotations": "normalized"},
+            },
         )
 
     def _tool_get_displacement(self, params: Dict[str, Any]) -> ToolResult:
@@ -1749,7 +1759,9 @@ class ToolExecutor:
         if self.model is None:
             return ToolResult(success=False, error="No model created.")
         if not self.model.is_analyzed():
-            return ToolResult(success=False, error="Model not analyzed. Call analyze first.")
+            return ToolResult(
+                success=False, error="Model not analyzed. Call analyze first."
+            )
 
         dof = _parse_dof(params["dof"])
         value = self.model.get_displacement_at(params["position"], dof)
@@ -1762,8 +1774,8 @@ class ToolExecutor:
                 "dof": params["dof"],
                 "value": value,
                 "unit": unit,
-                "message": f"{params['dof']} = {value:.6e} {unit}"
-            }
+                "message": f"{params['dof']} = {value:.6e} {unit}",
+            },
         )
 
     def _tool_get_reactions(self, params: Dict[str, Any]) -> ToolResult:
@@ -1771,7 +1783,9 @@ class ToolExecutor:
         if self.model is None:
             return ToolResult(success=False, error="No model created.")
         if not self.model.is_analyzed():
-            return ToolResult(success=False, error="Model not analyzed. Call analyze first.")
+            return ToolResult(
+                success=False, error="Model not analyzed. Call analyze first."
+            )
 
         reactions = self.model.get_reactions_at(params["position"])
 
@@ -1786,8 +1800,15 @@ class ToolExecutor:
             result={
                 "position": params["position"],
                 "reactions": reactions_dict,
-                "units": {"UX": "kN", "UY": "kN", "UZ": "kN", "RX": "kN·m", "RY": "kN·m", "RZ": "kN·m"}
-            }
+                "units": {
+                    "UX": "kN",
+                    "UY": "kN",
+                    "UZ": "kN",
+                    "RX": "kN·m",
+                    "RY": "kN·m",
+                    "RZ": "kN·m",
+                },
+            },
         )
 
     def _tool_get_internal_actions(self, params: Dict[str, Any]) -> ToolResult:
@@ -1795,13 +1816,15 @@ class ToolExecutor:
         if self.model is None:
             return ToolResult(success=False, error="No model created.")
         if not self.model.is_analyzed():
-            return ToolResult(success=False, error="Model not analyzed. Call analyze first.")
+            return ToolResult(
+                success=False, error="Model not analyzed. Call analyze first."
+            )
 
         beam = self.model.find_beam_by_coords(params["beam_start"], params["beam_end"])
         if beam is None:
             return ToolResult(
                 success=False,
-                error=f"No beam found from {params['beam_start']} to {params['beam_end']}"
+                error=f"No beam found from {params['beam_start']} to {params['beam_end']}",
             )
 
         x = params["position_along_beam"]
@@ -1818,16 +1841,22 @@ class ToolExecutor:
                 "My": actions.My,  # Bending Y [kN·m]
                 "Mz": actions.Mz,  # Bending Z [kN·m]
                 "units": {
-                    "N": "kN", "Vy": "kN", "Vz": "kN",
-                    "Mx": "kN·m", "My": "kN·m", "Mz": "kN·m"
-                }
-            }
+                    "N": "kN",
+                    "Vy": "kN",
+                    "Vz": "kN",
+                    "Mx": "kN·m",
+                    "My": "kN·m",
+                    "Mz": "kN·m",
+                },
+            },
         )
 
     def _tool_add_spring(self, params: Dict[str, Any]) -> ToolResult:
         """Add a spring element."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         # Parse behavior
         behavior_str = params.get("behavior", "Linear")
@@ -1857,14 +1886,16 @@ class ToolExecutor:
                 "spring_id": spring.id(),
                 "behavior": behavior_str,
                 "gap": params.get("gap", 0.0),
-                "message": f"Spring created with behavior={behavior_str}"
-            }
+                "message": f"Spring created with behavior={behavior_str}",
+            },
         )
 
     def _tool_analyze_nonlinear(self, params: Dict[str, Any]) -> ToolResult:
         """Run nonlinear analysis with springs."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         # Configure settings if provided
         settings = self.model.get_nonlinear_settings()
@@ -1888,15 +1919,17 @@ class ToolExecutor:
                     "analyzed": True,
                     "has_nonlinear_springs": has_nonlinear,
                     "num_load_cases": len(results),
-                    "iterations": first_result.iterations if hasattr(first_result, 'iterations') else 1,
-                    "message": f"Nonlinear analysis completed for {len(results)} load case(s)"
-                }
+                    "iterations": first_result.iterations
+                    if hasattr(first_result, "iterations")
+                    else 1,
+                    "message": f"Nonlinear analysis completed for {len(results)} load case(s)",
+                },
             )
         else:
             return ToolResult(
                 success=False,
                 error="Nonlinear analysis failed.",
-                suggestion="Check boundary conditions and spring configuration."
+                suggestion="Check boundary conditions and spring configuration.",
             )
 
     def _tool_get_spring_states(self, params: Dict[str, Any]) -> ToolResult:
@@ -1907,7 +1940,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error="Model not analyzed. Call analyze or analyze_nonlinear first.",
-                suggestion="Run analysis before querying spring states."
+                suggestion="Run analysis before querying spring states.",
             )
 
         # Get all springs from model
@@ -1918,8 +1951,8 @@ class ToolExecutor:
                 result={
                     "num_springs": 0,
                     "springs": [],
-                    "message": "No springs in model"
-                }
+                    "message": "No springs in model",
+                },
             )
 
         spring_info = []
@@ -1930,28 +1963,30 @@ class ToolExecutor:
                 is_active = spring.is_active(dof)
                 states.append(is_active)
 
-            spring_info.append({
-                "id": spring.id(),
-                "is_nonlinear": spring.is_nonlinear(),
-                "has_gap": spring.has_gap(),
-                "active_dofs": states,
-                "stiffness": {
-                    "kx": spring.kx,
-                    "ky": spring.ky,
-                    "kz": spring.kz,
-                    "krx": spring.krx,
-                    "kry": spring.kry,
-                    "krz": spring.krz,
+            spring_info.append(
+                {
+                    "id": spring.id(),
+                    "is_nonlinear": spring.is_nonlinear(),
+                    "has_gap": spring.has_gap(),
+                    "active_dofs": states,
+                    "stiffness": {
+                        "kx": spring.kx,
+                        "ky": spring.ky,
+                        "kz": spring.kz,
+                        "krx": spring.krx,
+                        "kry": spring.kry,
+                        "krz": spring.krz,
+                    },
                 }
-            })
+            )
 
         return ToolResult(
             success=True,
             result={
                 "num_springs": len(springs),
                 "springs": spring_info,
-                "units": {"k_trans": "kN/m", "k_rot": "kN·m/rad"}
-            }
+                "units": {"k_trans": "kN/m", "k_rot": "kN·m/rad"},
+            },
         )
 
     def _tool_get_model_info(self, params: Dict[str, Any]) -> ToolResult:
@@ -1959,7 +1994,11 @@ class ToolExecutor:
         if self.model is None:
             return ToolResult(success=False, error="No model created.")
 
-        num_springs = len(self.model._cpp_model.springs) if hasattr(self.model._cpp_model, 'springs') else 0
+        num_springs = (
+            len(self.model._cpp_model.springs)
+            if hasattr(self.model._cpp_model, "springs")
+            else 0
+        )
 
         return ToolResult(
             success=True,
@@ -1973,8 +2012,8 @@ class ToolExecutor:
                 "analyzed": self.model.is_analyzed(),
                 "has_nonlinear_springs": self.model.has_nonlinear_springs(),
                 "materials": list(self.model._materials.keys()),
-                "sections": list(self.model._sections.keys())
-            }
+                "sections": list(self.model._sections.keys()),
+            },
         )
 
     def _tool_update_material(self, params: Dict[str, Any]) -> ToolResult:
@@ -1987,7 +2026,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Material '{name}' not found",
-                suggestion=f"Available materials: {list(self.model._materials.keys())}"
+                suggestion=f"Available materials: {list(self.model._materials.keys())}",
             )
 
         material = self.model._materials[name]
@@ -2015,8 +2054,7 @@ class ToolExecutor:
 
         if not changes:
             return ToolResult(
-                success=True,
-                result={"name": name, "message": "No changes specified"}
+                success=True, result={"name": name, "message": "No changes specified"}
             )
 
         # Mark model as not analyzed
@@ -2030,8 +2068,8 @@ class ToolExecutor:
             result={
                 "name": name,
                 "changes": changes,
-                "message": f"Material '{name}' updated: {', '.join(changes)}. Re-analysis required."
-            }
+                "message": f"Material '{name}' updated: {', '.join(changes)}. Re-analysis required.",
+            },
         )
 
     def _tool_delete_material(self, params: Dict[str, Any]) -> ToolResult:
@@ -2044,7 +2082,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Material '{name}' not found",
-                suggestion=f"Available materials: {list(self.model._materials.keys())}"
+                suggestion=f"Available materials: {list(self.model._materials.keys())}",
             )
 
         # Check if material is in use
@@ -2053,17 +2091,14 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Cannot delete material '{name}': in use by beams {beams_using}",
-                suggestion="Update the beams to use a different material first."
+                suggestion="Update the beams to use a different material first.",
             )
 
         del self.model._materials[name]
 
         return ToolResult(
             success=True,
-            result={
-                "name": name,
-                "message": f"Material '{name}' deleted."
-            }
+            result={"name": name, "message": f"Material '{name}' deleted."},
         )
 
     def _tool_update_section(self, params: Dict[str, Any]) -> ToolResult:
@@ -2076,7 +2111,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Section '{name}' not found",
-                suggestion=f"Available sections: {list(self.model._sections.keys())}"
+                suggestion=f"Available sections: {list(self.model._sections.keys())}",
             )
 
         section = self.model._sections[name]
@@ -2100,8 +2135,7 @@ class ToolExecutor:
 
         if not changes:
             return ToolResult(
-                success=True,
-                result={"name": name, "message": "No changes specified"}
+                success=True, result={"name": name, "message": "No changes specified"}
             )
 
         # Mark model as not analyzed
@@ -2115,8 +2149,8 @@ class ToolExecutor:
             result={
                 "name": name,
                 "changes": changes,
-                "message": f"Section '{name}' updated: {', '.join(changes)}. Re-analysis required."
-            }
+                "message": f"Section '{name}' updated: {', '.join(changes)}. Re-analysis required.",
+            },
         )
 
     def _tool_delete_section(self, params: Dict[str, Any]) -> ToolResult:
@@ -2129,7 +2163,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Section '{name}' not found",
-                suggestion=f"Available sections: {list(self.model._sections.keys())}"
+                suggestion=f"Available sections: {list(self.model._sections.keys())}",
             )
 
         # Check if section is in use
@@ -2138,17 +2172,13 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Cannot delete section '{name}': in use by beams {beams_using}",
-                suggestion="Update the beams to use a different section first."
+                suggestion="Update the beams to use a different section first.",
             )
 
         del self.model._sections[name]
 
         return ToolResult(
-            success=True,
-            result={
-                "name": name,
-                "message": f"Section '{name}' deleted."
-            }
+            success=True, result={"name": name, "message": f"Section '{name}' deleted."}
         )
 
     def _tool_update_beam(self, params: Dict[str, Any]) -> ToolResult:
@@ -2169,7 +2199,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Beam with ID {beam_id} not found",
-                suggestion=f"Available beam IDs: {[b.beam_id for b in self.model.beams]}"
+                suggestion=f"Available beam IDs: {[b.beam_id for b in self.model.beams]}",
             )
 
         changes = []
@@ -2181,7 +2211,7 @@ class ToolExecutor:
                 return ToolResult(
                     success=False,
                     error=f"Material '{material_name}' not found",
-                    suggestion=f"Available materials: {list(self.model._materials.keys())}"
+                    suggestion=f"Available materials: {list(self.model._materials.keys())}",
                 )
             beam.material = self.model._materials[material_name]
             # Update material on underlying elements
@@ -2196,7 +2226,7 @@ class ToolExecutor:
                 return ToolResult(
                     success=False,
                     error=f"Section '{section_name}' not found",
-                    suggestion=f"Available sections: {list(self.model._sections.keys())}"
+                    suggestion=f"Available sections: {list(self.model._sections.keys())}",
                 )
             beam.section = self.model._sections[section_name]
             # Update section on underlying elements
@@ -2207,7 +2237,7 @@ class ToolExecutor:
         if not changes:
             return ToolResult(
                 success=True,
-                result={"beam_id": beam_id, "message": "No changes specified"}
+                result={"beam_id": beam_id, "message": "No changes specified"},
             )
 
         # Mark model as not analyzed (changes require re-analysis)
@@ -2218,8 +2248,8 @@ class ToolExecutor:
             result={
                 "beam_id": beam_id,
                 "changes": changes,
-                "message": f"Beam {beam_id} updated: {', '.join(changes)}. Re-analysis required."
-            }
+                "message": f"Beam {beam_id} updated: {', '.join(changes)}. Re-analysis required.",
+            },
         )
 
     def _tool_delete_beam(self, params: Dict[str, Any]) -> ToolResult:
@@ -2240,7 +2270,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Beam with ID {beam_id} not found",
-                suggestion=f"Available beam IDs: {[b.beam_id for b in self.model.beams]}"
+                suggestion=f"Available beam IDs: {[b.beam_id for b in self.model.beams]}",
             )
 
         # Remove from Python list
@@ -2265,8 +2295,8 @@ class ToolExecutor:
                 "beam_id": beam_id,
                 "start": list(removed_beam.start_pos),
                 "end": list(removed_beam.end_pos),
-                "message": f"Beam {beam_id} deleted. Re-analysis required."
-            }
+                "message": f"Beam {beam_id} deleted. Re-analysis required.",
+            },
         )
 
     def _tool_remove_boundary_condition(self, params: Dict[str, Any]) -> ToolResult:
@@ -2296,17 +2326,13 @@ class ToolExecutor:
 
             return ToolResult(
                 success=True,
-                result={
-                    "position": position,
-                    "dof": dof_str,
-                    "message": message
-                }
+                result={"position": position, "dof": dof_str, "message": message},
             )
         except Exception as e:
             return ToolResult(
                 success=False,
                 error=str(e),
-                suggestion="Ensure the position matches an existing node with boundary conditions."
+                suggestion="Ensure the position matches an existing node with boundary conditions.",
             )
 
     def _tool_update_cargo(self, params: Dict[str, Any]) -> ToolResult:
@@ -2321,7 +2347,9 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Cargo with ID {cargo_id} not found",
-                suggestion=f"Available cargo IDs: 0 to {len(self.model.cargos) - 1}" if self.model.cargos else "No cargos in model"
+                suggestion=f"Available cargo IDs: 0 to {len(self.model.cargos) - 1}"
+                if self.model.cargos
+                else "No cargos in model",
             )
 
         cargo = self.model.cargos[cargo_id]
@@ -2344,7 +2372,7 @@ class ToolExecutor:
         if not changes:
             return ToolResult(
                 success=True,
-                result={"cargo_id": cargo_id, "message": "No changes specified"}
+                result={"cargo_id": cargo_id, "message": "No changes specified"},
             )
 
         # Mark model as not analyzed
@@ -2358,8 +2386,8 @@ class ToolExecutor:
             result={
                 "cargo_id": cargo_id,
                 "changes": changes,
-                "message": f"Cargo '{cargo.name}' updated: {', '.join(changes)}. Re-analysis required."
-            }
+                "message": f"Cargo '{cargo.name}' updated: {', '.join(changes)}. Re-analysis required.",
+            },
         )
 
     def _tool_delete_cargo(self, params: Dict[str, Any]) -> ToolResult:
@@ -2374,7 +2402,9 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Cargo with ID {cargo_id} not found",
-                suggestion=f"Available cargo IDs: 0 to {len(self.model.cargos) - 1}" if self.model.cargos else "No cargos in model"
+                suggestion=f"Available cargo IDs: 0 to {len(self.model.cargos) - 1}"
+                if self.model.cargos
+                else "No cargos in model",
             )
 
         # Remove from Python list
@@ -2395,8 +2425,8 @@ class ToolExecutor:
             result={
                 "cargo_id": cargo_id,
                 "name": removed_cargo.name,
-                "message": f"Cargo '{removed_cargo.name}' removed from model. Note: underlying elements may remain. Re-analysis required."
-            }
+                "message": f"Cargo '{removed_cargo.name}' removed from model. Note: underlying elements may remain. Re-analysis required.",
+            },
         )
 
     # ===== Plate Meshing Tools =====
@@ -2404,7 +2434,9 @@ class ToolExecutor:
     def _tool_add_plate(self, params: Dict[str, Any]) -> ToolResult:
         """Add a plate region to the model."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         plate = self.model.add_plate(
             corners=params["corners"],
@@ -2412,7 +2444,7 @@ class ToolExecutor:
             material=params["material"],
             mesh_size=params.get("mesh_size", 0.5),
             element_type=params.get("element_type", "MITC4"),
-            name=params.get("name")
+            name=params.get("name"),
         )
 
         return ToolResult(
@@ -2422,14 +2454,16 @@ class ToolExecutor:
                 "n_corners": len(plate.corners),
                 "element_type": plate.element_type,
                 "thickness": plate.thickness,
-                "message": f"Plate '{plate.name}' created with {len(plate.corners)} corners"
-            }
+                "message": f"Plate '{plate.name}' created with {len(plate.corners)} corners",
+            },
         )
 
     def _tool_set_edge_divisions(self, params: Dict[str, Any]) -> ToolResult:
         """Set edge divisions for structured meshing."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         plate_name = params["plate_name"]
         plates = self.model.get_plates()
@@ -2443,13 +2477,13 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Plate '{plate_name}' not found",
-                suggestion=f"Available plates: {[p.name for p in plates]}"
+                suggestion=f"Available plates: {[p.name for p in plates]}",
             )
 
         self.model.set_edge_divisions(
             plate=plate,
             edge_index=params["edge_index"],
-            n_elements=params["n_elements"]
+            n_elements=params["n_elements"],
         )
 
         return ToolResult(
@@ -2458,14 +2492,16 @@ class ToolExecutor:
                 "plate_name": plate_name,
                 "edge_index": params["edge_index"],
                 "n_elements": params["n_elements"],
-                "message": f"Edge {params['edge_index']} set to {params['n_elements']} elements"
-            }
+                "message": f"Edge {params['edge_index']} set to {params['n_elements']} elements",
+            },
         )
 
     def _tool_couple_plate_to_beam(self, params: Dict[str, Any]) -> ToolResult:
         """Couple a plate edge to a beam."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         # Find plate
         plate_name = params["plate_name"]
@@ -2480,7 +2516,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Plate '{plate_name}' not found",
-                suggestion=f"Available plates: {[p.name for p in plates]}"
+                suggestion=f"Available plates: {[p.name for p in plates]}",
             )
 
         # Find beam
@@ -2495,7 +2531,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Beam with ID {beam_id} not found",
-                suggestion=f"Available beam IDs: {[b.beam_id for b in self.model.beams]}"
+                suggestion=f"Available beam IDs: {[b.beam_id for b in self.model.beams]}",
             )
 
         offset = params.get("offset")
@@ -2506,7 +2542,7 @@ class ToolExecutor:
             edge_index=params["edge_index"],
             beam=beam,
             offset=offset,
-            releases=releases
+            releases=releases,
         )
 
         return ToolResult(
@@ -2516,14 +2552,16 @@ class ToolExecutor:
                 "edge_index": params["edge_index"],
                 "beam_id": beam_id,
                 "has_offset": offset is not None,
-                "message": f"Plate edge {params['edge_index']} coupled to beam {beam_id}"
-            }
+                "message": f"Plate edge {params['edge_index']} coupled to beam {beam_id}",
+            },
         )
 
     def _tool_add_support_curve(self, params: Dict[str, Any]) -> ToolResult:
         """Add a support along a plate edge."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         plate_name = params["plate_name"]
         plates = self.model.get_plates()
@@ -2537,7 +2575,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Plate '{plate_name}' not found",
-                suggestion=f"Available plates: {[p.name for p in plates]}"
+                suggestion=f"Available plates: {[p.name for p in plates]}",
             )
 
         self.model.add_support_curve(
@@ -2546,7 +2584,7 @@ class ToolExecutor:
             ux=params.get("ux", False),
             uy=params.get("uy", False),
             uz=params.get("uz", False),
-            rotation_about_edge=params.get("rotation_about_edge", False)
+            rotation_about_edge=params.get("rotation_about_edge", False),
         )
 
         restrained = []
@@ -2565,14 +2603,16 @@ class ToolExecutor:
                 "plate_name": plate_name,
                 "edge_index": params["edge_index"],
                 "restrained_dofs": restrained,
-                "message": f"Support added to edge {params['edge_index']}: {', '.join(restrained) or 'none'}"
-            }
+                "message": f"Support added to edge {params['edge_index']}: {', '.join(restrained) or 'none'}",
+            },
         )
 
     def _tool_mesh_model(self, params: Dict[str, Any]) -> ToolResult:
         """Mesh all plates in the model."""
         if self.model is None:
-            return ToolResult(success=False, error="No model created. Call create_model first.")
+            return ToolResult(
+                success=False, error="No model created. Call create_model first."
+            )
 
         verbose = params.get("verbose", False)
 
@@ -2587,8 +2627,8 @@ class ToolExecutor:
                 "n_tri_elements": stats.n_tri_elements,
                 "n_support_dofs": stats.n_support_dofs,
                 "n_rigid_links": stats.n_rigid_links,
-                "message": f"Meshed {stats.n_plate_elements} plate elements ({stats.n_quad_elements} quad, {stats.n_tri_elements} tri)"
-            }
+                "message": f"Meshed {stats.n_plate_elements} plate elements ({stats.n_quad_elements} quad, {stats.n_tri_elements} tri)",
+            },
         )
 
     def _tool_get_plate_displacement(self, params: Dict[str, Any]) -> ToolResult:
@@ -2596,7 +2636,9 @@ class ToolExecutor:
         if self.model is None:
             return ToolResult(success=False, error="No model created.")
         if not self.model.is_analyzed():
-            return ToolResult(success=False, error="Model not analyzed. Call analyze first.")
+            return ToolResult(
+                success=False, error="Model not analyzed. Call analyze first."
+            )
 
         element_id = params["element_id"]
         xi = params.get("xi", 0.0)
@@ -2614,7 +2656,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Plate element with ID {element_id} not found",
-                suggestion=f"Available element IDs: {[e.id for e in elements[:10]]}{'...' if len(elements) > 10 else ''}"
+                suggestion=f"Available element IDs: {[e.id for e in elements[:10]]}{'...' if len(elements) > 10 else ''}",
             )
 
         disp = self.model.get_plate_displacement(element, xi=xi, eta=eta)
@@ -2631,10 +2673,10 @@ class ToolExecutor:
                     "UZ": float(disp["UZ"]),
                     "RX": float(disp["RX"]),
                     "RY": float(disp["RY"]),
-                    "RZ": float(disp["RZ"])
+                    "RZ": float(disp["RZ"]),
                 },
-                "units": {"translations": "m", "rotations": "rad"}
-            }
+                "units": {"translations": "m", "rotations": "rad"},
+            },
         )
 
     def _tool_get_plate_moments(self, params: Dict[str, Any]) -> ToolResult:
@@ -2642,7 +2684,9 @@ class ToolExecutor:
         if self.model is None:
             return ToolResult(success=False, error="No model created.")
         if not self.model.is_analyzed():
-            return ToolResult(success=False, error="Model not analyzed. Call analyze first.")
+            return ToolResult(
+                success=False, error="Model not analyzed. Call analyze first."
+            )
 
         element_id = params["element_id"]
         xi = params.get("xi", 0.0)
@@ -2660,7 +2704,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Plate element with ID {element_id} not found",
-                suggestion=f"Available element IDs: {[e.id for e in elements[:10]]}{'...' if len(elements) > 10 else ''}"
+                suggestion=f"Available element IDs: {[e.id for e in elements[:10]]}{'...' if len(elements) > 10 else ''}",
             )
 
         moments = self.model.get_plate_moments(element, xi=xi, eta=eta)
@@ -2674,10 +2718,10 @@ class ToolExecutor:
                 "moments": {
                     "Mx": float(moments["Mx"]),
                     "My": float(moments["My"]),
-                    "Mxy": float(moments["Mxy"])
+                    "Mxy": float(moments["Mxy"]),
                 },
-                "units": "kN·m/m"
-            }
+                "units": "kN·m/m",
+            },
         )
 
     def _tool_get_plate_stress(self, params: Dict[str, Any]) -> ToolResult:
@@ -2685,7 +2729,9 @@ class ToolExecutor:
         if self.model is None:
             return ToolResult(success=False, error="No model created.")
         if not self.model.is_analyzed():
-            return ToolResult(success=False, error="Model not analyzed. Call analyze first.")
+            return ToolResult(
+                success=False, error="Model not analyzed. Call analyze first."
+            )
 
         element_id = params["element_id"]
         surface = params.get("surface", "top")
@@ -2704,7 +2750,7 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 error=f"Plate element with ID {element_id} not found",
-                suggestion=f"Available element IDs: {[e.id for e in elements[:10]]}{'...' if len(elements) > 10 else ''}"
+                suggestion=f"Available element IDs: {[e.id for e in elements[:10]]}{'...' if len(elements) > 10 else ''}",
             )
 
         stress = self.model.get_plate_stress(element, surface=surface, xi=xi, eta=eta)
@@ -2719,17 +2765,15 @@ class ToolExecutor:
                 "stress": {
                     "sigma_x": float(stress["sigma_x"]),
                     "sigma_y": float(stress["sigma_y"]),
-                    "tau_xy": float(stress["tau_xy"])
+                    "tau_xy": float(stress["tau_xy"]),
                 },
-                "units": "kN/m²"
-            }
+                "units": "kN/m²",
+            },
         )
 
 
 def execute_tool(
-    model: Optional[StructuralModel],
-    tool_name: str,
-    params: Dict[str, Any]
+    model: Optional[StructuralModel], tool_name: str, params: Dict[str, Any]
 ) -> ToolResult:
     """Convenience function to execute a tool on a model.
 

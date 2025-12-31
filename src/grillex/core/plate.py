@@ -21,6 +21,7 @@ class EdgeMeshControl:
         n_elements: Number of elements along edge. If specified, takes
             precedence over the plate's mesh_size for this edge.
     """
+
     n_elements: Optional[int] = None
     # Future: bias, grading, etc.
 
@@ -37,6 +38,7 @@ class PlateBeamCoupling:
         releases: Dict of DOF releases. Keys: "UX", "UY", "UZ", "RX", "RY", "RZ",
             or "R_EDGE" for rotation about the edge. Values: True = released.
     """
+
     plate: "Plate"
     edge_index: int
     beam: "Beam"
@@ -56,6 +58,7 @@ class SupportCurve:
         uz: If True, restrain Z translation.
         rotation_about_edge: If True, restrain rotation about the edge direction.
     """
+
     plate: "Plate"
     edge_index: int
     ux: bool = False
@@ -97,6 +100,7 @@ class Plate:
         >>> plate.is_planar()
         True
     """
+
     corners: List[List[float]]
     thickness: float
     material: str
@@ -129,7 +133,9 @@ class Plate:
         # Validate all corners have 3 coordinates
         for i, corner in enumerate(self.corners):
             if len(corner) != 3:
-                raise ValueError(f"Corner {i} must have 3 coordinates, got {len(corner)}")
+                raise ValueError(
+                    f"Corner {i} must have 3 coordinates, got {len(corner)}"
+                )
 
     @property
     def n_corners(self) -> int:

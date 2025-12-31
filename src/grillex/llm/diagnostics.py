@@ -23,7 +23,13 @@ Usage:
 from typing import Any, Dict, List
 from dataclasses import dataclass
 
-from grillex.core import ErrorCode, GrillexError, WarningCode, WarningSeverity, GrillexWarning
+from grillex.core import (
+    ErrorCode,
+    GrillexError,
+    WarningCode,
+    WarningSeverity,
+    GrillexWarning,
+)
 
 
 @dataclass
@@ -37,6 +43,7 @@ class FixSuggestion:
         priority: Priority level (1 = highest, try first).
         confidence: Confidence that this fix will resolve the issue (0-1).
     """
+
     description: str
     tool_name: str
     tool_params: Dict[str, Any]
@@ -50,7 +57,7 @@ class FixSuggestion:
             "tool": self.tool_name,
             "params": self.tool_params,
             "priority": self.priority,
-            "confidence": self.confidence
+            "confidence": self.confidence,
         }
 
 
@@ -100,13 +107,15 @@ def get_fix_suggestions(error: GrillexError) -> List[FixSuggestion]:
         suggestions.extend(_suggest_for_convergence_failed(error))
     else:
         # Generic suggestion
-        suggestions.append(FixSuggestion(
-            description="Check the model for issues based on the error message.",
-            tool_name="get_model_info",
-            tool_params={},
-            priority=1,
-            confidence=0.3
-        ))
+        suggestions.append(
+            FixSuggestion(
+                description="Check the model for issues based on the error message.",
+                tool_name="get_model_info",
+                tool_params={},
+                priority=1,
+                confidence=0.3,
+            )
+        )
 
     # Sort by priority
     suggestions.sort(key=lambda s: s.priority)
@@ -127,48 +136,54 @@ def _suggest_for_unconstrained(error: GrillexError) -> List[FixSuggestion]:
 
         # For each unconstrained node, suggest fixing it
         for node_id in list(node_ids)[:3]:  # Limit to first 3 nodes
-            suggestions.append(FixSuggestion(
-                description=f"Fix node {node_id} to prevent rigid body motion",
-                tool_name="fix_node",
-                tool_params={
-                    "position": f"[position of node {node_id}]"  # LLM needs to fill this
-                },
-                priority=1,
-                confidence=0.9
-            ))
+            suggestions.append(
+                FixSuggestion(
+                    description=f"Fix node {node_id} to prevent rigid body motion",
+                    tool_name="fix_node",
+                    tool_params={
+                        "position": f"[position of node {node_id}]"  # LLM needs to fill this
+                    },
+                    priority=1,
+                    confidence=0.9,
+                )
+            )
 
     # If we know which nodes are involved
     if error.involved_nodes:
         for node_id in error.involved_nodes[:3]:
-            suggestions.append(FixSuggestion(
-                description=f"Fix node {node_id} (identified as unconstrained)",
-                tool_name="fix_node",
-                tool_params={
-                    "position": f"[position of node {node_id}]"
-                },
-                priority=1,
-                confidence=0.9
-            ))
+            suggestions.append(
+                FixSuggestion(
+                    description=f"Fix node {node_id} (identified as unconstrained)",
+                    tool_name="fix_node",
+                    tool_params={"position": f"[position of node {node_id}]"},
+                    priority=1,
+                    confidence=0.9,
+                )
+            )
 
     # General suggestion
-    suggestions.append(FixSuggestion(
-        description="Add at least one fully fixed support to prevent rigid body motion. "
-                    "Fix the first node of the structure (typically at origin).",
-        tool_name="fix_node",
-        tool_params={"position": "[0, 0, 0]"},
-        priority=2,
-        confidence=0.7
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="Add at least one fully fixed support to prevent rigid body motion. "
+            "Fix the first node of the structure (typically at origin).",
+            tool_name="fix_node",
+            tool_params={"position": "[0, 0, 0]"},
+            priority=2,
+            confidence=0.7,
+        )
+    )
 
     # For 3D problems, may need to fix torsion
-    suggestions.append(FixSuggestion(
-        description="If using pin supports, also fix torsional DOF (RX) at one end "
-                    "to prevent spinning about the beam axis.",
-        tool_name="fix_dof",
-        tool_params={"position": "[0, 0, 0]", "dof": "RX"},
-        priority=3,
-        confidence=0.5
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="If using pin supports, also fix torsional DOF (RX) at one end "
+            "to prevent spinning about the beam axis.",
+            tool_name="fix_dof",
+            tool_params={"position": "[0, 0, 0]", "dof": "RX"},
+            priority=3,
+            confidence=0.5,
+        )
+    )
 
     return suggestions
 
@@ -177,31 +192,37 @@ def _suggest_for_singular(error: GrillexError) -> List[FixSuggestion]:
     """Suggestions for singular matrix errors."""
     suggestions = []
 
-    suggestions.append(FixSuggestion(
-        description="Singular matrix typically means insufficient boundary conditions. "
-                    "Add a fixed support at one end of the structure.",
-        tool_name="fix_node",
-        tool_params={"position": "[first_node_position]"},
-        priority=1,
-        confidence=0.8
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="Singular matrix typically means insufficient boundary conditions. "
+            "Add a fixed support at one end of the structure.",
+            tool_name="fix_node",
+            tool_params={"position": "[first_node_position]"},
+            priority=1,
+            confidence=0.8,
+        )
+    )
 
-    suggestions.append(FixSuggestion(
-        description="Check for disconnected parts in the model. All elements should "
-                    "be connected to form a continuous structure.",
-        tool_name="get_model_info",
-        tool_params={},
-        priority=2,
-        confidence=0.5
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="Check for disconnected parts in the model. All elements should "
+            "be connected to form a continuous structure.",
+            tool_name="get_model_info",
+            tool_params={},
+            priority=2,
+            confidence=0.5,
+        )
+    )
 
-    suggestions.append(FixSuggestion(
-        description="Ensure material and section properties are non-zero (E, A, I, J > 0).",
-        tool_name="get_model_info",
-        tool_params={},
-        priority=3,
-        confidence=0.4
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="Ensure material and section properties are non-zero (E, A, I, J > 0).",
+            tool_name="get_model_info",
+            tool_params={},
+            priority=3,
+            confidence=0.4,
+        )
+    )
 
     return suggestions
 
@@ -211,23 +232,27 @@ def _suggest_for_insufficient_constraints(error: GrillexError) -> List[FixSugges
     suggestions = []
 
     # Need at least 6 DOFs fixed for 3D problems
-    suggestions.append(FixSuggestion(
-        description="For a 3D problem, at least 6 DOFs must be constrained to prevent "
-                    "rigid body motion. Fully fix one node (all 6 DOFs).",
-        tool_name="fix_node",
-        tool_params={"position": "[support_position]"},
-        priority=1,
-        confidence=0.9
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="For a 3D problem, at least 6 DOFs must be constrained to prevent "
+            "rigid body motion. Fully fix one node (all 6 DOFs).",
+            tool_name="fix_node",
+            tool_params={"position": "[support_position]"},
+            priority=1,
+            confidence=0.9,
+        )
+    )
 
-    suggestions.append(FixSuggestion(
-        description="For a simply supported beam, pin both ends (translations only) "
-                    "and fix torsion at one end.",
-        tool_name="pin_node",
-        tool_params={"position": "[first_support]"},
-        priority=2,
-        confidence=0.7
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="For a simply supported beam, pin both ends (translations only) "
+            "and fix torsion at one end.",
+            tool_name="pin_node",
+            tool_params={"position": "[first_support]"},
+            priority=2,
+            confidence=0.7,
+        )
+    )
 
     return suggestions
 
@@ -239,18 +264,20 @@ def _suggest_for_invalid_material(error: GrillexError) -> List[FixSuggestion]:
     # Extract material name from error details if available
     material_name = error.details.get("material_name", "Steel")
 
-    suggestions.append(FixSuggestion(
-        description=f"Add material '{material_name}' before creating beams that use it.",
-        tool_name="add_material",
-        tool_params={
-            "name": material_name,
-            "E": 210000000,  # Steel default
-            "nu": 0.3,
-            "rho": 7.85e-3
-        },
-        priority=1,
-        confidence=0.95
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description=f"Add material '{material_name}' before creating beams that use it.",
+            tool_name="add_material",
+            tool_params={
+                "name": material_name,
+                "E": 210000000,  # Steel default
+                "nu": 0.3,
+                "rho": 7.85e-3,
+            },
+            priority=1,
+            confidence=0.95,
+        )
+    )
 
     return suggestions
 
@@ -261,19 +288,21 @@ def _suggest_for_invalid_section(error: GrillexError) -> List[FixSuggestion]:
 
     section_name = error.details.get("section_name", "IPE300")
 
-    suggestions.append(FixSuggestion(
-        description=f"Add section '{section_name}' before creating beams that use it.",
-        tool_name="add_section",
-        tool_params={
-            "name": section_name,
-            "A": 0.00538,  # IPE300 defaults
-            "Iy": 8.36e-5,
-            "Iz": 6.04e-6,
-            "J": 2.01e-7
-        },
-        priority=1,
-        confidence=0.95
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description=f"Add section '{section_name}' before creating beams that use it.",
+            tool_name="add_section",
+            tool_params={
+                "name": section_name,
+                "A": 0.00538,  # IPE300 defaults
+                "Iy": 8.36e-5,
+                "Iz": 6.04e-6,
+                "J": 2.01e-7,
+            },
+            priority=1,
+            confidence=0.95,
+        )
+    )
 
     return suggestions
 
@@ -282,31 +311,30 @@ def _suggest_for_empty_model(error: GrillexError) -> List[FixSuggestion]:
     """Suggestions for empty model errors."""
     suggestions = []
 
-    suggestions.append(FixSuggestion(
-        description="The model has no elements. Add at least one beam element.",
-        tool_name="create_beam",
-        tool_params={
-            "start_position": [0, 0, 0],
-            "end_position": [6, 0, 0],
-            "section": "[section_name]",
-            "material": "[material_name]"
-        },
-        priority=1,
-        confidence=0.9
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="The model has no elements. Add at least one beam element.",
+            tool_name="create_beam",
+            tool_params={
+                "start_position": [0, 0, 0],
+                "end_position": [6, 0, 0],
+                "section": "[section_name]",
+                "material": "[material_name]",
+            },
+            priority=1,
+            confidence=0.9,
+        )
+    )
 
-    suggestions.append(FixSuggestion(
-        description="Before creating beams, ensure materials and sections are defined.",
-        tool_name="add_material",
-        tool_params={
-            "name": "Steel",
-            "E": 210000000,
-            "nu": 0.3,
-            "rho": 7.85e-3
-        },
-        priority=0,  # Do this first
-        confidence=0.9
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="Before creating beams, ensure materials and sections are defined.",
+            tool_name="add_material",
+            tool_params={"name": "Steel", "E": 210000000, "nu": 0.3, "rho": 7.85e-3},
+            priority=0,  # Do this first
+            confidence=0.9,
+        )
+    )
 
     return suggestions
 
@@ -319,7 +347,7 @@ def _suggest_for_not_analyzed(error: GrillexError) -> List[FixSuggestion]:
             tool_name="analyze",
             tool_params={},
             priority=1,
-            confidence=1.0
+            confidence=1.0,
         )
     ]
 
@@ -328,27 +356,31 @@ def _suggest_for_invalid_node(error: GrillexError) -> List[FixSuggestion]:
     """Suggestions for invalid node reference errors."""
     suggestions = []
 
-    suggestions.append(FixSuggestion(
-        description="The specified node position doesn't exist. Check coordinates match an existing node.",
-        tool_name="get_model_info",
-        tool_params={},
-        priority=1,
-        confidence=0.7
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="The specified node position doesn't exist. Check coordinates match an existing node.",
+            tool_name="get_model_info",
+            tool_params={},
+            priority=1,
+            confidence=0.7,
+        )
+    )
 
-    suggestions.append(FixSuggestion(
-        description="Nodes are created automatically when beams are added. "
-                    "Ensure the beam endpoints match the desired load/BC positions.",
-        tool_name="create_beam",
-        tool_params={
-            "start_position": "[corrected_position]",
-            "end_position": "[other_position]",
-            "section": "[section]",
-            "material": "[material]"
-        },
-        priority=2,
-        confidence=0.5
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="Nodes are created automatically when beams are added. "
+            "Ensure the beam endpoints match the desired load/BC positions.",
+            tool_name="create_beam",
+            tool_params={
+                "start_position": "[corrected_position]",
+                "end_position": "[other_position]",
+                "section": "[section]",
+                "material": "[material]",
+            },
+            priority=2,
+            confidence=0.5,
+        )
+    )
 
     return suggestions
 
@@ -359,12 +391,9 @@ def _suggest_for_empty_load_case(error: GrillexError) -> List[FixSuggestion]:
         FixSuggestion(
             description="Add at least one load to the model before running analysis.",
             tool_name="add_point_load",
-            tool_params={
-                "position": "[node_position]",
-                "force": [0.0, 0.0, -10.0]
-            },
+            tool_params={"position": "[node_position]", "force": [0.0, 0.0, -10.0]},
             priority=1,
-            confidence=0.9
+            confidence=0.9,
         )
     ]
 
@@ -374,51 +403,56 @@ def _suggest_for_convergence_failed(error: GrillexError) -> List[FixSuggestion]:
     suggestions = []
 
     # Check if this is related to nonlinear springs
-    suggestions.append(FixSuggestion(
-        description="Nonlinear solver did not converge. Check for oscillating spring states "
-                    "(springs rapidly switching between active/inactive). Consider increasing "
-                    "max_iterations or adjusting gap_tolerance.",
-        tool_name="analyze_nonlinear",
-        tool_params={
-            "max_iterations": 100,
-            "gap_tolerance": 1e-5
-        },
-        priority=1,
-        confidence=0.7
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="Nonlinear solver did not converge. Check for oscillating spring states "
+            "(springs rapidly switching between active/inactive). Consider increasing "
+            "max_iterations or adjusting gap_tolerance.",
+            tool_name="analyze_nonlinear",
+            tool_params={"max_iterations": 100, "gap_tolerance": 1e-5},
+            priority=1,
+            confidence=0.7,
+        )
+    )
 
-    suggestions.append(FixSuggestion(
-        description="Check spring states to identify which springs are causing issues. "
-                    "Look for springs near the active/inactive boundary.",
-        tool_name="get_spring_states",
-        tool_params={},
-        priority=2,
-        confidence=0.6
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="Check spring states to identify which springs are causing issues. "
+            "Look for springs near the active/inactive boundary.",
+            tool_name="get_spring_states",
+            tool_params={},
+            priority=2,
+            confidence=0.6,
+        )
+    )
 
-    suggestions.append(FixSuggestion(
-        description="For contact problems with gaps, ensure gap values are appropriate "
-                    "for the deformation scale. Very small gaps with large loads can "
-                    "cause numerical issues.",
-        tool_name="get_model_info",
-        tool_params={},
-        priority=3,
-        confidence=0.5
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="For contact problems with gaps, ensure gap values are appropriate "
+            "for the deformation scale. Very small gaps with large loads can "
+            "cause numerical issues.",
+            tool_name="get_model_info",
+            tool_params={},
+            priority=3,
+            confidence=0.5,
+        )
+    )
 
-    suggestions.append(FixSuggestion(
-        description="Try using linear springs (behavior=Linear) first to verify the "
-                    "model setup is correct, then switch to nonlinear behavior.",
-        tool_name="add_spring",
-        tool_params={
-            "position1": "[node1]",
-            "position2": "[node2]",
-            "kz": 10000.0,
-            "behavior": "Linear"
-        },
-        priority=4,
-        confidence=0.4
-    ))
+    suggestions.append(
+        FixSuggestion(
+            description="Try using linear springs (behavior=Linear) first to verify the "
+            "model setup is correct, then switch to nonlinear behavior.",
+            tool_name="add_spring",
+            tool_params={
+                "position1": "[node1]",
+                "position2": "[node2]",
+                "kz": 10000.0,
+                "behavior": "Linear",
+            },
+            priority=4,
+            confidence=0.4,
+        )
+    )
 
     return suggestions
 
@@ -426,6 +460,7 @@ def _suggest_for_convergence_failed(error: GrillexError) -> List[FixSuggestion]:
 # =============================================================================
 # Warning Analysis
 # =============================================================================
+
 
 def get_warning_advice(warning: GrillexWarning) -> str:
     """Get human-readable advice for addressing a warning.
@@ -476,15 +511,11 @@ def get_warning_advice(warning: GrillexWarning) -> str:
         ),
     }
 
-    return advice_map.get(
-        warning.code,
-        f"Review warning: {warning.message}"
-    )
+    return advice_map.get(warning.code, f"Review warning: {warning.message}")
 
 
 def analyze_model_health(
-    errors: List[GrillexError],
-    warnings: List[GrillexWarning]
+    errors: List[GrillexError], warnings: List[GrillexWarning]
 ) -> Dict[str, Any]:
     """Analyze overall model health based on errors and warnings.
 
@@ -520,17 +551,18 @@ def analyze_model_health(
         for error in errors[:3]:  # Limit to first 3 errors
             suggestions = get_fix_suggestions(error)
             if suggestions:
-                recommendations.append({
-                    "error": error.code_string(),
-                    "fix": suggestions[0].description
-                })
+                recommendations.append(
+                    {"error": error.code_string(), "fix": suggestions[0].description}
+                )
 
     for warning in warnings:
         if warning.severity == WarningSeverity.High:
-            recommendations.append({
-                "warning": warning.code_string(),
-                "advice": get_warning_advice(warning)
-            })
+            recommendations.append(
+                {
+                    "warning": warning.code_string(),
+                    "advice": get_warning_advice(warning),
+                }
+            )
 
     return {
         "status": status,
@@ -539,7 +571,7 @@ def analyze_model_health(
         "warning_counts": {
             "high": high_warnings,
             "medium": medium_warnings,
-            "low": low_warnings
+            "low": low_warnings,
         },
-        "recommendations": recommendations
+        "recommendations": recommendations,
     }

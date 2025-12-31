@@ -42,6 +42,7 @@ class NodeResult:
         reactions: Reaction forces [Fx, Fy, Fz, Mx, My, Mz] in kN and kN·m
                   None if node is not constrained
     """
+
     node_id: int
     position: List[float]
     displacements: List[float]
@@ -71,6 +72,7 @@ class ElementResult:
         end_forces_j: End forces at node j [N, Vy, Vz, Mx, My, Mz]
                      in kN and kN·m
     """
+
     element_id: int
     node_i_id: int
     node_j_id: int
@@ -95,6 +97,7 @@ class LoadCaseInfo:
         type: Load case type (Permanent, Variable, Environmental, Accidental)
         num_nodal_loads: Number of nodal loads in this case
     """
+
     name: str
     type: str
     num_nodal_loads: int
@@ -112,6 +115,7 @@ class ModelInfo:
         total_dofs: Total degrees of freedom
         num_load_cases: Number of load cases analyzed
     """
+
     name: str
     num_nodes: int
     num_elements: int
@@ -136,17 +140,20 @@ class ResultCase:
         success: Whether analysis succeeded
         error_message: Error message if analysis failed
     """
+
     model_info: ModelInfo
     load_case_info: LoadCaseInfo
     nodes: List[NodeResult]
     elements: List[ElementResult]
-    units: dict = field(default_factory=lambda: {
-        "length": "m",
-        "displacement_translation": "m",
-        "displacement_rotation": "rad",
-        "force": "kN",
-        "moment": "kN·m"
-    })
+    units: dict = field(
+        default_factory=lambda: {
+            "length": "m",
+            "displacement_translation": "m",
+            "displacement_rotation": "rad",
+            "force": "kN",
+            "moment": "kN·m",
+        }
+    )
     success: bool = True
     error_message: Optional[str] = None
 
@@ -168,7 +175,7 @@ class ResultCase:
         output_path = Path(file_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=indent)
 
     def to_json_string(self, indent: int = 2) -> str:
@@ -187,7 +194,7 @@ def export_results_to_json(
     model: StructuralModel,
     file_path: str,
     load_case: Optional[Any] = None,
-    indent: int = 2
+    indent: int = 2,
 ) -> None:
     """Export analysis results to JSON file.
 
@@ -208,8 +215,7 @@ def export_results_to_json(
 
 
 def build_result_case(
-    model: StructuralModel,
-    load_case: Optional[Any] = None
+    model: StructuralModel, load_case: Optional[Any] = None
 ) -> ResultCase:
     """Build ResultCase from analyzed model.
 
@@ -242,14 +248,14 @@ def build_result_case(
         num_elements=model.num_elements(),
         num_beams=model.num_beams(),
         total_dofs=model.total_dofs(),
-        num_load_cases=len(model.cpp_model.get_load_cases())
+        num_load_cases=len(model.cpp_model.get_load_cases()),
     )
 
     # Build load case info
     load_case_info = LoadCaseInfo(
         name=active_lc.name,
-        type=str(active_lc.type).split('.')[-1],  # Get enum name
-        num_nodal_loads=len(active_lc.get_nodal_loads())
+        type=str(active_lc.type).split(".")[-1],  # Get enum name
+        num_nodal_loads=len(active_lc.get_nodal_loads()),
     )
 
     # Get result for this load case
@@ -262,8 +268,14 @@ def build_result_case(
     for node in all_nodes:
         # Get displacements for this node
         displacements = []
-        for dof in [DOFIndex.UX, DOFIndex.UY, DOFIndex.UZ,
-                    DOFIndex.RX, DOFIndex.RY, DOFIndex.RZ]:
+        for dof in [
+            DOFIndex.UX,
+            DOFIndex.UY,
+            DOFIndex.UZ,
+            DOFIndex.RX,
+            DOFIndex.RY,
+            DOFIndex.RZ,
+        ]:
             try:
                 disp = model.cpp_model.get_node_displacement(node.id, dof)
                 displacements.append(float(disp))
@@ -273,8 +285,14 @@ def build_result_case(
         # Always get reactions for all nodes (will be zeros for unconstrained nodes)
         # This makes the JSON complete and consistent
         reactions = []
-        for dof in [DOFIndex.UX, DOFIndex.UY, DOFIndex.UZ,
-                   DOFIndex.RX, DOFIndex.RY, DOFIndex.RZ]:
+        for dof in [
+            DOFIndex.UX,
+            DOFIndex.UY,
+            DOFIndex.UZ,
+            DOFIndex.RX,
+            DOFIndex.RY,
+            DOFIndex.RZ,
+        ]:
             try:
                 rxn = model.cpp_model.get_node_reaction(node.id, dof)
                 reactions.append(float(rxn))
@@ -285,7 +303,7 @@ def build_result_case(
             node_id=node.id,
             position=[node.x, node.y, node.z],
             displacements=displacements,
-            reactions=reactions
+            reactions=reactions,
         )
         nodes.append(node_result)
 
@@ -300,7 +318,7 @@ def build_result_case(
             node_j_id=elem.node_j.id,
             length=float(elem.length),
             end_forces_i=[0.0] * 6,  # Placeholder - Phase 7 needed
-            end_forces_j=[0.0] * 6   # Placeholder - Phase 7 needed
+            end_forces_j=[0.0] * 6,  # Placeholder - Phase 7 needed
         )
         elements.append(element_result)
 
@@ -310,14 +328,12 @@ def build_result_case(
         nodes=nodes,
         elements=elements,
         success=result.success,
-        error_message=result.error_message if not result.success else None
+        error_message=result.error_message if not result.success else None,
     )
 
 
 def export_all_load_cases_to_json(
-    model: StructuralModel,
-    output_dir: str,
-    indent: int = 2
+    model: StructuralModel, output_dir: str, indent: int = 2
 ) -> List[str]:
     """Export all load cases to separate JSON files.
 
@@ -343,7 +359,7 @@ def export_all_load_cases_to_json(
 
     for lc in load_cases:
         # Create safe filename from load case name
-        safe_name = lc.name.replace(' ', '_').replace('/', '_')
+        safe_name = lc.name.replace(" ", "_").replace("/", "_")
         file_path = output_path / f"{safe_name}.json"
 
         export_results_to_json(model, str(file_path), load_case=lc, indent=indent)

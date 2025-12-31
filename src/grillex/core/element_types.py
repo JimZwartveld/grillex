@@ -9,7 +9,12 @@ from typing import Dict, Any, List, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .data_types import (
-        Node, Material, PlateElement, PlateElement8, PlateElement9, PlateElementTri
+        Node,
+        Material,
+        PlateElement,
+        PlateElement8,
+        PlateElement9,
+        PlateElementTri,
     )
 
 
@@ -30,10 +35,11 @@ class PlateElementType(Enum):
     - DKT: 3-node Discrete Kirchhoff Triangle. Thin plate formulation
       (no transverse shear). Best for triangular meshes and complex geometries.
     """
-    MITC4 = "MITC4"   # 4-node Mindlin plate (default)
-    MITC8 = "MITC8"   # 8-node serendipity Mindlin plate
-    MITC9 = "MITC9"   # 9-node Lagrangian Mindlin plate
-    DKT = "DKT"       # 3-node Discrete Kirchhoff Triangle
+
+    MITC4 = "MITC4"  # 4-node Mindlin plate (default)
+    MITC8 = "MITC8"  # 8-node serendipity Mindlin plate
+    MITC9 = "MITC9"  # 9-node Lagrangian Mindlin plate
+    DKT = "DKT"  # 3-node Discrete Kirchhoff Triangle
 
     # Future element types (not yet implemented)
     # KIRCHHOFF4 = "KIRCHHOFF4"  # 4-node thin plate (no shear)
@@ -147,7 +153,7 @@ def create_plate_element(
     element_id: int,
     nodes: List["Node"],
     thickness: float,
-    material: "Material"
+    material: "Material",
 ) -> Union["PlateElement", "PlateElement8", "PlateElement9", "PlateElementTri"]:
     """Create a plate element of the specified type.
 
@@ -193,29 +199,40 @@ def create_plate_element(
 
     if element_type == PlateElementType.MITC4:
         return PlateElement(
-            element_id,
-            nodes[0], nodes[1], nodes[2], nodes[3],
-            thickness, material
+            element_id, nodes[0], nodes[1], nodes[2], nodes[3], thickness, material
         )
     elif element_type == PlateElementType.MITC8:
         return PlateElement8(
             element_id,
-            nodes[0], nodes[1], nodes[2], nodes[3],
-            nodes[4], nodes[5], nodes[6], nodes[7],
-            thickness, material
+            nodes[0],
+            nodes[1],
+            nodes[2],
+            nodes[3],
+            nodes[4],
+            nodes[5],
+            nodes[6],
+            nodes[7],
+            thickness,
+            material,
         )
     elif element_type == PlateElementType.MITC9:
         return PlateElement9(
             element_id,
-            nodes[0], nodes[1], nodes[2], nodes[3],
-            nodes[4], nodes[5], nodes[6], nodes[7], nodes[8],
-            thickness, material
+            nodes[0],
+            nodes[1],
+            nodes[2],
+            nodes[3],
+            nodes[4],
+            nodes[5],
+            nodes[6],
+            nodes[7],
+            nodes[8],
+            thickness,
+            material,
         )
     elif element_type == PlateElementType.DKT:
         return PlateElementTri(
-            element_id,
-            nodes[0], nodes[1], nodes[2],
-            thickness, material
+            element_id, nodes[0], nodes[1], nodes[2], thickness, material
         )
     else:
         raise ValueError(f"Element type {element_type} not yet implemented")

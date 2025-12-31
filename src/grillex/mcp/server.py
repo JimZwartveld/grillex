@@ -37,6 +37,7 @@ try:
         EmbeddedResource,
         LoggingLevel,
     )
+
     MCP_AVAILABLE = True
 except ImportError:
     MCP_AVAILABLE = False
@@ -122,9 +123,7 @@ class GrillexMCPServer:
                 # Format the result
                 response = self._format_result(result)
 
-                logger.info(
-                    "Tool %s completed: success=%s", name, result.success
-                )
+                logger.info("Tool %s completed: success=%s", name, result.success)
 
                 return [TextContent(type="text", text=response)]
 

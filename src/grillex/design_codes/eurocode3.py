@@ -59,7 +59,9 @@ class SectionClass:
     web_class: int = 1
 
 
-def classify_section(section: Any, material: Any, actions: Optional[dict] = None) -> SectionClass:
+def classify_section(
+    section: Any, material: Any, actions: Optional[dict] = None
+) -> SectionClass:
     """Classify a cross-section according to EC3 Table 5.2.
 
     This is a simplified implementation that returns Class 1 by default.
@@ -287,6 +289,7 @@ class EC3ShearYCheck(DesignCheck):
 
         # Plastic shear resistance: tau_y = fy / sqrt(3)
         import math
+
         V_y_c_Rd = Av_y * (fy / math.sqrt(3)) / gamma_M0
         return V_y_Ed / V_y_c_Rd
 
@@ -325,6 +328,7 @@ class EC3ShearZCheck(DesignCheck):
             return 0.0
 
         import math
+
         V_z_c_Rd = Av_z * (fy / math.sqrt(3)) / gamma_M0
         return V_z_Ed / V_z_c_Rd
 
@@ -376,8 +380,12 @@ class EC3CombinedCheck(DesignCheck):
         bending_z_check = EC3BendingZCheck()
 
         n_util = axial_check.compute_utilization(actions, section, material, **kwargs)
-        my_util = bending_y_check.compute_utilization(actions, section, material, **kwargs)
-        mz_util = bending_z_check.compute_utilization(actions, section, material, **kwargs)
+        my_util = bending_y_check.compute_utilization(
+            actions, section, material, **kwargs
+        )
+        mz_util = bending_z_check.compute_utilization(
+            actions, section, material, **kwargs
+        )
 
         # Linear interaction
         return n_util + my_util + mz_util
@@ -511,7 +519,14 @@ class Eurocode3(DesignCode):
                 }
             else:
                 # Fallback: no actions available
-                actions = {"N": 0.0, "Vy": 0.0, "Vz": 0.0, "Mx": 0.0, "My": 0.0, "Mz": 0.0}
+                actions = {
+                    "N": 0.0,
+                    "Vy": 0.0,
+                    "Vz": 0.0,
+                    "Mx": 0.0,
+                    "My": 0.0,
+                    "Mz": 0.0,
+                }
 
             # Perform each check
             for check in self.get_checks():

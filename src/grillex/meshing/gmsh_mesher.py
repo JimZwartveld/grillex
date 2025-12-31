@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 class MeshingError(Exception):
     """Exception raised for meshing errors."""
+
     pass
 
 
@@ -32,6 +33,7 @@ class MeshResult:
         triangles_6: 6-node triangle connectivity for quadratic elements, shape (n_tris6, 6).
         edge_nodes: Dict mapping edge index to list of node indices on that edge.
     """
+
     nodes: np.ndarray
     node_tags: np.ndarray
     quads: np.ndarray = field(default_factory=lambda: np.zeros((0, 4), dtype=int))
@@ -50,11 +52,11 @@ class MeshResult:
     def n_elements(self) -> int:
         """Total number of elements (quads + triangles)."""
         return (
-            self.quads.shape[0] +
-            self.triangles.shape[0] +
-            self.quads_8.shape[0] +
-            self.quads_9.shape[0] +
-            self.triangles_6.shape[0]
+            self.quads.shape[0]
+            + self.triangles.shape[0]
+            + self.quads_8.shape[0]
+            + self.quads_9.shape[0]
+            + self.triangles_6.shape[0]
         )
 
     @property
@@ -72,6 +74,7 @@ def _check_gmsh_available():
     """Check if gmsh is available and provide helpful error if not."""
     try:
         import gmsh
+
         return gmsh
     except ImportError:
         raise MeshingError(
@@ -140,7 +143,7 @@ class GmshPlateMesher:
         mesh_size: float,
         edge_divisions: Optional[Dict[int, int]] = None,
         prefer_quads: bool = True,
-        element_order: int = 1
+        element_order: int = 1,
     ) -> MeshResult:
         """Generate mesh for a plate defined by corner points.
 
@@ -172,7 +175,9 @@ class GmshPlateMesher:
         # Validate corner coordinates before trying to mesh
         for i, corner in enumerate(corners):
             if len(corner) != 3:
-                raise ValueError(f"Each corner must have 3 coordinates, got {len(corner)}")
+                raise ValueError(
+                    f"Each corner must have 3 coordinates, got {len(corner)}"
+                )
 
         self._ensure_initialized()
         gmsh = self._gmsh
@@ -185,7 +190,9 @@ class GmshPlateMesher:
             # Create points
             point_tags = []
             for corner in corners:
-                tag = gmsh.model.geo.addPoint(corner[0], corner[1], corner[2], mesh_size)
+                tag = gmsh.model.geo.addPoint(
+                    corner[0], corner[1], corner[2], mesh_size
+                )
                 point_tags.append(tag)
 
             # Create lines (edges)
@@ -201,7 +208,9 @@ class GmshPlateMesher:
                 if edge_divisions and i in edge_divisions:
                     n_div = edge_divisions[i]
                     if n_div < 1:
-                        raise ValueError(f"Edge {i} must have at least 1 division, got {n_div}")
+                        raise ValueError(
+                            f"Edge {i} must have at least 1 division, got {n_div}"
+                        )
                     # setTransfiniteCurve takes number of nodes = n_div + 1
                     gmsh.model.geo.mesh.setTransfiniteCurve(line_tag, n_div + 1)
 
@@ -211,12 +220,12 @@ class GmshPlateMesher:
 
             # For structured quad mesh: need 4 corners with matching opposite edge divisions
             can_use_transfinite = (
-                prefer_quads and
-                len(corners) == 4 and
-                edge_divisions is not None and
-                all(i in edge_divisions for i in range(4)) and
-                edge_divisions.get(0) == edge_divisions.get(2) and
-                edge_divisions.get(1) == edge_divisions.get(3)
+                prefer_quads
+                and len(corners) == 4
+                and edge_divisions is not None
+                and all(i in edge_divisions for i in range(4))
+                and edge_divisions.get(0) == edge_divisions.get(2)
+                and edge_divisions.get(1) == edge_divisions.get(3)
             )
 
             if can_use_transfinite:
@@ -251,9 +260,7 @@ class GmshPlateMesher:
             raise MeshingError(f"Meshing failed: {e}") from e
 
     def _extract_mesh_data(
-        self,
-        edge_line_tags: List[int],
-        element_order: int
+        self, edge_line_tags: List[int], element_order: int
     ) -> MeshResult:
         """Extract nodes and elements from gmsh.
 
@@ -298,7 +305,9 @@ class GmshPlateMesher:
             if len(tri_tags) > 0:
                 n_tris = len(tri_tags)
                 tri_conn = np.array(tri_conn, dtype=int).reshape(n_tris, 3)
-                triangles = np.array([[tag_to_idx[t] for t in elem] for elem in tri_conn])
+                triangles = np.array(
+                    [[tag_to_idx[t] for t in elem] for elem in tri_conn]
+                )
         except Exception:
             pass
 
@@ -318,7 +327,9 @@ class GmshPlateMesher:
                 if len(tri6_tags) > 0:
                     n_tris6 = len(tri6_tags)
                     tri6_conn = np.array(tri6_conn, dtype=int).reshape(n_tris6, 6)
-                    triangles_6 = np.array([[tag_to_idx[t] for t in elem] for elem in tri6_conn])
+                    triangles_6 = np.array(
+                        [[tag_to_idx[t] for t in elem] for elem in tri6_conn]
+                    )
             except Exception:
                 pass
 
@@ -327,7 +338,9 @@ class GmshPlateMesher:
                 if len(quad9_tags) > 0:
                     n_quads9 = len(quad9_tags)
                     quad9_conn = np.array(quad9_conn, dtype=int).reshape(n_quads9, 9)
-                    quads_9 = np.array([[tag_to_idx[t] for t in elem] for elem in quad9_conn])
+                    quads_9 = np.array(
+                        [[tag_to_idx[t] for t in elem] for elem in quad9_conn]
+                    )
             except Exception:
                 pass
 
@@ -336,7 +349,9 @@ class GmshPlateMesher:
                 if len(quad8_tags) > 0:
                     n_quads8 = len(quad8_tags)
                     quad8_conn = np.array(quad8_conn, dtype=int).reshape(n_quads8, 8)
-                    quads_8 = np.array([[tag_to_idx[t] for t in elem] for elem in quad8_conn])
+                    quads_8 = np.array(
+                        [[tag_to_idx[t] for t in elem] for elem in quad8_conn]
+                    )
             except Exception:
                 pass
 
@@ -346,7 +361,9 @@ class GmshPlateMesher:
             try:
                 # Get nodes on the line (dimension 1) - includes interior and boundary nodes
                 # Use includeBoundary=True to include corner nodes
-                edge_node_tags, _, _ = gmsh.model.mesh.getNodes(1, line_tag, includeBoundary=True)
+                edge_node_tags, _, _ = gmsh.model.mesh.getNodes(
+                    1, line_tag, includeBoundary=True
+                )
                 edge_nodes[i] = [tag_to_idx[int(t)] for t in edge_node_tags]
             except Exception:
                 edge_nodes[i] = []
@@ -359,13 +376,10 @@ class GmshPlateMesher:
             quads_8=quads_8,
             quads_9=quads_9,
             triangles_6=triangles_6,
-            edge_nodes=edge_nodes
+            edge_nodes=edge_nodes,
         )
 
-    def mesh_plate_from_geometry(
-        self,
-        plate: "Plate"
-    ) -> MeshResult:
+    def mesh_plate_from_geometry(self, plate: "Plate") -> MeshResult:
         """Generate mesh from a Plate geometry object.
 
         Convenience method that extracts parameters from a Plate object.
@@ -393,7 +407,7 @@ class GmshPlateMesher:
             mesh_size=plate.mesh_size,
             edge_divisions=edge_divisions if edge_divisions else None,
             prefer_quads=(plate.element_type != "DKT"),
-            element_order=element_order
+            element_order=element_order,
         )
 
     def finalize(self):

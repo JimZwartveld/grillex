@@ -86,6 +86,7 @@ class CargoConnection:
         # Dynamic connection (seafastening) - only takes environmental loads
         CargoConnection([5, 0, 0], [1e9, 1e9, 0, 0, 0, 0], loading_condition="dynamic")
     """
+
     structural_position: List[float]
     stiffness: List[float]  # [kx, ky, kz, krx, kry, krz]
     cargo_offset: Optional[List[float]] = None
@@ -140,7 +141,14 @@ class Cargo:
         self.name = name
         self.cog_position: List[float] = [0.0, 0.0, 0.0]
         self.mass: float = 0.0
-        self.inertia: List[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # Ixx, Iyy, Izz, Ixy, Ixz, Iyz
+        self.inertia: List[float] = [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ]  # Ixx, Iyy, Izz, Ixy, Ixz, Iyz
         self.connections: List[CargoConnection] = []
 
         # Internal references (set during element generation)
@@ -185,7 +193,7 @@ class Cargo:
         Izz: float = 0.0,
         Ixy: float = 0.0,
         Ixz: float = 0.0,
-        Iyz: float = 0.0
+        Iyz: float = 0.0,
     ) -> "Cargo":
         """
         Set the rotational inertia tensor.
@@ -211,7 +219,7 @@ class Cargo:
         structural_position: List[float],
         stiffness: List[float],
         cargo_offset: Optional[List[float]] = None,
-        loading_condition: str = "all"
+        loading_condition: str = "all",
     ) -> "Cargo":
         """
         Add a connection to the structure.
@@ -263,7 +271,9 @@ class Cargo:
         if len(structural_position) != 3:
             raise ValueError("Structural position must be a 3-element list [x, y, z]")
         if len(stiffness) != 6:
-            raise ValueError("Stiffness must be a 6-element list [kx, ky, kz, krx, kry, krz]")
+            raise ValueError(
+                "Stiffness must be a 6-element list [kx, ky, kz, krx, kry, krz]"
+            )
         if cargo_offset is not None and len(cargo_offset) != 3:
             raise ValueError("Cargo offset must be a 3-element list [dx, dy, dz]")
         if loading_condition not in VALID_LOADING_CONDITIONS:
@@ -276,7 +286,7 @@ class Cargo:
             structural_position=list(structural_position),
             stiffness=list(stiffness),
             cargo_offset=list(cargo_offset) if cargo_offset else None,
-            loading_condition=loading_condition
+            loading_condition=loading_condition,
         )
         self.connections.append(connection)
         return self
@@ -308,9 +318,7 @@ class Cargo:
 
         # 1. Create node at CoG
         self._cog_node = model.get_or_create_node(
-            self.cog_position[0],
-            self.cog_position[1],
-            self.cog_position[2]
+            self.cog_position[0], self.cog_position[1], self.cog_position[2]
         )
 
         # 2. Create point mass at CoG
@@ -322,7 +330,7 @@ class Cargo:
             self.inertia[2],  # Izz
             self.inertia[3],  # Ixy
             self.inertia[4],  # Ixz
-            self.inertia[5]   # Iyz
+            self.inertia[5],  # Iyz
         )
 
         # 3. Create connections
@@ -331,7 +339,7 @@ class Cargo:
             conn.structural_node = model.get_or_create_node(
                 conn.structural_position[0],
                 conn.structural_position[1],
-                conn.structural_position[2]
+                conn.structural_position[2],
             )
 
             if conn.cargo_offset is None:
@@ -344,7 +352,7 @@ class Cargo:
                 offset_pos = [
                     self.cog_position[0] + conn.cargo_offset[0],
                     self.cog_position[1] + conn.cargo_offset[1],
-                    self.cog_position[2] + conn.cargo_offset[2]
+                    self.cog_position[2] + conn.cargo_offset[2],
                 ]
 
                 # Force create a separate footprint node (without merging)
@@ -374,10 +382,11 @@ class Cargo:
                 # Set loading condition on the spring
                 # Import here to avoid circular import issues
                 from grillex._grillex_cpp import LoadingCondition
+
                 loading_condition_map = {
                     "all": LoadingCondition.All,
                     "static": LoadingCondition.Static,
-                    "dynamic": LoadingCondition.Dynamic
+                    "dynamic": LoadingCondition.Dynamic,
                 }
                 spring.loading_condition = loading_condition_map[conn.loading_condition]
 
@@ -413,8 +422,10 @@ class Cargo:
         return self.mass * gravity
 
     def __repr__(self) -> str:
-        return (f"Cargo(name='{self.name}', "
-                f"cog={self.cog_position}, "
-                f"mass={self.mass} mT, "
-                f"n_connections={len(self.connections)}, "
-                f"generated={self._generated})")
+        return (
+            f"Cargo(name='{self.name}', "
+            f"cog={self.cog_position}, "
+            f"mass={self.mass} mT, "
+            f"n_connections={len(self.connections)}, "
+            f"generated={self._generated})"
+        )
