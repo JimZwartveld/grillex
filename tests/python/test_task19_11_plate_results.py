@@ -54,7 +54,7 @@ def model_with_analyzed_plate():
     # Apply downward force at center node
     center_node = model.find_node_at([1, 1, 0])
     if center_node:
-        model.add_point_load([1, 1, 0], DOFIndex.UZ, -10.0)
+        model.add_point_load([1, 1, 0], force=[0, 0, -10.0])
 
     # Analyze
     try:
@@ -98,7 +98,7 @@ def simple_plate_model():
         model._cpp_model.boundary_conditions.add_fixed_dof(node.id, DOFIndex.RY, 0.0)
 
     # Apply load at corner n2 (free to displace)
-    model.add_point_load([1, 0, 0], DOFIndex.UZ, -10.0)
+    model.add_point_load([1, 0, 0], force=[0, 0, -10.0])
 
     # Analyze
     model.analyze()
@@ -311,7 +311,7 @@ class TestDifferentElementTypes:
         if len(model._cpp_model.plate_elements_tri) > 0:
             elem = model._cpp_model.plate_elements_tri[0]
             node = elem.nodes[0]
-            model.add_point_load([node.x, node.y, node.z], DOFIndex.UZ, -1.0)
+            model.add_point_load([node.x, node.y, node.z], force=[0, 0, -1.0])
 
         result = model.analyze()
 

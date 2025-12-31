@@ -350,25 +350,77 @@ def _load_load_cases(model: StructuralModel, load_cases_data: list[dict]) -> Non
             if not isinstance(load, dict):
                 raise ValueError(f"Load case '{lc_name}', load {j}: must be a dictionary")
 
-            if 'node' not in load:
-                raise ValueError(f"Load case '{lc_name}', load {j}: missing 'node' field")
-            if 'dof' not in load:
-                raise ValueError(f"Load case '{lc_name}', load {j}: missing 'dof' field")
-            if 'value' not in load:
-                raise ValueError(f"Load case '{lc_name}', load {j}: missing 'value' field")
+            # Support both old format (node/dof/value) and new format (position/force/moment)
+            if 'position' in load:
+                # New format: position + force/moment vectors
+                position = load['position']
+                if not isinstance(position, list) or len(position) != 3:
+                    raise ValueError(f"Load case '{lc_name}', load {j}: 'position' must be a list of 3 coordinates")
 
-            node = load['node']
-            if not isinstance(node, list) or len(node) != 3:
-                raise ValueError(f"Load case '{lc_name}', load {j}: 'node' must be a list of 3 coordinates")
+                try:
+                    pos = [float(x) for x in position]
+                    force = None
+                    moment = None
 
-            try:
-                node_pos = [float(x) for x in node]
-                dof = _parse_dof(load['dof'])
-                value = float(load['value'])
+                    if 'force' in load:
+                        force_data = load['force']
+                        if not isinstance(force_data, list) or len(force_data) != 3:
+                            raise ValueError(f"Load case '{lc_name}', load {j}: 'force' must be a list of 3 values")
+                        force = [float(x) for x in force_data]
 
-                model.add_point_load(node_pos, dof, value, load_case)
-            except Exception as e:
-                raise ValueError(f"Load case '{lc_name}', load {j}: {e}")
+                    if 'moment' in load:
+                        moment_data = load['moment']
+                        if not isinstance(moment_data, list) or len(moment_data) != 3:
+                            raise ValueError(f"Load case '{lc_name}', load {j}: 'moment' must be a list of 3 values")
+                        moment = [float(x) for x in moment_data]
+
+                    if force is None and moment is None:
+                        raise ValueError(f"Load case '{lc_name}', load {j}: must specify 'force' and/or 'moment'")
+
+                    model.add_point_load(pos, force=force, moment=moment, load_case=load_case)
+                except Exception as e:
+                    raise ValueError(f"Load case '{lc_name}', load {j}: {e}")
+
+            elif 'node' in load:
+                # Legacy format: node/dof/value - convert to new format
+                if 'dof' not in load:
+                    raise ValueError(f"Load case '{lc_name}', load {j}: missing 'dof' field")
+                if 'value' not in load:
+                    raise ValueError(f"Load case '{lc_name}', load {j}: missing 'value' field")
+
+                node = load['node']
+                if not isinstance(node, list) or len(node) != 3:
+                    raise ValueError(f"Load case '{lc_name}', load {j}: 'node' must be a list of 3 coordinates")
+
+                try:
+                    node_pos = [float(x) for x in node]
+                    dof = _parse_dof(load['dof'])
+                    value = float(load['value'])
+
+                    # Convert DOF-based load to force/moment vectors
+                    force = [0.0, 0.0, 0.0]
+                    moment = [0.0, 0.0, 0.0]
+
+                    if dof == DOFIndex.UX:
+                        force[0] = value
+                    elif dof == DOFIndex.UY:
+                        force[1] = value
+                    elif dof == DOFIndex.UZ:
+                        force[2] = value
+                    elif dof == DOFIndex.RX:
+                        moment[0] = value
+                    elif dof == DOFIndex.RY:
+                        moment[1] = value
+                    elif dof == DOFIndex.RZ:
+                        moment[2] = value
+                    else:
+                        raise ValueError(f"Unsupported DOF for point load: {dof}")
+
+                    model.add_point_load(node_pos, force=force, moment=moment, load_case=load_case)
+                except Exception as e:
+                    raise ValueError(f"Load case '{lc_name}', load {j}: {e}")
+            else:
+                raise ValueError(f"Load case '{lc_name}', load {j}: missing 'position' or 'node' field")
 
 
 def _parse_dof(dof_str: str) -> DOFIndex:

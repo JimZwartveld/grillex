@@ -197,7 +197,7 @@ class TestExportFunctions:
         model.add_section("Test", 0.01, 1e-5, 2e-5, 1.5e-5)
         model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
         model.analyze()
 
         # Export to JSON
@@ -225,7 +225,7 @@ class TestExportFunctions:
         model.add_section("Test", 0.01, 1e-5, 2e-5, 1.5e-5)
         model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
         model.analyze()
 
         result_case = build_result_case(model)
@@ -287,7 +287,7 @@ class TestJSONStructure:
         model.add_section("Test", 0.01, 1e-5, 2e-5, 1.5e-5)
         model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
         model.analyze()
 
         result_case = build_result_case(model)
@@ -318,7 +318,7 @@ class TestJSONStructure:
         model.add_section("Test", 0.01, 1e-5, 2e-5, 1.5e-5)
         model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
         model.analyze()
 
         result_case = build_result_case(model)
@@ -369,7 +369,7 @@ class TestJSONStructure:
         model.add_section("Test", 0.01, 1e-5, 2e-5, 1.5e-5)
         model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
         model.analyze()
 
         result_case = build_result_case(model)
@@ -394,7 +394,7 @@ class TestJSONStructure:
         model.add_beam_by_coords([6, 0, 0], [12, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
         model.pin_node_at([12, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
         model.analyze()
 
         result_case = build_result_case(model)
@@ -420,7 +420,7 @@ class TestAcceptanceCriteria:
         model.add_section("Test", 0.01, 1e-5, 2e-5, 1.5e-5)
         model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
         model.analyze()
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
@@ -493,7 +493,7 @@ class TestAcceptanceCriteria:
         model.add_section("Test", 0.01, 1e-5, 2e-5, 1.5e-5)
         model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
         model.analyze()
 
         result_case = build_result_case(model)

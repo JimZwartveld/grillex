@@ -361,8 +361,7 @@ def _suggest_for_empty_load_case(error: GrillexError) -> List[FixSuggestion]:
             tool_name="add_point_load",
             tool_params={
                 "position": "[node_position]",
-                "dof": "UZ",
-                "value": -10.0
+                "force": [0.0, 0.0, -10.0]
             },
             priority=1,
             confidence=0.9

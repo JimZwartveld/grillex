@@ -1009,7 +1009,7 @@ class TestMultiElementBeamMomentDiagram:
         model.fix_dof_at([L, 0, 0], DOFIndex.RX, 0.0)
 
         # Apply point load at center
-        model.add_point_load([L/2, 0, 0], DOFIndex.UY, -P)
+        model.add_point_load([L/2, 0, 0], force=[0, -P, 0])
 
         assert model.analyze()
 
@@ -1107,7 +1107,7 @@ class TestShearDiscontinuities:
         model.fix_dof_at([L, 0, 0], DOFIndex.RX, 0.0)
 
         # Point load at L/2
-        model.add_point_load([L/2, 0, 0], DOFIndex.UY, -P)
+        model.add_point_load([L/2, 0, 0], force=[0, -P, 0])
 
         assert model.analyze()
 
@@ -1158,7 +1158,7 @@ class TestMultiElementExtrema:
         model.fix_dof_at([0, 0, 0], DOFIndex.RY, 0.0)
         model.fix_dof_at([0, 0, 0], DOFIndex.RZ, 0.0)
 
-        model.add_point_load([L, 0, 0], DOFIndex.UY, -P)
+        model.add_point_load([L, 0, 0], force=[0, -P, 0])
 
         assert model.analyze()
 
@@ -1204,7 +1204,7 @@ class TestDeflectionDiagramContinuity:
         model.fix_dof_at([0, 0, 0], DOFIndex.RY, 0.0)
         model.fix_dof_at([0, 0, 0], DOFIndex.RZ, 0.0)
 
-        model.add_point_load([L, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([L, 0, 0], force=[0, -10.0, 0])
 
         assert model.analyze()
 
@@ -1243,7 +1243,7 @@ class TestBeamInternalActionsAtMethod:
         model.fix_dof_at([0, 0, 0], DOFIndex.RY, 0.0)
         model.fix_dof_at([0, 0, 0], DOFIndex.RZ, 0.0)
 
-        model.add_point_load([L, 0, 0], DOFIndex.UY, -P)
+        model.add_point_load([L, 0, 0], force=[0, -P, 0])
 
         assert model.analyze()
 
@@ -1282,7 +1282,7 @@ class TestMomentLineMethod:
         model.fix_dof_at([0, 0, 0], DOFIndex.RY, 0.0)
         model.fix_dof_at([0, 0, 0], DOFIndex.RZ, 0.0)
 
-        model.add_point_load([L, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([L, 0, 0], force=[0, -10.0, 0])
 
         assert model.analyze()
 
@@ -1314,7 +1314,7 @@ class TestDisplacementLineMethod:
         model.fix_dof_at([0, 0, 0], DOFIndex.RY, 0.0)
         model.fix_dof_at([0, 0, 0], DOFIndex.RZ, 0.0)
 
-        model.add_point_load([L, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([L, 0, 0], force=[0, -10.0, 0])
 
         assert model.analyze()
 
@@ -1344,7 +1344,7 @@ class TestVaryingElementCounts:
         model.fix_dof_at([0, 0, 0], DOFIndex.RX)
         model.fix_dof_at([0, 0, 0], DOFIndex.RY)
         model.fix_dof_at([0, 0, 0], DOFIndex.RZ)
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
 
         assert model.analyze()
 
@@ -1379,7 +1379,7 @@ class TestVaryingElementCounts:
         model.fix_dof_at([0, 0, 0], DOFIndex.RX)
         model.fix_dof_at([0, 0, 0], DOFIndex.RY)
         model.fix_dof_at([0, 0, 0], DOFIndex.RZ)
-        model.add_point_load([L, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([L, 0, 0], force=[0, -10.0, 0])
 
         assert model.analyze()
 

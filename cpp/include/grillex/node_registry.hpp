@@ -53,12 +53,25 @@ public:
     Node* create_node(double x, double y, double z);
 
     /**
+     * @brief Find node at specified position
+     *
+     * Returns a node if one exists within tolerance of (x, y, z).
+     * Does not create a new node if none is found.
+     *
+     * @param x X-coordinate [m]
+     * @param y Y-coordinate [m]
+     * @param z Z-coordinate [m]
+     * @return Node* Pointer to node if found, nullptr otherwise
+     */
+    Node* find_node(double x, double y, double z) const;
+
+    /**
      * @brief Get node by its ID
      *
      * @param id Node ID to find
      * @return Node* Pointer to node if found, nullptr otherwise
      */
-    Node* get_node_by_id(int id);
+    Node* get_node_by_id(int id) const;
 
     /**
      * @brief Get all nodes in the registry

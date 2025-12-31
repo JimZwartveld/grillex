@@ -1,6 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/eigen.h>
+#include <sstream>
 
 #include "grillex/placeholder.hpp"
 #include "grillex/node.hpp"
@@ -94,6 +95,10 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def("create_node", &grillex::NodeRegistry::create_node,
              py::arg("x"), py::arg("y"), py::arg("z"),
              "Force create a new node at (x, y, z) without merging",
+             py::return_value_policy::reference_internal)
+        .def("find_node", &grillex::NodeRegistry::find_node,
+             py::arg("x"), py::arg("y"), py::arg("z"),
+             "Find node at position (x, y, z), returns None if not found",
              py::return_value_policy::reference_internal)
         .def("get_node_by_id", &grillex::NodeRegistry::get_node_by_id,
              py::arg("id"), "Get node by ID",
@@ -810,19 +815,26 @@ PYBIND11_MODULE(_grillex_cpp, m) {
 
     // NodalLoad struct
     py::class_<grillex::NodalLoad>(m, "NodalLoad",
-        "Concentrated force/moment at a node")
-        .def(py::init<int, int, double>(),
-             py::arg("node_id"),
-             py::arg("local_dof"),
-             py::arg("value"),
-             "Construct a nodal load")
-        .def_readwrite("node_id", &grillex::NodalLoad::node_id, "Node where load is applied")
-        .def_readwrite("local_dof", &grillex::NodalLoad::local_dof, "Local DOF index (0-6)")
-        .def_readwrite("value", &grillex::NodalLoad::value, "Load magnitude [kN] or [kN·m]")
+        "Concentrated force/moment at a position.\n\n"
+        "Attributes:\n"
+        "    position: [x, y, z] coordinates in meters\n"
+        "    force: [Fx, Fy, Fz] force vector in kN\n"
+        "    moment: [Mx, My, Mz] moment vector in kNm")
+        .def(py::init<const Eigen::Vector3d&, const Eigen::Vector3d&, const Eigen::Vector3d&>(),
+             py::arg("position"),
+             py::arg("force"),
+             py::arg("moment") = Eigen::Vector3d::Zero(),
+             "Construct a nodal load at position with force and moment vectors")
+        .def_readwrite("position", &grillex::NodalLoad::position, "Position [x, y, z] in meters")
+        .def_readwrite("force", &grillex::NodalLoad::force, "Force vector [Fx, Fy, Fz] in kN")
+        .def_readwrite("moment", &grillex::NodalLoad::moment, "Moment vector [Mx, My, Mz] in kNm")
+        .def("is_zero", &grillex::NodalLoad::is_zero, "Check if load has any non-zero force or moment")
         .def("__repr__", [](const grillex::NodalLoad &nl) {
-            return "<NodalLoad node=" + std::to_string(nl.node_id) +
-                   " dof=" + std::to_string(nl.local_dof) +
-                   " value=" + std::to_string(nl.value) + ">";
+            std::ostringstream oss;
+            oss << "<NodalLoad pos=[" << nl.position.x() << ", " << nl.position.y() << ", " << nl.position.z() << "]"
+                << " F=[" << nl.force.x() << ", " << nl.force.y() << ", " << nl.force.z() << "]"
+                << " M=[" << nl.moment.x() << ", " << nl.moment.y() << ", " << nl.moment.z() << "]>";
+            return oss.str();
         });
 
     // DistributedLoad struct (for Phase 7 internal actions)
@@ -869,10 +881,14 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def_property_readonly("name", &grillex::LoadCase::name, "Load case name")
         .def_property_readonly("type", &grillex::LoadCase::type, "Load case type")
         .def("add_nodal_load", &grillex::LoadCase::add_nodal_load,
-             py::arg("node_id"),
-             py::arg("local_dof"),
-             py::arg("value"),
-             "Add a nodal load (accumulated if called multiple times for same DOF)")
+             py::arg("position"),
+             py::arg("force"),
+             py::arg("moment") = Eigen::Vector3d::Zero(),
+             "Add a nodal load at position with force and moment vectors.\n\n"
+             "Args:\n"
+             "    position: [x, y, z] coordinates in meters\n"
+             "    force: [Fx, Fy, Fz] force vector in kN\n"
+             "    moment: [Mx, My, Mz] moment vector in kNm (default: zero)")
         .def("add_line_load", &grillex::LoadCase::add_line_load,
              py::arg("element_id"),
              py::arg("w_start"),

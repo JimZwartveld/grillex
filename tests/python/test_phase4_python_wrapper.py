@@ -291,15 +291,18 @@ class TestLoadApplication:
         model.add_section("IPE300", 0.01, 1e-5, 2e-5, 1.5e-5)
         model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
 
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
         # Should not raise an error
 
-    def test_add_point_load_nonexistent_node(self):
-        """Test error when adding load to nonexistent node"""
+    def test_add_point_load_no_force_or_moment(self):
+        """Test error when neither force nor moment is provided"""
         model = StructuralModel()
+        model.add_material("Steel", 210e6, 0.3, 7.85e-6)
+        model.add_section("IPE300", 0.01, 1e-5, 2e-5, 1.5e-5)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
 
-        with pytest.raises(ValueError, match="No node found"):
-            model.add_point_load([100, 100, 100], DOFIndex.UY, -10.0)
+        with pytest.raises(ValueError, match="At least one of 'force' or 'moment'"):
+            model.add_point_load([6, 0, 0])
 
 
 class TestAnalysisWorkflow:
@@ -329,7 +332,7 @@ class TestAnalysisWorkflow:
         model.fix_node_at([0, 0, 0])
 
         # Apply load
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
 
         # Analyze
         success = model.analyze()
@@ -356,7 +359,7 @@ class TestAnalysisWorkflow:
         model.pin_node_at([12, 0, 0])
 
         # Loads
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -20.0)
+        model.add_point_load([6, 0, 0], force=[0, -20.0, 0])
 
         # Analyze
         success = model.analyze()
@@ -374,7 +377,7 @@ class TestResultsAccess:
         model.add_section("Test", 0.01, 1e-5, 2e-5, 1.5e-5)
         model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
 
         # Analyze
         model.analyze()
@@ -391,7 +394,7 @@ class TestResultsAccess:
         model.add_section("Test", 0.01, 1e-5, 2e-5, 1.5e-5)
         model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
 
         model.analyze()
 
@@ -407,7 +410,7 @@ class TestResultsAccess:
         model.add_section("Test", 0.01, 1e-5, 2e-5, 1.5e-5)
         model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
 
         model.analyze()
 
@@ -455,7 +458,7 @@ class TestAcceptanceCriteria:
         model.add_section("IPE300", 0.01, 1e-5, 2e-5, 1.5e-5)
         model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
 
         # Model can be analyzed from Python
         success = model.analyze()
@@ -469,7 +472,7 @@ class TestAcceptanceCriteria:
         model.add_section("IPE300", 0.01, 1e-5, 2e-5, 1.5e-5)
         model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
         model.analyze()
 
         # Results are accessible from Python

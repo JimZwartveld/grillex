@@ -36,7 +36,22 @@ Node* NodeRegistry::create_node(double x, double y, double z) {
     return node_ptr;
 }
 
-Node* NodeRegistry::get_node_by_id(int id) {
+Node* NodeRegistry::find_node(double x, double y, double z) const {
+    // Search for existing node within tolerance
+    for (const auto& node : nodes_) {
+        double dx = node->x - x;
+        double dy = node->y - y;
+        double dz = node->z - z;
+        double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+        if (distance < tolerance_) {
+            return node.get();
+        }
+    }
+    return nullptr;
+}
+
+Node* NodeRegistry::get_node_by_id(int id) const {
     for (const auto& node : nodes_) {
         if (node->id == id) {
             return node.get();

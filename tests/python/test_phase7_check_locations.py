@@ -129,7 +129,7 @@ class TestInternalActionsAtCheckLocations:
 
         beam = model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
 
         return model, beam
 
@@ -208,7 +208,7 @@ class TestCheckLocationsPersistence:
 
         beam = model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
 
         # Set check locations before first analysis
         beam.set_standard_check_locations()
@@ -247,7 +247,7 @@ class TestCheckLocationsPersistence:
         beam.set_standard_check_locations()
 
         # First load and analysis
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
         model.analyze()
 
         # Verify check locations still present
@@ -269,7 +269,7 @@ class TestMultiElementBeamCheckLocations:
             subdivisions=3
         )
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
 
         # Set check locations
         beam.set_standard_check_locations()
@@ -296,7 +296,7 @@ class TestArbitraryCheckLocations:
 
         beam = model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "Test", "Steel")
         model.fix_node_at([0, 0, 0])
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
 
         # Add arbitrary check location at 1/3 span
         beam.add_check_location(1.0/3.0)

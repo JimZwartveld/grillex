@@ -259,7 +259,7 @@ TOOLS: List[Dict[str, Any]] = [
     # =========================================================================
     {
         "name": "add_point_load",
-        "description": "Apply a concentrated force or moment at a node.",
+        "description": "Apply a concentrated force and/or moment at a position.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -268,19 +268,24 @@ TOOLS: List[Dict[str, Any]] = [
                     "items": {"type": "number"},
                     "minItems": 3,
                     "maxItems": 3,
-                    "description": "Node position [x, y, z] in meters"
+                    "description": "Position [x, y, z] in meters"
                 },
-                "dof": {
-                    "type": "string",
-                    "enum": ["UX", "UY", "UZ", "RX", "RY", "RZ"],
-                    "description": "DOF for load direction: UX/UY/UZ for forces, RX/RY/RZ for moments"
+                "force": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Force vector [Fx, Fy, Fz] in kN. Default: [0, 0, 0]"
                 },
-                "value": {
-                    "type": "number",
-                    "description": "Load magnitude in kN (forces) or kN·m (moments). Negative = opposite direction."
+                "moment": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Moment vector [Mx, My, Mz] in kNm. Default: [0, 0, 0]"
                 }
             },
-            "required": ["position", "dof", "value"]
+            "required": ["position"]
         }
     },
     {
@@ -1333,17 +1338,31 @@ class ToolExecutor:
         if self.model is None:
             return ToolResult(success=False, error="No model created. Call create_model first.")
 
-        dof = _parse_dof(params["dof"])
-        self.model.add_point_load(params["position"], dof, params["value"])
+        force = params.get("force")
+        moment = params.get("moment")
 
-        unit = "kN·m" if params["dof"].startswith("R") else "kN"
+        if force is None and moment is None:
+            return ToolResult(
+                success=False,
+                error="At least one of 'force' or 'moment' must be provided"
+            )
+
+        self.model.add_point_load(params["position"], force=force, moment=moment)
+
+        # Build descriptive message
+        parts = []
+        if force is not None:
+            parts.append(f"F={force} kN")
+        if moment is not None:
+            parts.append(f"M={moment} kNm")
+
         return ToolResult(
             success=True,
             result={
                 "position": params["position"],
-                "dof": params["dof"],
-                "value": params["value"],
-                "message": f"Point load of {params['value']} {unit} applied"
+                "force": force,
+                "moment": moment,
+                "message": f"Point load applied: {', '.join(parts)}"
             }
         )
 

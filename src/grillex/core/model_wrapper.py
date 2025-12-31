@@ -26,7 +26,7 @@ Usage:
     model.fix_node_at([0, 0, 0])
 
     # Add loads
-    model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+    model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
 
     # Analyze
     results = model.analyze()
@@ -1773,26 +1773,39 @@ class StructuralModel:
     def add_point_load(
         self,
         position: List[float],
-        dof: DOFIndex,
-        value: float,
+        force: Optional[List[float]] = None,
+        moment: Optional[List[float]] = None,
         load_case: Optional[_CppLoadCase] = None
     ) -> None:
-        """Add a point load at a node.
+        """Add a point load at a position.
 
         Args:
-            position: [x, y, z] coordinates
-            dof: DOF index for load direction
-            value: Load magnitude [kN] or [kN·m]
+            position: [x, y, z] coordinates in meters
+            force: [Fx, Fy, Fz] force vector in kN (default: [0, 0, 0])
+            moment: [Mx, My, Mz] moment vector in kNm (default: [0, 0, 0])
             load_case: LoadCase to add to (uses default if None)
+
+        Example:
+            # Add vertical force at a node
+            model.add_point_load([6, 0, 0], force=[0, 0, -10])
+
+            # Add moment about Y axis
+            model.add_point_load([6, 0, 0], moment=[0, 100, 0])
+
+            # Add both force and moment
+            model.add_point_load([6, 0, 0], force=[0, 0, -10], moment=[0, 100, 0])
         """
-        node = self.find_node_at(position)
-        if node is None:
-            raise ValueError(f"No node found at position {position}")
+        if force is None and moment is None:
+            raise ValueError("At least one of 'force' or 'moment' must be provided")
+
+        force_vec = np.array(force if force is not None else [0.0, 0.0, 0.0], dtype=float)
+        moment_vec = np.array(moment if moment is not None else [0.0, 0.0, 0.0], dtype=float)
+        position_vec = np.array(position, dtype=float)
 
         if load_case is None:
             load_case = self.get_default_load_case()
 
-        load_case.add_nodal_load(node.id, dof, value)
+        load_case.add_nodal_load(position_vec, force_vec, moment_vec)
 
     def add_line_load(
         self,

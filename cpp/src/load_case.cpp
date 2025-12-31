@@ -58,18 +58,22 @@ LoadCase::LoadCase(int id, const std::string& name, LoadCaseType type)
     acceleration_ref_point_.setZero();
 }
 
-void LoadCase::add_nodal_load(int node_id, int local_dof, double value) {
-    // Search for existing load on this node/DOF
+void LoadCase::add_nodal_load(const Eigen::Vector3d& position,
+                              const Eigen::Vector3d& force,
+                              const Eigen::Vector3d& moment) {
+    // Search for existing load at this position (within tolerance)
+    const double tol = 1e-6;
     for (auto& load : nodal_loads_) {
-        if (load.node_id == node_id && load.local_dof == local_dof) {
-            // Accumulate
-            load.value += value;
+        if ((load.position - position).norm() < tol) {
+            // Accumulate forces and moments
+            load.force += force;
+            load.moment += moment;
             return;
         }
     }
 
     // New load
-    nodal_loads_.emplace_back(node_id, local_dof, value);
+    nodal_loads_.emplace_back(position, force, moment);
 }
 
 void LoadCase::add_line_load(int element_id,
@@ -106,9 +110,30 @@ Eigen::VectorXd LoadCase::assemble_load_vector(
 
     // 1. Direct nodal loads
     for (const auto& load : nodal_loads_) {
-        int global_dof = dof_handler.get_global_dof(load.node_id, load.local_dof);
-        if (global_dof >= 0 && global_dof < total_dofs) {
-            F(global_dof) += load.value;
+        // Find node at load position
+        Node* node = model.nodes.find_node(load.position.x(), load.position.y(), load.position.z());
+        if (!node) {
+            continue;  // Skip if node not found (shouldn't happen in well-formed model)
+        }
+
+        // Apply force components (DOFs 0, 1, 2 = UX, UY, UZ)
+        for (int i = 0; i < 3; i++) {
+            if (std::abs(load.force(i)) > 1e-10) {
+                int global_dof = dof_handler.get_global_dof(node->id, i);
+                if (global_dof >= 0 && global_dof < total_dofs) {
+                    F(global_dof) += load.force(i);
+                }
+            }
+        }
+
+        // Apply moment components (DOFs 3, 4, 5 = RX, RY, RZ)
+        for (int i = 0; i < 3; i++) {
+            if (std::abs(load.moment(i)) > 1e-10) {
+                int global_dof = dof_handler.get_global_dof(node->id, i + 3);
+                if (global_dof >= 0 && global_dof < total_dofs) {
+                    F(global_dof) += load.moment(i);
+                }
+            }
         }
     }
 

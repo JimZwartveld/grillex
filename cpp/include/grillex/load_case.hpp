@@ -64,15 +64,25 @@ enum class LoadCaseType {
 /**
  * @brief Nodal load structure
  *
- * Stores a concentrated force/moment at a node
+ * Stores concentrated forces and moments at a position.
+ * The position is used to find/create the node during assembly.
  */
 struct NodalLoad {
-    int node_id;                           ///< Node where load is applied
-    int local_dof;                         ///< Local DOF index (0-6: UX, UY, UZ, RX, RY, RZ, WARP)
-    double value;                          ///< Load magnitude [kN] or [kN·m]
+    Eigen::Vector3d position;              ///< [x, y, z] position in meters
+    Eigen::Vector3d force;                 ///< [Fx, Fy, Fz] force vector in kN
+    Eigen::Vector3d moment;                ///< [Mx, My, Mz] moment vector in kNm
 
-    NodalLoad(int node, int dof, double val)
-        : node_id(node), local_dof(dof), value(val) {}
+    NodalLoad(const Eigen::Vector3d& pos,
+              const Eigen::Vector3d& f,
+              const Eigen::Vector3d& m)
+        : position(pos), force(f), moment(m) {}
+
+    /**
+     * @brief Check if load has any non-zero force or moment
+     */
+    bool is_zero() const {
+        return force.norm() < 1e-10 && moment.norm() < 1e-10;
+    }
 };
 
 /**
@@ -121,13 +131,15 @@ public:
 
     /**
      * @brief Add a nodal load to this load case
-     * @param node_id Node ID
-     * @param local_dof Local DOF index (0-6)
-     * @param value Load value [kN] or [kN·m]
+     * @param position [x, y, z] coordinates in meters
+     * @param force [Fx, Fy, Fz] force vector in kN
+     * @param moment [Mx, My, Mz] moment vector in kNm
      *
-     * Loads accumulate if called multiple times for same node/DOF.
+     * Loads accumulate if called multiple times for same position.
      */
-    void add_nodal_load(int node_id, int local_dof, double value);
+    void add_nodal_load(const Eigen::Vector3d& position,
+                        const Eigen::Vector3d& force,
+                        const Eigen::Vector3d& moment = Eigen::Vector3d::Zero());
 
     /**
      * @brief Add a distributed line load to a beam element

@@ -209,8 +209,7 @@ class TestToolExecutor:
 
         result = executor.execute("add_point_load", {
             "position": [6, 0, 0],
-            "dof": "UZ",
-            "value": -10.0
+            "force": [0, 0, -10.0]
         })
         assert result.success is True
 
@@ -227,7 +226,7 @@ class TestToolExecutor:
             "material": "Steel"
         })
         executor.execute("fix_node", {"position": [0, 0, 0]})
-        executor.execute("add_point_load", {"position": [6, 0, 0], "dof": "UZ", "value": -10.0})
+        executor.execute("add_point_load", {"position": [6, 0, 0], "force": [0, 0, -10.0]})
 
         # Analyze
         result = executor.execute("analyze", {})
@@ -503,8 +502,7 @@ class TestIntegration:
         # Add tip load
         result = executor.execute("add_point_load", {
             "position": [4, 0, 0],
-            "dof": "UZ",
-            "value": -50.0
+            "force": [0, 0, -50.0]
         })
         assert result.success
 

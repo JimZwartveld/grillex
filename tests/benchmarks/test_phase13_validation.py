@@ -154,7 +154,7 @@ class TestSimplySupportedBeamBenchmark:
         model.fix_dof_at([L, 0, 0], DOFIndex.RX)
 
         # Point load at midspan (vertical, uses Iy)
-        model.add_point_load([L/2, 0, 0], DOFIndex.UZ, -P)
+        model.add_point_load([L/2, 0, 0], force=[0, 0, -P])
 
         assert model.analyze(), "Analysis failed"
 
@@ -207,7 +207,7 @@ class TestCantileverBeamBenchmark:
         model.fix_node_at([0, 0, 0])
 
         # Tip load (vertical, uses Iy)
-        model.add_point_load([L, 0, 0], DOFIndex.UZ, -P)
+        model.add_point_load([L, 0, 0], force=[0, 0, -P])
 
         assert model.analyze(), "Analysis failed"
 
@@ -243,7 +243,7 @@ class TestCantileverBeamBenchmark:
         beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE300", "Steel")
         model.fix_node_at([0, 0, 0])
         # Vertical load (bending about Y axis)
-        model.add_point_load([L, 0, 0], DOFIndex.UZ, -P)
+        model.add_point_load([L, 0, 0], force=[0, 0, -P])
 
         assert model.analyze(), "Analysis failed"
 
@@ -346,7 +346,7 @@ class TestBeamWithOffsetsBenchmark:
 
         # Apply weight
         weight = mass * 9.81
-        model1.add_point_load([L, 0, 0], DOFIndex.UZ, -weight)
+        model1.add_point_load([L, 0, 0], force=[0, 0, -weight])
 
         assert model1.analyze(), "Model 1 analysis failed"
         delta1 = abs(model1.get_displacement_at([L, 0, 0], DOFIndex.UZ))
@@ -372,7 +372,7 @@ class TestBeamWithOffsetsBenchmark:
         model2.add_cargo(cargo2)
 
         # Apply weight at beam tip (load transfers through cargo spring/link)
-        model2.add_point_load([L, 0, 0], DOFIndex.UZ, -weight)
+        model2.add_point_load([L, 0, 0], force=[0, 0, -weight])
 
         assert model2.analyze(), "Model 2 analysis failed"
         delta2 = abs(model2.get_displacement_at([L, 0, 0], DOFIndex.UZ))
@@ -423,7 +423,7 @@ class TestBeamWithOffsetsBenchmark:
         model.add_cargo(cargo)
 
         # Apply weight at beam tip (transfers through cargo)
-        model.add_point_load([L, 0, 0], DOFIndex.UZ, -weight)
+        model.add_point_load([L, 0, 0], force=[0, 0, -weight])
 
         assert model.analyze(), "Analysis failed"
 
@@ -492,7 +492,7 @@ class TestCargoOnSpringsBenchmark:
         model.add_cargo(cargo)
 
         # Apply cargo weight as point load (gravity direction is -Z)
-        model.add_point_load([L/2, 0, 0], DOFIndex.UZ, -weight)
+        model.add_point_load([L/2, 0, 0], force=[0, 0, -weight])
 
         assert model.analyze(), "Analysis failed"
 
@@ -541,7 +541,7 @@ class TestCargoOnSpringsBenchmark:
         model.add_cargo(cargo)
 
         # Apply cargo weight as point load
-        model.add_point_load([L, 0, 0], DOFIndex.UZ, -weight)
+        model.add_point_load([L, 0, 0], force=[0, 0, -weight])
 
         assert model.analyze(), "Analysis failed"
 
@@ -580,7 +580,7 @@ class TestSingularityDetection:
         model.add_beam_by_coords([0, 0, 0], [3, 0, 0], "IPE300", "Steel")
 
         # Apply a load
-        model.add_point_load([3, 0, 0], DOFIndex.UZ, -10.0)
+        model.add_point_load([3, 0, 0], force=[0, 0, -10.0])
 
         # Analysis should fail due to singular system
         result = model.analyze()
@@ -603,7 +603,7 @@ class TestSingularityDetection:
         # Only fix UX at one end - beam can still rotate and translate
         model.fix_dof_at([0, 0, 0], DOFIndex.UX)
 
-        model.add_point_load([3, 0, 0], DOFIndex.UZ, -10.0)
+        model.add_point_load([3, 0, 0], force=[0, 0, -10.0])
 
         # Analysis should fail - system is a mechanism
         result = model.analyze()
@@ -642,7 +642,7 @@ class TestDeflectionConvergence:
             beam = create_subdivided_beam(model, [0, 0, 0], [L, 0, 0], "IPE300", "Steel", n_elem)
             model.fix_node_at([0, 0, 0])
             # Vertical load (uses Iy)
-            model.add_point_load([L, 0, 0], DOFIndex.UZ, -P)
+            model.add_point_load([L, 0, 0], force=[0, 0, -P])
 
             assert model.analyze(), f"Analysis failed for {n_elem} elements"
 

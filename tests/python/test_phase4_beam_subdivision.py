@@ -406,7 +406,7 @@ class TestSubdivisionWithAnalysis:
         model.fix_dof_at([0, 0, 0], DOFIndex.RZ, 0.0)
 
         # Apply load at tip
-        model.add_point_load([6, 0, 0], DOFIndex.UY, -10.0)
+        model.add_point_load([6, 0, 0], force=[0, -10.0, 0])
 
         # Analyze
         success = model.analyze()
