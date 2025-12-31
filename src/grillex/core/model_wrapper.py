@@ -35,7 +35,7 @@ Usage:
     disp = model.get_displacement_at([6, 0, 0], DOFIndex.UY)
 """
 
-from typing import List, Tuple, Optional, Union, Dict, TYPE_CHECKING
+from typing import List, Tuple, Optional, Union, Dict
 from dataclasses import dataclass
 import numpy as np
 
@@ -50,9 +50,9 @@ from grillex._grillex_cpp import (
     DOFIndex,
     Node,
     InternalActions,
-    ActionExtreme,
     SpringElement as _CppSpringElement,
     LoadCaseResult,
+    PlateElement,
 )
 
 # Optional imports - Phase 15: Nonlinear Springs
@@ -88,9 +88,9 @@ except ImportError:
     LoadCombination = None
     LoadCombinationResult = None
 
-from .cargo import Cargo, CargoConnection
+from .cargo import Cargo
 from .plate import Plate, EdgeMeshControl, PlateBeamCoupling, SupportCurve
-from .element_types import get_element_type, create_plate_element
+from .element_types import get_element_type
 
 
 @dataclass
@@ -1223,7 +1223,7 @@ class StructuralModel:
             >>> stats = model.mesh()
             >>> print(f"Created {stats.n_plate_elements} plate elements")
         """
-        from grillex.meshing.gmsh_mesher import GmshPlateMesher, MeshResult
+        from grillex.meshing.gmsh_mesher import GmshPlateMesher
 
         stats = MeshStatistics()
 
@@ -1371,7 +1371,7 @@ class StructuralModel:
                 if not edge_node_ids:
                     continue
 
-                beam = coupling.beam
+                _beam = coupling.beam  # noqa: F841
                 offset = np.array(coupling.offset)
 
                 # For each node on the plate edge, create a rigid link to the beam
@@ -1406,7 +1406,7 @@ class StructuralModel:
                 stats.n_beams_subdivided += 1
 
         if verbose:
-            print(f"\nMesh Statistics:")
+            print("\nMesh Statistics:")
             print(f"  Total plate nodes: {stats.n_plate_nodes}")
             print(f"  Total plate elements: {stats.n_plate_elements}")
             print(f"    Quad elements: {stats.n_quad_elements}")

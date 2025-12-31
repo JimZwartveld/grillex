@@ -34,7 +34,7 @@ Usage:
     model.add_cargo(cargo)
 """
 
-from typing import List, Optional, Tuple, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 import numpy as np
 
@@ -45,7 +45,6 @@ if TYPE_CHECKING:
         PointMass,
         SpringElement,
         RigidLink,
-        LoadingCondition as _LoadingCondition
     )
 
 
