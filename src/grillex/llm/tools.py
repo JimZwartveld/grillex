@@ -802,7 +802,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "update_beam",
-        "description": "Update a beam's material and/or section. Use this to change beam properties after creation.",
+        "description": "Update a beam's properties including material, section, formulation, warping, and offsets.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -817,6 +817,33 @@ TOOLS: List[Dict[str, Any]] = [
                 "section": {
                     "type": "string",
                     "description": "New section name (must exist in model). Optional - only provide if changing."
+                },
+                "roll_angle": {
+                    "type": "number",
+                    "description": "Roll angle about beam axis in radians. Optional."
+                },
+                "formulation": {
+                    "type": "string",
+                    "enum": ["euler_bernoulli", "timoshenko"],
+                    "description": "Beam formulation type. 'euler_bernoulli' for slender beams (no shear deformation), 'timoshenko' for stocky beams (includes shear deformation). Optional."
+                },
+                "warping_enabled": {
+                    "type": "boolean",
+                    "description": "Enable 7th DOF for warping of thin-walled open sections. Optional."
+                },
+                "offset_i": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "End offset at start node [x, y, z] in local beam coordinates (meters). Optional."
+                },
+                "offset_j": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "End offset at end node [x, y, z] in local beam coordinates (meters). Optional."
                 }
             },
             "required": ["beam_id"]
@@ -2152,7 +2179,7 @@ class ToolExecutor:
         )
 
     def _tool_update_beam(self, params: Dict[str, Any]) -> ToolResult:
-        """Update a beam's material and/or section."""
+        """Update a beam's properties including material, section, formulation, warping, and offsets."""
         if self.model is None:
             return ToolResult(success=False, error="No model created.")
 
@@ -2203,6 +2230,43 @@ class ToolExecutor:
             for elem in beam.elements:
                 elem.section = beam.section
             changes.append(f"section -> {section_name}")
+
+        # Update formulation if provided
+        if "formulation" in params and params["formulation"] is not None:
+            formulation_str = params["formulation"].lower()
+            from grillex.core.data_types import BeamFormulation
+            if formulation_str == "timoshenko":
+                new_formulation = BeamFormulation.Timoshenko
+            else:
+                new_formulation = BeamFormulation.EulerBernoulli
+            # Update config on underlying elements
+            for elem in beam.elements:
+                elem.config.formulation = new_formulation
+                if formulation_str == "timoshenko":
+                    elem.config.include_shear_deformation = True
+            changes.append(f"formulation -> {formulation_str}")
+
+        # Update warping if provided
+        if "warping_enabled" in params and params["warping_enabled"] is not None:
+            warping = params["warping_enabled"]
+            for elem in beam.elements:
+                elem.config.include_warping = warping
+            changes.append(f"warping_enabled -> {warping}")
+
+        # Update offsets if provided
+        if "offset_i" in params and params["offset_i"] is not None:
+            import numpy as np
+            offset_i = np.array(params["offset_i"])
+            for elem in beam.elements:
+                elem.offset_i = offset_i
+            changes.append(f"offset_i -> {params['offset_i']}")
+
+        if "offset_j" in params and params["offset_j"] is not None:
+            import numpy as np
+            offset_j = np.array(params["offset_j"])
+            for elem in beam.elements:
+                elem.offset_j = offset_j
+            changes.append(f"offset_j -> {params['offset_j']}")
 
         if not changes:
             return ToolResult(
