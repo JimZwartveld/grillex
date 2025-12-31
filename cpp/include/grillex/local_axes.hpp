@@ -26,6 +26,7 @@ public:
     Eigen::Vector3d x_axis;           ///< Local x-axis (along beam)
     Eigen::Vector3d y_axis;           ///< Local y-axis
     Eigen::Vector3d z_axis;           ///< Local z-axis
+    double roll = 0.0;                ///< Roll angle about x-axis [radians]
 
     /**
      * @brief Construct local axes from two points

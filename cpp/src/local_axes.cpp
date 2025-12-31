@@ -6,7 +6,8 @@ namespace grillex {
 
 LocalAxes::LocalAxes(const Eigen::Vector3d& end_a,
                      const Eigen::Vector3d& end_b,
-                     double roll_angle) {
+                     double roll_angle)
+    : roll(roll_angle) {
     // Step 1: Compute x_axis = normalize(end_b - end_a)
     Eigen::Vector3d beam_vector = end_b - end_a;
     double length = beam_vector.norm();

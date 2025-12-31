@@ -301,6 +301,8 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                       "Local y-axis")
         .def_readonly("z_axis", &grillex::LocalAxes::z_axis,
                       "Local z-axis")
+        .def_readwrite("roll", &grillex::LocalAxes::roll,
+                       "Roll angle about x-axis [radians]")
         .def("to_local", &grillex::LocalAxes::to_local,
              py::arg("global"), "Transform vector from global to local coordinates")
         .def("to_global", &grillex::LocalAxes::to_global,
@@ -334,10 +336,10 @@ PYBIND11_MODULE(_grillex_cpp, m) {
                       "Material", py::return_value_policy::reference)
         .def_readonly("section", &grillex::BeamElement::section,
                       "Section", py::return_value_policy::reference)
-        .def_readonly("local_axes", &grillex::BeamElement::local_axes,
-                      "Local coordinate system")
-        .def_readonly("length", &grillex::BeamElement::length,
-                      "Element length [m]")
+        .def_readwrite("local_axes", &grillex::BeamElement::local_axes,
+                       "Local coordinate system (can be updated when node positions change)")
+        .def_readwrite("length", &grillex::BeamElement::length,
+                       "Element length [m] (can be updated when node positions change)")
         .def_readwrite("offset_i", &grillex::BeamElement::offset_i,
                        "End offset at node i [m]")
         .def_readwrite("offset_j", &grillex::BeamElement::offset_j,

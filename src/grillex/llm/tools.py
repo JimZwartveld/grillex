@@ -802,13 +802,27 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "update_beam",
-        "description": "Update a beam's properties including material, section, formulation, warping, and offsets.",
+        "description": "Update a beam's properties including position, material, section, formulation, warping, and offsets.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "beam_id": {
                     "type": "integer",
                     "description": "ID of the beam to update"
+                },
+                "start_position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New start position [x, y, z] in meters. Optional - only provide if changing. WARNING: This will move the node, affecting any other beams connected to it."
+                },
+                "end_position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New end position [x, y, z] in meters. Optional - only provide if changing. WARNING: This will move the node, affecting any other beams connected to it."
                 },
                 "material": {
                     "type": "string",
@@ -2214,6 +2228,75 @@ class ToolExecutor:
             )
 
         changes = []
+        import numpy as np
+
+        # Helper to check if a node is shared with other elements
+        def is_node_shared(node_id: int, exclude_beam_id: int) -> bool:
+            for b in self.model.beams:
+                if b.beam_id == exclude_beam_id:
+                    continue
+                for elem in b.elements:
+                    if elem.node_i.id == node_id or elem.node_j.id == node_id:
+                        return True
+            # Also check springs
+            for s in self.model._cpp_model.springs:
+                if s.node_i.id == node_id or s.node_j.id == node_id:
+                    return True
+            return False
+
+        # Helper to recalculate element geometry (length and local_axes)
+        def recalculate_element_geometry(elem):
+            from grillex.core.data_types import LocalAxes
+            pos_i = np.array([elem.node_i.x, elem.node_i.y, elem.node_i.z])
+            pos_j = np.array([elem.node_j.x, elem.node_j.y, elem.node_j.z])
+            elem.length = float(np.linalg.norm(pos_j - pos_i))
+            # Preserve the current roll angle
+            current_roll = elem.local_axes.roll
+            elem.local_axes = LocalAxes(pos_i, pos_j, current_roll)
+
+        positions_changed = False
+
+        # Update start position if provided
+        if "start_position" in params and params["start_position"] is not None:
+            new_pos = params["start_position"]
+            if len(beam.elements) > 0:
+                node = beam.elements[0].node_i
+                if is_node_shared(node.id, beam.beam_id):
+                    return ToolResult(
+                        success=False,
+                        error=f"Cannot update start position: node {node.id} is shared with other elements. Moving it would affect all connected beams.",
+                        suggestion="Delete this beam and create a new one at the desired position, or disconnect the shared elements first."
+                    )
+                old_pos = [node.x, node.y, node.z]
+                node.x, node.y, node.z = new_pos[0], new_pos[1], new_pos[2]
+                # Update beam's Python-level start_pos
+                beam.start_pos = np.array(new_pos)
+                positions_changed = True
+                changes.append(f"start_position {old_pos} -> {new_pos}")
+
+        # Update end position if provided
+        if "end_position" in params and params["end_position"] is not None:
+            new_pos = params["end_position"]
+            if len(beam.elements) > 0:
+                node = beam.elements[-1].node_j
+                if is_node_shared(node.id, beam.beam_id):
+                    return ToolResult(
+                        success=False,
+                        error=f"Cannot update end position: node {node.id} is shared with other elements. Moving it would affect all connected beams.",
+                        suggestion="Delete this beam and create a new one at the desired position, or disconnect the shared elements first."
+                    )
+                old_pos = [node.x, node.y, node.z]
+                node.x, node.y, node.z = new_pos[0], new_pos[1], new_pos[2]
+                # Update beam's Python-level end_pos
+                beam.end_pos = np.array(new_pos)
+                positions_changed = True
+                changes.append(f"end_position {old_pos} -> {new_pos}")
+
+        # Recalculate geometry for all elements if positions changed
+        if positions_changed:
+            beam.length = float(np.linalg.norm(beam.end_pos - beam.start_pos))
+            for elem in beam.elements:
+                recalculate_element_geometry(elem)
 
         # Update material if provided
         if "material" in params and params["material"]:
@@ -2285,8 +2368,12 @@ class ToolExecutor:
         # Update roll angle if provided
         if "roll_angle" in params and params["roll_angle"] is not None:
             roll = params["roll_angle"]
+            from grillex.core.data_types import LocalAxes
             for elem in beam.elements:
-                elem.local_axes.roll = roll
+                # Recalculate local_axes with the new roll angle
+                pos_i = np.array([elem.node_i.x, elem.node_i.y, elem.node_i.z])
+                pos_j = np.array([elem.node_j.x, elem.node_j.y, elem.node_j.z])
+                elem.local_axes = LocalAxes(pos_i, pos_j, roll)
             changes.append(f"roll_angle -> {roll}")
 
         # Update releases if provided
