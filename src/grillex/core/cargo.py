@@ -256,8 +256,7 @@ class Cargo:
             cargo_offset: Optional offset from CoG to cargo connection point [m]
                           If None, connection is directly at CoG
             loading_condition: When this connection is active:
-                - "all": Active for all load cases (default)
-                - "static": Only active for Permanent load cases (bearing pads)
+                - "all": Active for all load cases (default, use for bearing pads)
                 - "dynamic": Only active for Variable/Environmental load cases (seafastening)
             name: Optional name identifier for the connection (e.g., "Corner 1", "SF-A")
                   If None, auto-generates name like "Conn 1", "Conn 2", etc.

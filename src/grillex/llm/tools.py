@@ -1194,9 +1194,9 @@ TOOLS: List[Dict[str, Any]] = [
                 "stiffness": {
                     "type": "array",
                     "items": {"type": "number"},
-                    "minItems": 6,
+                    "minItems": 3,
                     "maxItems": 6,
-                    "description": "Spring stiffnesses [kx, ky, kz, krx, kry, krz]. Units: translations [kN/m], rotations [kN·m/rad]. Defaults to stiff (1e9) if not provided."
+                    "description": "Spring stiffnesses. Can be [kx, ky, kz] (3 values, rotational defaults to 0) or [kx, ky, kz, krx, kry, krz] (6 values). Units: translations [kN/m], rotations [kN·m/rad]. Defaults to stiff (1e9) if not provided."
                 },
                 "cargo_offset": {
                     "type": "array",
@@ -1204,6 +1204,11 @@ TOOLS: List[Dict[str, Any]] = [
                     "minItems": 3,
                     "maxItems": 3,
                     "description": "Optional offset from cargo CoG to connection point on cargo [dx, dy, dz] in meters"
+                },
+                "loading_condition": {
+                    "type": "string",
+                    "enum": ["all", "dynamic"],
+                    "description": "When the connection is active: 'all' (always, default) or 'dynamic' (only during environmental/variable loads)"
                 }
             },
             "required": ["cargo_id", "position"]
@@ -3440,6 +3445,11 @@ class ToolExecutor:
         name = params.get("name")
         stiffness = params.get("stiffness")  # Defaults to stiff in add_connection
         cargo_offset = params.get("cargo_offset")
+        loading_condition = params.get("loading_condition", "all")
+
+        # Handle 3-element stiffness (expand to 6 with zero rotational stiffness)
+        if stiffness is not None and len(stiffness) == 3:
+            stiffness = [stiffness[0], stiffness[1], stiffness[2], 0.0, 0.0, 0.0]
 
         # Find the cargo by ID
         cargo = None
@@ -3461,6 +3471,7 @@ class ToolExecutor:
             structural_position=position,
             stiffness=stiffness,
             cargo_offset=cargo_offset,
+            loading_condition=loading_condition,
             name=name
         )
 
