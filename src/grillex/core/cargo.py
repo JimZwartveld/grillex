@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
 
 # Valid loading condition values
-VALID_LOADING_CONDITIONS = ("all", "static", "dynamic")
+VALID_LOADING_CONDITIONS = ("all", "dynamic")
 
 
 @dataclass
@@ -418,7 +418,6 @@ class Cargo:
                 from grillex._grillex_cpp import LoadingCondition
                 loading_condition_map = {
                     "all": LoadingCondition.All,
-                    "static": LoadingCondition.Static,
                     "dynamic": LoadingCondition.Dynamic
                 }
                 spring.loading_condition = loading_condition_map[conn.loading_condition]

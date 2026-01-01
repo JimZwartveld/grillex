@@ -434,24 +434,23 @@ class TestCargoElementGeneration:
 
 class TestStaticDynamicCargoConnections:
     """
-    Integration tests for static/dynamic cargo connections.
+    Integration tests for cargo connections with different loading conditions.
 
     These tests verify that the stiffness matrix filtering works correctly:
-    - Static springs only contribute to Permanent load cases
+    - Springs with loading_condition="all" contribute to all load case types (including Permanent)
     - Dynamic springs only contribute to Variable/Environmental/Accidental load cases
-    - Springs with loading_condition="all" contribute to all load case types
     """
 
-    def test_static_connections_only_in_gravity(self):
+    def test_all_connections_active_in_gravity(self):
         """
-        Static connections should carry load in Permanent (gravity) load cases.
+        Connections with loading_condition="all" should carry load in Permanent (gravity) load cases.
 
         Setup:
-        - Cargo with 4 static vertical connections (bearing pads)
+        - Cargo with 4 connections (bearing pads) with loading_condition="all"
         - Apply gravity (Permanent load case)
         - Verify all 4 connections have vertical reactions
         """
-        model = StructuralModel(name="Static Connections Test")
+        model = StructuralModel(name="All Connections Test")
         model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
         model.add_section("HE100A", A=0.002, Iy=3e-5, Iz=1e-5, J=5e-7)
 
@@ -465,15 +464,15 @@ class TestStaticDynamicCargoConnections:
         model.fix_node_at([0, 5, 0])
         model.fix_node_at([10, 5, 0])
 
-        # Create cargo with 4 static connections
+        # Create cargo with 4 connections (all = always active, use for bearing pads)
         cargo = (
-            Cargo("StaticCargo")
+            Cargo("AllCargo")
             .set_cog([5.0, 2.5, 1.0])
             .set_mass(100.0)  # 100 mT
-            .add_connection([0, 0, 0], [1e9] * 6, loading_condition="static")
-            .add_connection([10, 0, 0], [1e9] * 6, loading_condition="static")
-            .add_connection([0, 5, 0], [1e9] * 6, loading_condition="static")
-            .add_connection([10, 5, 0], [1e9] * 6, loading_condition="static")
+            .add_connection([0, 0, 0], [1e9] * 6, loading_condition="all")
+            .add_connection([10, 0, 0], [1e9] * 6, loading_condition="all")
+            .add_connection([0, 5, 0], [1e9] * 6, loading_condition="all")
+            .add_connection([10, 5, 0], [1e9] * 6, loading_condition="all")
         )
         model.add_cargo(cargo)
 
@@ -500,10 +499,10 @@ class TestStaticDynamicCargoConnections:
         Dynamic connections should NOT carry load in Permanent (gravity) load cases.
 
         Setup:
-        - Cargo with static connections at both ends (full stiffness for gravity)
+        - Cargo with "all" connections at both ends (full stiffness for gravity)
         - Cargo with dynamic connections at same ends (extra stiffness for transport)
         - Apply gravity (Permanent load case)
-        - Only the static springs should be active
+        - Only the "all" springs should be active
 
         Note: Dynamic connections must be at existing structural nodes to avoid
         creating floating nodes that become unrestrained when springs are excluded.
@@ -519,16 +518,16 @@ class TestStaticDynamicCargoConnections:
         model.fix_node_at([0, 0, 0])
         model.fix_node_at([10, 0, 0])
 
-        # Create cargo with static connections that provide full restraint
-        # Static connections at beam ends provide 6-DOF restraint each
+        # Create cargo with "all" connections that provide full restraint
+        # "All" connections at beam ends provide 6-DOF restraint each
         # Dynamic connections at same nodes add extra stiffness for environmental cases
         cargo = (
             Cargo("MixedCargo")
             .set_cog([5.0, 0.0, 1.0])
             .set_mass(50.0)
-            # Static connections with moderate stiffness (like bearing pads)
-            .add_connection([0, 0, 0], [1e8] * 6, loading_condition="static")
-            .add_connection([10, 0, 0], [1e8] * 6, loading_condition="static")
+            # "All" connections with moderate stiffness (like bearing pads)
+            .add_connection([0, 0, 0], [1e8] * 6, loading_condition="all")
+            .add_connection([10, 0, 0], [1e8] * 6, loading_condition="all")
             # Dynamic connections at same nodes with additional stiffness (seafastening)
             .add_connection([0, 0, 0], [1e9, 1e9, 0, 0, 0, 0], loading_condition="dynamic")
             .add_connection([10, 0, 0], [1e9, 1e9, 0, 0, 0, 0], loading_condition="dynamic")
@@ -547,21 +546,21 @@ class TestStaticDynamicCargoConnections:
         result = model.analyze()
         assert result, "Analysis should succeed"
 
-        # Verify CoG deflects (static springs are working)
+        # Verify CoG deflects ("all" springs are working)
         disp_z = model._cpp_model.get_node_displacement(cargo.cog_node.id, DOFIndex.UZ)
-        assert disp_z < 0, "CoG should deflect (static springs active)"
+        assert disp_z < 0, "CoG should deflect ('all' springs active)"
 
         # The dynamic springs don't contribute stiffness in this Permanent load case,
-        # but since static springs provide full restraint, the system is stable
+        # but since "all" springs provide full restraint, the system is stable
 
     def test_dynamic_connections_active_in_environmental(self):
         """
         Dynamic connections should carry load in Environmental load cases.
 
         Setup:
-        - Cargo with static + dynamic connections at existing structural nodes
+        - Cargo with "all" + dynamic connections at existing structural nodes
         - Apply lateral load (Environmental load case)
-        - Both static and dynamic springs should be active, giving higher stiffness
+        - Both "all" and dynamic springs should be active, giving higher stiffness
 
         Note: Dynamic connections must be at existing structural nodes to avoid
         creating floating nodes that become unrestrained when springs are excluded.
@@ -577,15 +576,15 @@ class TestStaticDynamicCargoConnections:
         model.fix_node_at([0, 0, 0])
         model.fix_node_at([10, 0, 0])
 
-        # Create cargo with mixed static/dynamic connections at beam ends
-        # Static springs provide base restraint, dynamic adds extra for environmental loads
+        # Create cargo with mixed "all"/dynamic connections at beam ends
+        # "All" springs provide base restraint, dynamic adds extra for environmental loads
         cargo = (
             Cargo("MixedCargo")
             .set_cog([5.0, 0.0, 1.0])
             .set_mass(50.0)
-            # Static connections with moderate stiffness (bearing pads)
-            .add_connection([0, 0, 0], [1e8] * 6, loading_condition="static")
-            .add_connection([10, 0, 0], [1e8] * 6, loading_condition="static")
+            # "All" connections with moderate stiffness (bearing pads)
+            .add_connection([0, 0, 0], [1e8] * 6, loading_condition="all")
+            .add_connection([10, 0, 0], [1e8] * 6, loading_condition="all")
             # Dynamic connections at same nodes add horizontal stiffness (seafastening)
             .add_connection([0, 0, 0], [1e9, 1e9, 0, 0, 0, 0], loading_condition="dynamic")
             .add_connection([10, 0, 0], [1e9, 1e9, 0, 0, 0, 0], loading_condition="dynamic")
@@ -607,19 +606,19 @@ class TestStaticDynamicCargoConnections:
         # Get horizontal displacement - should be small because all springs are active
         disp_x = model._cpp_model.get_node_displacement(cargo.cog_node.id, DOFIndex.UX)
 
-        # With both static and dynamic springs active for this load case,
+        # With both "all" and dynamic springs active for this load case,
         # the cargo should have very small lateral displacement
-        # Total X stiffness = 2*1e8 (static) + 2*1e9 (dynamic) = 2.2e9 kN/m
+        # Total X stiffness = 2*1e8 ("all") + 2*1e9 (dynamic) = 2.2e9 kN/m
         # Expected displacement = 50 kN / 2.2e9 kN/m ≈ 2.3e-8 m
         assert disp_x > 0, "Should have some lateral displacement"
         assert abs(disp_x) < 1e-6, "Springs should resist lateral movement"
 
     def test_mixed_load_cases(self):
         """
-        Test that static and dynamic connections work correctly across different load cases.
+        Test that "all" and dynamic connections work correctly across different load cases.
 
         Setup:
-        - Cargo with static bearings + dynamic seafastening at existing structural nodes
+        - Cargo with "all" bearings + dynamic seafastening at existing structural nodes
         - Analyze gravity (Permanent) and roll (Environmental)
         - Verify correct spring activation for each case
 
@@ -637,16 +636,16 @@ class TestStaticDynamicCargoConnections:
         model.fix_node_at([0, 0, 0])
         model.fix_node_at([10, 0, 0])
 
-        # Create cargo with static and dynamic connections at beam ends
-        # Static connections provide full restraint during set-down
+        # Create cargo with "all" and dynamic connections at beam ends
+        # "All" connections provide full restraint during set-down
         # Dynamic connections add extra horizontal restraint for environmental loads
         cargo = (
             Cargo("SeafastenedCargo")
             .set_cog([5.0, 0.0, 1.0])
             .set_mass(100.0)
-            # Static connections with moderate stiffness (bearing pads)
-            .add_connection([0, 0, 0], [1e8] * 6, loading_condition="static")
-            .add_connection([10, 0, 0], [1e8] * 6, loading_condition="static")
+            # "All" connections with moderate stiffness (bearing pads)
+            .add_connection([0, 0, 0], [1e8] * 6, loading_condition="all")
+            .add_connection([10, 0, 0], [1e8] * 6, loading_condition="all")
             # Dynamic seafastening at same nodes (adds extra horizontal restraint)
             .add_connection([0, 0, 0], [1e9, 1e9, 0, 0, 0, 0], loading_condition="dynamic")
             .add_connection([10, 0, 0], [1e9, 1e9, 0, 0, 0, 0], loading_condition="dynamic")
@@ -668,15 +667,15 @@ class TestStaticDynamicCargoConnections:
         result = model.analyze()
         assert result, "Analysis should succeed"
 
-        # Check gravity case - only static springs active
+        # Check gravity case - only "all" springs active
         model.set_active_load_case(lc_gravity)
         disp_z_gravity = model._cpp_model.get_node_displacement(cargo.cog_node.id, DOFIndex.UZ)
         assert disp_z_gravity < 0, "Gravity case: CoG should deflect vertically"
 
-        # Check roll case - all springs active (static + dynamic)
+        # Check roll case - all springs active ("all" + dynamic)
         model.set_active_load_case(lc_roll)
         disp_x_roll = model._cpp_model.get_node_displacement(cargo.cog_node.id, DOFIndex.UX)
-        # With 4 springs active (2 static + 2 dynamic), lateral displacement should be very small
+        # With 4 springs active (2 "all" + 2 dynamic), lateral displacement should be very small
         assert abs(disp_x_roll) < 1e-6, "Roll case: springs should resist lateral movement"
 
     def test_backward_compatibility_all_connections(self):
@@ -734,8 +733,10 @@ class TestCargoLoadingCondition:
     """
     Tests for cargo loading condition feature.
 
-    This feature allows connections to be marked as "static" or "dynamic"
+    This feature allows connections to be marked as "all" or "dynamic"
     to model the physical reality of cargo set-down and seafastening.
+    - "all": Active for all load case types (use for bearing pads)
+    - "dynamic": Only active for Variable/Environmental/Accidental (use for seafastening)
     """
 
     def test_loading_condition_default_is_all(self):
@@ -748,17 +749,6 @@ class TestCargoLoadingCondition:
         )
 
         assert cargo.connections[0].loading_condition == "all"
-
-    def test_loading_condition_static(self):
-        """Can set loading_condition to 'static' for bearing pads."""
-        cargo = (
-            Cargo("Test")
-            .set_cog([0, 0, 1])
-            .set_mass(10.0)
-            .add_connection([0, 0, 0], [0, 0, 1e9, 0, 0, 0], loading_condition="static")
-        )
-
-        assert cargo.connections[0].loading_condition == "static"
 
     def test_loading_condition_dynamic(self):
         """Can set loading_condition to 'dynamic' for seafastening."""
@@ -781,21 +771,21 @@ class TestCargoLoadingCondition:
         assert "loading_condition must be one of" in str(exc_info.value)
 
     def test_loading_condition_mixed_connections(self):
-        """Can have both static and dynamic connections on same cargo."""
+        """Can have both 'all' and dynamic connections on same cargo."""
         cargo = (
             Cargo("Test")
             .set_cog([5, 5, 2])
             .set_mass(50.0)
-            # Static connections (bearing pads)
-            .add_connection([0, 0, 0], [0, 0, 1e9, 0, 0, 0], loading_condition="static")
-            .add_connection([10, 0, 0], [0, 0, 1e9, 0, 0, 0], loading_condition="static")
+            # "All" connections (bearing pads)
+            .add_connection([0, 0, 0], [0, 0, 1e9, 0, 0, 0], loading_condition="all")
+            .add_connection([10, 0, 0], [0, 0, 1e9, 0, 0, 0], loading_condition="all")
             # Dynamic connections (seafastening)
             .add_connection([5, 0, 0], [1e9, 1e9, 0, 0, 0, 0], loading_condition="dynamic")
         )
 
         assert len(cargo.connections) == 3
-        assert cargo.connections[0].loading_condition == "static"
-        assert cargo.connections[1].loading_condition == "static"
+        assert cargo.connections[0].loading_condition == "all"
+        assert cargo.connections[1].loading_condition == "all"
         assert cargo.connections[2].loading_condition == "dynamic"
 
     def test_loading_condition_set_on_spring_element(self):
@@ -810,21 +800,18 @@ class TestCargoLoadingCondition:
             Cargo("Test")
             .set_cog([5, 0, 1])
             .set_mass(10.0)
-            .add_connection([0, 0, 0], [0, 0, 1e9, 0, 0, 0], loading_condition="static")
+            .add_connection([0, 0, 0], [0, 0, 1e9, 0, 0, 0], loading_condition="all")
             .add_connection([10, 0, 0], [1e9, 1e9, 0, 0, 0, 0], loading_condition="dynamic")
-            .add_connection([5, 0, 0], [1e6] * 6, loading_condition="all")
         )
 
         model.add_cargo(cargo)
 
         # Check that spring elements have correct loading_condition
-        static_spring = cargo.connections[0].spring_element
+        all_spring = cargo.connections[0].spring_element
         dynamic_spring = cargo.connections[1].spring_element
-        all_spring = cargo.connections[2].spring_element
 
-        assert static_spring.loading_condition == LoadingCondition.Static
-        assert dynamic_spring.loading_condition == LoadingCondition.Dynamic
         assert all_spring.loading_condition == LoadingCondition.All
+        assert dynamic_spring.loading_condition == LoadingCondition.Dynamic
 
     def test_is_active_for_load_case(self):
         """SpringElement.is_active_for_load_case returns correct values."""
@@ -837,10 +824,7 @@ class TestCargoLoadingCondition:
         spring_all = SpringElement(1, node_i, node_j)
         spring_all.loading_condition = LoadingCondition.All
 
-        spring_static = SpringElement(2, node_i, node_j)
-        spring_static.loading_condition = LoadingCondition.Static
-
-        spring_dynamic = SpringElement(3, node_i, node_j)
+        spring_dynamic = SpringElement(2, node_i, node_j)
         spring_dynamic.loading_condition = LoadingCondition.Dynamic
 
         # Test "All" condition - active for all load case types
@@ -848,12 +832,6 @@ class TestCargoLoadingCondition:
         assert spring_all.is_active_for_load_case(LoadCaseType.Variable) is True
         assert spring_all.is_active_for_load_case(LoadCaseType.Environmental) is True
         assert spring_all.is_active_for_load_case(LoadCaseType.Accidental) is True
-
-        # Test "Static" condition - only active for Permanent
-        assert spring_static.is_active_for_load_case(LoadCaseType.Permanent) is True
-        assert spring_static.is_active_for_load_case(LoadCaseType.Variable) is False
-        assert spring_static.is_active_for_load_case(LoadCaseType.Environmental) is False
-        assert spring_static.is_active_for_load_case(LoadCaseType.Accidental) is False
 
         # Test "Dynamic" condition - active for Variable/Environmental/Accidental
         assert spring_dynamic.is_active_for_load_case(LoadCaseType.Permanent) is False
