@@ -951,6 +951,150 @@ Eigen::Matrix<double, 12, 1> BeamElement::equivalent_nodal_forces(
 }
 
 // ============================================================================
+// Concentrated Load Equivalent Nodal Forces
+// ============================================================================
+
+std::pair<bool, double> BeamElement::point_on_element(
+    const Eigen::Vector3d& point,
+    double tolerance) const
+{
+    // Get node positions
+    Eigen::Vector3d p1 = node_i->position();
+    Eigen::Vector3d p2 = node_j->position();
+
+    // Direction vector of beam
+    Eigen::Vector3d d = p2 - p1;
+    double L = d.norm();
+
+    if (L < 1e-10) {
+        // Degenerate element
+        return {false, 0.0};
+    }
+
+    // Normalized direction
+    Eigen::Vector3d d_norm = d / L;
+
+    // Vector from p1 to point
+    Eigen::Vector3d v = point - p1;
+
+    // Project onto beam axis
+    double t = v.dot(d_norm);
+
+    // Parametric position (0 to 1)
+    double xi = t / L;
+
+    // Check if within element bounds (with small tolerance for endpoints)
+    if (xi < -tolerance/L || xi > 1.0 + tolerance/L) {
+        return {false, xi};
+    }
+
+    // Check perpendicular distance from beam axis
+    Eigen::Vector3d closest_point = p1 + t * d_norm;
+    double perp_distance = (point - closest_point).norm();
+
+    if (perp_distance > tolerance) {
+        return {false, xi};
+    }
+
+    // Clamp to [0, 1]
+    xi = std::max(0.0, std::min(1.0, xi));
+
+    return {true, xi};
+}
+
+Eigen::Matrix<double, 12, 1> BeamElement::equivalent_nodal_forces_concentrated(
+    const Eigen::Vector3d& force,
+    const Eigen::Vector3d& moment,
+    double xi) const
+{
+    // Clamp xi to valid range
+    xi = std::max(0.0, std::min(1.0, xi));
+
+    // Get transformation matrix
+    Eigen::Matrix<double, 12, 12> T = transformation_matrix();
+    Eigen::Matrix3d R = T.block<3, 3>(0, 0);  // Local-to-global rotation
+
+    // Transform global force/moment to local coordinates
+    Eigen::Vector3d f_local = R.transpose() * force;
+    Eigen::Vector3d m_local = R.transpose() * moment;
+
+    // Element length
+    double L = length;
+
+    // Shape function values at xi
+    // N1 = (1 - xi)^2 * (1 + 2*xi)    - deflection at node i
+    // N2 = xi * (1 - xi)^2 * L        - rotation at node i (scaled by L)
+    // N3 = xi^2 * (3 - 2*xi)          - deflection at node j
+    // N4 = -xi^2 * (1 - xi) * L       - rotation at node j (scaled by L)
+
+    double one_minus_xi = 1.0 - xi;
+    double xi2 = xi * xi;
+    double one_minus_xi2 = one_minus_xi * one_minus_xi;
+
+    double N1 = one_minus_xi2 * (1.0 + 2.0 * xi);
+    double N2 = L * xi * one_minus_xi2;
+    double N3 = xi2 * (3.0 - 2.0 * xi);
+    double N4 = -L * xi2 * one_minus_xi;
+
+    // Initialize local force vector
+    Eigen::Matrix<double, 12, 1> f_equiv_local = Eigen::Matrix<double, 12, 1>::Zero();
+
+    // ---------------------------
+    // Axial force (local x)
+    // ---------------------------
+    // Linear distribution: F_i = P * (1 - xi), F_j = P * xi
+    f_equiv_local(0) = f_local(0) * one_minus_xi;   // f_x at node i
+    f_equiv_local(6) = f_local(0) * xi;             // f_x at node j
+
+    // ---------------------------
+    // Transverse force in local y (bending about z-axis)
+    // ---------------------------
+    f_equiv_local(1) = f_local(1) * N1;             // f_y at node i
+    f_equiv_local(5) = f_local(1) * N2 / L;         // m_z at node i (N2 includes L, divide out for moment)
+    f_equiv_local(7) = f_local(1) * N3;             // f_y at node j
+    f_equiv_local(11) = f_local(1) * N4 / L;        // m_z at node j
+
+    // Actually, the shape functions for equivalent nodal forces are:
+    // For force P at position a from node i:
+    // F_i = P * (1 - xi)^2 * (1 + 2*xi)
+    // M_i = P * L * xi * (1 - xi)^2
+    // F_j = P * xi^2 * (3 - 2*xi)
+    // M_j = -P * L * xi^2 * (1 - xi)
+    f_equiv_local(5) = f_local(1) * xi * one_minus_xi2 * L;     // m_z at node i
+    f_equiv_local(11) = -f_local(1) * xi2 * one_minus_xi * L;   // m_z at node j
+
+    // ---------------------------
+    // Transverse force in local z (bending about y-axis)
+    // ---------------------------
+    f_equiv_local(2) = f_local(2) * N1;             // f_z at node i
+    f_equiv_local(4) = -f_local(2) * xi * one_minus_xi2 * L;    // m_y at node i (sign convention)
+    f_equiv_local(8) = f_local(2) * N3;             // f_z at node j
+    f_equiv_local(10) = f_local(2) * xi2 * one_minus_xi * L;    // m_y at node j
+
+    // ---------------------------
+    // Torsion (moment about local x)
+    // ---------------------------
+    // Linear distribution: M_i = Mx * (1 - xi), M_j = Mx * xi
+    f_equiv_local(3) = m_local(0) * one_minus_xi;   // m_x at node i
+    f_equiv_local(9) = m_local(0) * xi;             // m_x at node j
+
+    // ---------------------------
+    // Applied moments about local y and z
+    // ---------------------------
+    // For applied moment at position xi, use shape function derivatives
+    // Simplified: distribute linearly
+    f_equiv_local(4) += m_local(1) * one_minus_xi;  // m_y at node i
+    f_equiv_local(10) += m_local(1) * xi;           // m_y at node j
+    f_equiv_local(5) += m_local(2) * one_minus_xi;  // m_z at node i
+    f_equiv_local(11) += m_local(2) * xi;           // m_z at node j
+
+    // Transform to global coordinates
+    Eigen::Matrix<double, 12, 1> f_equiv_global = T.transpose() * f_equiv_local;
+
+    return f_equiv_global;
+}
+
+// ============================================================================
 // Phase 7: Internal Actions (Element End Forces)
 // ============================================================================
 

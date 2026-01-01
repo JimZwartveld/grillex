@@ -836,6 +836,8 @@ class StructuralModel:
         end_pos: List[float],
         section_name: str,
         material_name: str,
+        subdivisions: int = 1,
+        name: Optional[str] = None,
         **kwargs
     ) -> Beam:
         """Add a beam using endpoint coordinates.
@@ -845,6 +847,8 @@ class StructuralModel:
             end_pos: Ending position [x, y, z]
             section_name: Name of section from library
             material_name: Name of material from library
+            subdivisions: Number of FEM elements to subdivide the beam into (default: 1)
+            name: Optional beam name for display
             **kwargs: Additional beam properties
 
         Returns:
@@ -862,19 +866,42 @@ class StructuralModel:
         if section is None:
             raise ValueError(f"Section '{section_name}' not found. Add it first with add_section().")
 
-        # Create nodes
-        node1 = self.get_or_create_node(*start_pos)
-        node2 = self.get_or_create_node(*end_pos)
+        # Validate subdivisions
+        subdivisions = max(1, int(subdivisions))
 
-        # Create beam element in C++ model
-        cpp_element = self._cpp_model.create_beam(node1, node2, material, section)
-
-        # Create Python Beam object
-        beam = Beam(start_pos, end_pos, section, material, beam_id=self._beam_id_counter)
+        # Create Python Beam object first
+        beam = Beam(start_pos, end_pos, section, material, beam_id=self._beam_id_counter, name=name)
         self._beam_id_counter += 1
-        beam.add_element(cpp_element)
-        self.beams.append(beam)
 
+        # Create start and end nodes
+        start_node = self.get_or_create_node(*start_pos)
+        end_node = self.get_or_create_node(*end_pos)
+
+        if subdivisions == 1:
+            # Single element beam
+            cpp_element = self._cpp_model.create_beam(start_node, end_node, material, section)
+            beam.add_element(cpp_element)
+        else:
+            # Multi-element beam - create intermediate nodes
+            start_arr = np.array(start_pos)
+            end_arr = np.array(end_pos)
+            direction = end_arr - start_arr
+
+            # Create all nodes (including intermediate)
+            nodes = [start_node]
+            for i in range(1, subdivisions):
+                t = i / subdivisions
+                pos = start_arr + t * direction
+                node = self.get_or_create_node(pos[0], pos[1], pos[2])
+                nodes.append(node)
+            nodes.append(end_node)
+
+            # Create elements between consecutive nodes
+            for i in range(subdivisions):
+                cpp_element = self._cpp_model.create_beam(nodes[i], nodes[i+1], material, section)
+                beam.add_element(cpp_element)
+
+        self.beams.append(beam)
         return beam
 
     # ===== Cargo Modelling =====
@@ -2991,6 +3018,87 @@ class StructuralModel:
             new_beams.append(sub_beam)
 
         return new_beams
+
+    def resubdivide_beam(self, beam: Beam) -> int:
+        """Resubdivide a beam to include any internal nodes.
+
+        Unlike _split_beam_at_nodes which creates new Beam objects, this method
+        keeps the original Beam wrapper but recreates its internal elements.
+        This is useful when adding point loads at midspan positions - the FEM
+        needs elements at the load position, but the visual representation
+        should remain as a single beam.
+
+        Args:
+            beam: The beam to resubdivide
+
+        Returns:
+            Number of elements created (0 if no subdivision needed)
+
+        Example:
+            # Create a node at load position
+            model.get_or_create_node(5, 0, 0)
+            # Resubdivide the beam to include this node
+            n_elements = model.resubdivide_beam(beam)
+        """
+        internal_nodes = self._find_internal_nodes(beam)
+
+        if not internal_nodes:
+            # No internal nodes, nothing to do
+            return len(beam.elements)
+
+        # Get material and section
+        material = beam.material
+        section = beam.section
+
+        # Get start and end nodes
+        start_node = self.find_node_at(beam.start_pos.tolist())
+        end_node = self.find_node_at(beam.end_pos.tolist())
+
+        if not start_node or not end_node:
+            raise ValueError("Could not find beam endpoint nodes")
+
+        # Build list of all nodes in order: start -> internal nodes -> end
+        all_nodes = [start_node]
+        for _, node in internal_nodes:
+            all_nodes.append(node)
+        all_nodes.append(end_node)
+
+        # Remove old elements from C++ model
+        for old_element in beam.elements:
+            self._remove_element_from_cpp_model(old_element)
+
+        # Clear the beam's elements list
+        beam.elements.clear()
+
+        # Create new elements and add to this beam
+        for i in range(len(all_nodes) - 1):
+            node_i = all_nodes[i]
+            node_j = all_nodes[i + 1]
+
+            # Create new beam element in C++ model
+            cpp_element = self._cpp_model.create_beam(node_i, node_j, material, section)
+
+            # Add to this beam's elements
+            beam.add_element(cpp_element)
+
+        return len(beam.elements)
+
+    def resubdivide_all_beams(self) -> int:
+        """Resubdivide all beams to include any internal nodes.
+
+        Unlike subdivide_beams() which creates new Beam objects, this method
+        keeps the original Beam wrappers but recreates their internal elements.
+
+        Returns:
+            Total number of beams that were resubdivided
+        """
+        resubdivided_count = 0
+        for beam in self.beams:
+            old_count = len(beam.elements)
+            new_count = self.resubdivide_beam(beam)
+            if new_count > old_count:
+                resubdivided_count += 1
+        return resubdivided_count
 
     def _subdivide_beams(self) -> int:
         """Find and subdivide beams that have internal nodes.

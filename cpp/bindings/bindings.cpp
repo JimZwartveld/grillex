@@ -396,6 +396,26 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Returns:\n"
              "    12x1 vector of equivalent nodal forces in global coordinates\n"
              "    [Fx_i, Fy_i, Fz_i, Mx_i, My_i, Mz_i, Fx_j, Fy_j, Fz_j, Mx_j, My_j, Mz_j]")
+        .def("point_on_element", &grillex::BeamElement::point_on_element,
+             py::arg("point"), py::arg("tolerance") = 1e-6,
+             "Check if a point lies on this beam element.\n\n"
+             "Args:\n"
+             "    point: Point to check [x, y, z] in global coordinates\n"
+             "    tolerance: Distance tolerance for point-on-line check [m]\n\n"
+             "Returns:\n"
+             "    Tuple of (is_on_element, parametric_position)\n"
+             "    parametric_position is in range [0, 1] where 0 = node_i, 1 = node_j")
+        .def("equivalent_nodal_forces_concentrated", &grillex::BeamElement::equivalent_nodal_forces_concentrated,
+             py::arg("force"), py::arg("moment"), py::arg("xi"),
+             "Compute equivalent nodal forces for a concentrated load.\n\n"
+             "Uses Hermite cubic shape functions to distribute a concentrated load\n"
+             "at position xi (parametric, 0-1) to the element end nodes.\n\n"
+             "Args:\n"
+             "    force: Force vector [Fx, Fy, Fz] in global coordinates [kN]\n"
+             "    moment: Moment vector [Mx, My, Mz] in global coordinates [kN·m]\n"
+             "    xi: Parametric position along element (0 = node_i, 1 = node_j)\n\n"
+             "Returns:\n"
+             "    12x1 vector of equivalent nodal forces in global coordinates")
         .def("get_element_displacements_local", &grillex::BeamElement::get_element_displacements_local,
              py::arg("global_displacements"), py::arg("dof_handler"),
              "Get element displacements in local coordinates.\n\n"

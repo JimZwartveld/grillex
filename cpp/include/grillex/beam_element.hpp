@@ -460,6 +460,47 @@ public:
         const Eigen::Vector3d& w_end) const;
 
     /**
+     * @brief Check if a point lies on this beam element
+     *
+     * Returns true if the point is within tolerance of the beam axis and
+     * between (or at) the end nodes.
+     *
+     * @param point Point to check [x, y, z] in global coordinates
+     * @param tolerance Distance tolerance for point-on-line check [m]
+     * @return std::pair<bool, double> (is_on_element, parametric_position)
+     *         parametric_position is in range [0, 1] where 0 = node_i, 1 = node_j
+     */
+    std::pair<bool, double> point_on_element(
+        const Eigen::Vector3d& point,
+        double tolerance = 1e-6) const;
+
+    /**
+     * @brief Compute equivalent nodal forces for a concentrated load
+     *
+     * Uses Hermite cubic shape functions to distribute a concentrated load
+     * at position ξ (parametric, 0-1) to the element end nodes.
+     *
+     * For transverse loads using shape functions:
+     *   F_i = P * (1 - ξ)² * (1 + 2ξ)
+     *   M_i = P * L * ξ * (1 - ξ)²
+     *   F_j = P * ξ² * (3 - 2ξ)
+     *   M_j = -P * L * ξ² * (1 - ξ)
+     *
+     * For axial loads:
+     *   F_i = P * (1 - ξ)
+     *   F_j = P * ξ
+     *
+     * @param force Force vector [Fx, Fy, Fz] in global coordinates [kN]
+     * @param moment Moment vector [Mx, My, Mz] in global coordinates [kN·m]
+     * @param xi Parametric position along element (0 = node_i, 1 = node_j)
+     * @return Eigen::Matrix<double, 12, 1> Equivalent nodal forces in global coordinates
+     */
+    Eigen::Matrix<double, 12, 1> equivalent_nodal_forces_concentrated(
+        const Eigen::Vector3d& force,
+        const Eigen::Vector3d& moment,
+        double xi) const;
+
+    /**
      * @brief Compute 12x12 offset transformation matrix
      *
      * Relates beam end DOFs to node DOFs for rigid offsets.
