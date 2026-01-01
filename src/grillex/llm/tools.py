@@ -163,6 +163,10 @@ TOOLS: List[Dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Optional name for the beam (e.g., 'Main Girder', 'Cross Beam 1')"
+                },
                 "start_position": {
                     "type": "array",
                     "items": {"type": "number"},
@@ -1657,18 +1661,25 @@ class ToolExecutor:
         if self.model is None:
             return ToolResult(success=False, error="No model created. Call create_model first.")
 
+        # Generate default name if not provided
+        beam_name = params.get("name")
+        if not beam_name:
+            beam_name = f"Beam {len(self.model.beams) + 1}"
+
         beam = self.model.add_beam_by_coords(
             start_pos=params["start_position"],
             end_pos=params["end_position"],
             section_name=params["section"],
-            material_name=params["material"]
+            material_name=params["material"],
+            name=beam_name
         )
         return ToolResult(
             success=True,
             result={
                 "beam_id": beam.beam_id,
+                "name": beam.name,
                 "length": beam.length,
-                "message": f"Beam created with length {beam.length:.3f} m"
+                "message": f"Beam '{beam.name}' created with length {beam.length:.3f} m"
             }
         )
 
