@@ -1122,7 +1122,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "update_cargo",
-        "description": "Update cargo properties (mass, name). Note: CoG position cannot be changed after creation.",
+        "description": "Update cargo properties including name, mass, CoG position, and dimensions.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -1137,6 +1137,20 @@ TOOLS: List[Dict[str, Any]] = [
                 "mass": {
                     "type": "number",
                     "description": "New mass in metric tonnes (mT). Optional."
+                },
+                "cog_position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New center of gravity position [x, y, z] in meters. Optional."
+                },
+                "dimensions": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New cargo dimensions [length_x, width_y, height_z] in meters. Optional."
                 }
             },
             "required": ["cargo_id"]
@@ -1154,6 +1168,63 @@ TOOLS: List[Dict[str, Any]] = [
                 }
             },
             "required": ["cargo_id"]
+        }
+    },
+    {
+        "name": "add_cargo_connection",
+        "description": "Add a connection point to a cargo item. Connection points define where the cargo attaches to the structure. Defaults to stiff connection if stiffness not specified.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cargo_id": {
+                    "type": "integer",
+                    "description": "ID of the cargo to add connection to"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Name identifier for this connection point (e.g., 'Corner 1', 'SF-A'). Auto-generated if not provided."
+                },
+                "position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Position [x, y, z] of the connection point in meters (global coordinates)"
+                },
+                "stiffness": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 6,
+                    "maxItems": 6,
+                    "description": "Spring stiffnesses [kx, ky, kz, krx, kry, krz]. Units: translations [kN/m], rotations [kN·m/rad]. Defaults to stiff (1e9) if not provided."
+                },
+                "cargo_offset": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Optional offset from cargo CoG to connection point on cargo [dx, dy, dz] in meters"
+                }
+            },
+            "required": ["cargo_id", "position"]
+        }
+    },
+    {
+        "name": "delete_cargo_connection",
+        "description": "Delete a connection point from a cargo item by name.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cargo_id": {
+                    "type": "integer",
+                    "description": "ID of the cargo"
+                },
+                "connection_name": {
+                    "type": "string",
+                    "description": "Name of the connection point to delete"
+                }
+            },
+            "required": ["cargo_id", "connection_name"]
         }
     },
 
@@ -3241,6 +3312,18 @@ class ToolExecutor:
                 cargo._point_mass.mass = new_mass
             changes.append(f"mass -> {new_mass} mT")
 
+        # Update CoG position if provided
+        if "cog_position" in params and params["cog_position"] is not None:
+            new_cog = params["cog_position"]
+            cargo.cog_position = new_cog
+            changes.append(f"cog_position -> {new_cog}")
+
+        # Update dimensions if provided
+        if "dimensions" in params and params["dimensions"] is not None:
+            new_dims = params["dimensions"]
+            cargo.dimensions = new_dims
+            changes.append(f"dimensions -> {new_dims}")
+
         if not changes:
             return ToolResult(
                 success=True,
@@ -3303,6 +3386,118 @@ class ToolExecutor:
                 "cargo_id": cargo_id,
                 "name": removed_cargo.name,
                 "message": f"Cargo '{removed_cargo.name}' removed from model. Note: underlying elements may remain. Re-analysis required."
+            }
+        )
+
+    def _tool_add_cargo_connection(self, params: Dict[str, Any]) -> ToolResult:
+        """Add a connection point to a cargo item."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        cargo_id = params["cargo_id"]
+        position = params["position"]
+        name = params.get("name")
+        stiffness = params.get("stiffness")  # Defaults to stiff in add_connection
+        cargo_offset = params.get("cargo_offset")
+
+        # Find the cargo by ID
+        cargo = None
+        for c in self.model.cargos:
+            if c.id == cargo_id:
+                cargo = c
+                break
+
+        if cargo is None:
+            available_ids = [c.id for c in self.model.cargos]
+            return ToolResult(
+                success=False,
+                error=f"Cargo with ID {cargo_id} not found",
+                suggestion=f"Available cargo IDs: {available_ids}" if available_ids else "No cargos in model"
+            )
+
+        # Add the connection
+        cargo.add_connection(
+            structural_position=position,
+            stiffness=stiffness,
+            cargo_offset=cargo_offset,
+            name=name
+        )
+
+        # Get the added connection (last one)
+        added_connection = cargo.connections[-1]
+
+        # Mark model as not analyzed
+        try:
+            self.model._cpp_model.clear_analysis()
+        except Exception:
+            pass
+
+        return ToolResult(
+            success=True,
+            result={
+                "cargo_id": cargo_id,
+                "cargo_name": cargo.name,
+                "connection_name": added_connection.name,
+                "position": position,
+                "stiffness": added_connection.stiffness,
+                "message": f"Connection '{added_connection.name}' added to cargo '{cargo.name}' at position {position}"
+            }
+        )
+
+    def _tool_delete_cargo_connection(self, params: Dict[str, Any]) -> ToolResult:
+        """Delete a connection point from a cargo item."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        cargo_id = params["cargo_id"]
+        connection_name = params["connection_name"]
+
+        # Find the cargo by ID
+        cargo = None
+        for c in self.model.cargos:
+            if c.id == cargo_id:
+                cargo = c
+                break
+
+        if cargo is None:
+            available_ids = [c.id for c in self.model.cargos]
+            return ToolResult(
+                success=False,
+                error=f"Cargo with ID {cargo_id} not found",
+                suggestion=f"Available cargo IDs: {available_ids}" if available_ids else "No cargos in model"
+            )
+
+        # Find and remove the connection
+        connection_index = None
+        for idx, conn in enumerate(cargo.connections):
+            if conn.name == connection_name:
+                connection_index = idx
+                break
+
+        if connection_index is None:
+            available_names = [conn.name for conn in cargo.connections]
+            return ToolResult(
+                success=False,
+                error=f"Connection '{connection_name}' not found in cargo '{cargo.name}'",
+                suggestion=f"Available connections: {available_names}" if available_names else "No connections in cargo"
+            )
+
+        # Remove the connection
+        cargo.connections.pop(connection_index)
+
+        # Mark model as not analyzed
+        try:
+            self.model._cpp_model.clear_analysis()
+        except Exception:
+            pass
+
+        return ToolResult(
+            success=True,
+            result={
+                "cargo_id": cargo_id,
+                "cargo_name": cargo.name,
+                "connection_name": connection_name,
+                "message": f"Connection '{connection_name}' removed from cargo '{cargo.name}'"
             }
         )
 

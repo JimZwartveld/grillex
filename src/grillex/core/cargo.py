@@ -58,12 +58,14 @@ class CargoConnection:
     Represents a connection between cargo and structural node.
 
     A cargo connection defines how the cargo is attached to the structure:
+    - A name identifier for the connection point
     - The structural position where the connection point is located
     - Spring stiffnesses in 6 DOFs (translations + rotations)
     - Optional offset from cargo CoG to the connection point on the cargo
     - Loading condition to control when the connection is active
 
     Attributes:
+        name: Name identifier for this connection point (e.g., "Corner 1", "Seafastening A")
         structural_position: Position [x, y, z] where cargo connects to structure
         stiffness: Spring stiffnesses [kx, ky, kz, krx, kry, krz]
                    Units: translations [kN/m], rotations [kN·m/rad]
@@ -81,11 +83,12 @@ class CargoConnection:
 
     Example:
         # Static connection (bearing pad) - only takes gravity load
-        CargoConnection([0, 0, 0], [0, 0, 1e9, 0, 0, 0], loading_condition="static")
+        CargoConnection("Pad 1", [0, 0, 0], [0, 0, 1e9, 0, 0, 0], loading_condition="static")
 
         # Dynamic connection (seafastening) - only takes environmental loads
-        CargoConnection([5, 0, 0], [1e9, 1e9, 0, 0, 0, 0], loading_condition="dynamic")
+        CargoConnection("SF-1", [5, 0, 0], [1e9, 1e9, 0, 0, 0, 0], loading_condition="dynamic")
     """
+    name: str
     structural_position: List[float]
     stiffness: List[float]  # [kx, ky, kz, krx, kry, krz]
     cargo_offset: Optional[List[float]] = None
@@ -232,9 +235,10 @@ class Cargo:
     def add_connection(
         self,
         structural_position: List[float],
-        stiffness: List[float],
+        stiffness: Optional[List[float]] = None,
         cargo_offset: Optional[List[float]] = None,
-        loading_condition: str = "all"
+        loading_condition: str = "all",
+        name: Optional[str] = None
     ) -> "Cargo":
         """
         Add a connection to the structure.
@@ -248,43 +252,54 @@ class Cargo:
             structural_position: Position [x, y, z] of structural connection [m]
             stiffness: Spring stiffnesses [kx, ky, kz, krx, kry, krz]
                        Translations in [kN/m], rotations in [kN·m/rad]
+                       If None, defaults to stiff connection (1e9 for all DOFs)
             cargo_offset: Optional offset from CoG to cargo connection point [m]
                           If None, connection is directly at CoG
             loading_condition: When this connection is active:
                 - "all": Active for all load cases (default)
                 - "static": Only active for Permanent load cases (bearing pads)
                 - "dynamic": Only active for Variable/Environmental load cases (seafastening)
+            name: Optional name identifier for the connection (e.g., "Corner 1", "SF-A")
+                  If None, auto-generates name like "Conn 1", "Conn 2", etc.
 
         Returns:
             Self for method chaining
 
         Example:
-            # Direct connection at CoG
-            cargo.add_connection([5.0, 2.0, 0.0], [1e6, 1e6, 1e6, 1e4, 1e4, 1e4])
+            # Direct connection at CoG with stiff connection
+            cargo.add_connection([5.0, 2.0, 0.0], name="Center")
 
             # Connection with offset (e.g., cargo footing below CoG)
             cargo.add_connection(
                 [5.0, 2.0, 0.0],
                 [1e6, 1e6, 1e6, 1e4, 1e4, 1e4],
-                cargo_offset=[0.0, 0.0, -1.5]  # 1.5m below CoG
+                cargo_offset=[0.0, 0.0, -1.5],  # 1.5m below CoG
+                name="Footing"
             )
 
             # Static connection (bearing pad) - only takes gravity load
             cargo.add_connection(
                 [0.0, 0.0, 0.0],
                 [0, 0, 1e9, 0, 0, 0],
-                loading_condition="static"
+                loading_condition="static",
+                name="Pad 1"
             )
 
             # Dynamic connection (seafastening) - only takes environmental loads
             cargo.add_connection(
                 [5.0, 0.0, 0.0],
                 [1e9, 1e9, 0, 0, 0, 0],
-                loading_condition="dynamic"
+                loading_condition="dynamic",
+                name="SF-1"
             )
         """
         if len(structural_position) != 3:
             raise ValueError("Structural position must be a 3-element list [x, y, z]")
+
+        # Default to stiff connection if stiffness not provided
+        if stiffness is None:
+            stiffness = [1e9, 1e9, 1e9, 1e9, 1e9, 1e9]
+
         if len(stiffness) != 6:
             raise ValueError("Stiffness must be a 6-element list [kx, ky, kz, krx, kry, krz]")
         if cargo_offset is not None and len(cargo_offset) != 3:
@@ -295,7 +310,12 @@ class Cargo:
                 f"got '{loading_condition}'"
             )
 
+        # Auto-generate name if not provided
+        if name is None:
+            name = f"Conn {len(self.connections) + 1}"
+
         connection = CargoConnection(
+            name=name,
             structural_position=list(structural_position),
             stiffness=list(stiffness),
             cargo_offset=list(cargo_offset) if cargo_offset else None,
