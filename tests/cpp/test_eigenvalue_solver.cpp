@@ -149,7 +149,7 @@ TEST_CASE("solve: cantilever beam first mode frequency", "[EigenvalueSolver][sol
     double L = 1.0;        // m
     double E = 210e6;      // kN/m^2
     double I = 1e-4;       // m^4
-    double rho = 7.85e-3;  // mT/m^3
+    double rho = 7.85;     // mT/m^3 - standard steel (7850 kg/m^3)
     double A = 0.01;       // m^2
 
     NodeRegistry registry(1e-6);
