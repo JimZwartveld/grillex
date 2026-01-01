@@ -172,7 +172,7 @@ All documentation examples MUST be doctests that run against the codebase:
 
     >>> from grillex.core import StructuralModel
     >>> model = StructuralModel(name="Example")
-    >>> _ = model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
     >>> # Use _ = to suppress return value output
 ```
 
@@ -618,7 +618,7 @@ from grillex.core import StructuralModel, DOFIndex
 model = StructuralModel(name="Example")
 
 # Add material and section
-model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
 model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
 
 # Create beam
@@ -655,7 +655,7 @@ materials:
   - name: Steel
     E: 210000000      # kN/m²
     nu: 0.3
-    rho: 7.85e-6      # mT/m³
+    rho: 7.85         # mT/m³
 
 sections:
   - name: IPE300
@@ -690,7 +690,7 @@ from grillex.core import StructuralModel
 
 # Create model
 model = StructuralModel(name="Plate Example")
-model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
 
 # Add a 4m x 2m horizontal plate
 plate = model.add_plate(

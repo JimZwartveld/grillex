@@ -1538,7 +1538,8 @@ class ToolExecutor:
             "name": "Steel",
             "E": 210e6,
             "nu": 0.3,
-            "rho": 7.85e-3
+            "rho": 7.85
+            "rho": 7.85
         })
     """
 
