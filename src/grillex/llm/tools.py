@@ -1227,6 +1227,47 @@ TOOLS: List[Dict[str, Any]] = [
             "required": ["cargo_id", "connection_name"]
         }
     },
+    {
+        "name": "update_cargo_connection",
+        "description": "Update a cargo connection point's properties.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cargo_id": {
+                    "type": "integer",
+                    "description": "ID of the cargo"
+                },
+                "connection_name": {
+                    "type": "string",
+                    "description": "Name of the connection point to update"
+                },
+                "new_name": {
+                    "type": "string",
+                    "description": "New name for the connection point. Optional."
+                },
+                "position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New position [x, y, z] in meters. Optional."
+                },
+                "stiffness": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Translational spring stiffnesses [kx, ky, kz] in kN/m. Optional."
+                },
+                "loading_condition": {
+                    "type": "string",
+                    "enum": ["all", "static", "dynamic"],
+                    "description": "When connection is active: 'all' (always), 'static' (permanent loads only), 'dynamic' (variable/environmental loads only). Optional."
+                }
+            },
+            "required": ["cargo_id", "connection_name"]
+        }
+    },
 
     # =========================================================================
     # Model Information
@@ -3498,6 +3539,101 @@ class ToolExecutor:
                 "cargo_name": cargo.name,
                 "connection_name": connection_name,
                 "message": f"Connection '{connection_name}' removed from cargo '{cargo.name}'"
+            }
+        )
+
+    def _tool_update_cargo_connection(self, params: Dict[str, Any]) -> ToolResult:
+        """Update a cargo connection point's properties."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+
+        cargo_id = params["cargo_id"]
+        connection_name = params["connection_name"]
+
+        # Find the cargo by ID
+        cargo = None
+        for c in self.model.cargos:
+            if c.id == cargo_id:
+                cargo = c
+                break
+
+        if cargo is None:
+            available_ids = [c.id for c in self.model.cargos]
+            return ToolResult(
+                success=False,
+                error=f"Cargo with ID {cargo_id} not found",
+                suggestion=f"Available cargo IDs: {available_ids}" if available_ids else "No cargos in model"
+            )
+
+        # Find the connection
+        connection = None
+        for conn in cargo.connections:
+            if conn.name == connection_name:
+                connection = conn
+                break
+
+        if connection is None:
+            available_names = [conn.name for conn in cargo.connections]
+            return ToolResult(
+                success=False,
+                error=f"Connection '{connection_name}' not found in cargo '{cargo.name}'",
+                suggestion=f"Available connections: {available_names}" if available_names else "No connections in cargo"
+            )
+
+        changes = []
+
+        # Update name if provided
+        if "new_name" in params and params["new_name"]:
+            connection.name = params["new_name"]
+            changes.append(f"name -> {params['new_name']}")
+
+        # Update position if provided
+        if "position" in params and params["position"] is not None:
+            connection.structural_position = list(params["position"])
+            changes.append(f"position -> {params['position']}")
+
+        # Update stiffness if provided (only kx, ky, kz)
+        if "stiffness" in params and params["stiffness"] is not None:
+            new_stiffness = params["stiffness"]
+            # Keep rotational stiffness (indices 3-5) unchanged, update translational (0-2)
+            connection.stiffness[0] = new_stiffness[0]
+            connection.stiffness[1] = new_stiffness[1]
+            connection.stiffness[2] = new_stiffness[2]
+            changes.append(f"stiffness [kx, ky, kz] -> {new_stiffness}")
+
+        # Update loading condition if provided
+        if "loading_condition" in params and params["loading_condition"]:
+            from grillex.core.cargo import VALID_LOADING_CONDITIONS
+            if params["loading_condition"] in VALID_LOADING_CONDITIONS:
+                connection.loading_condition = params["loading_condition"]
+                changes.append(f"loading_condition -> {params['loading_condition']}")
+            else:
+                return ToolResult(
+                    success=False,
+                    error=f"Invalid loading_condition: {params['loading_condition']}",
+                    suggestion=f"Valid values: {VALID_LOADING_CONDITIONS}"
+                )
+
+        if not changes:
+            return ToolResult(
+                success=True,
+                result={"message": "No changes specified"}
+            )
+
+        # Mark model as not analyzed
+        try:
+            self.model._cpp_model.clear_analysis()
+        except Exception:
+            pass
+
+        return ToolResult(
+            success=True,
+            result={
+                "cargo_id": cargo_id,
+                "cargo_name": cargo.name,
+                "connection_name": connection.name,
+                "changes": changes,
+                "message": f"Connection '{connection.name}' updated: {', '.join(changes)}"
             }
         )
 

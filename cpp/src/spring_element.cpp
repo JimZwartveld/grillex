@@ -58,9 +58,6 @@ bool SpringElement::is_active_for_load_case(LoadCaseType type) const {
     switch (loading_condition) {
         case LoadingCondition::All:
             return true;
-        case LoadingCondition::Static:
-            // Static connections only active for Permanent (gravity, dead load)
-            return (type == LoadCaseType::Permanent);
         case LoadingCondition::Dynamic:
             // Dynamic connections active for all non-permanent load cases
             return (type == LoadCaseType::Variable ||

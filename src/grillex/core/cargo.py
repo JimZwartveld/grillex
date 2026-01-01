@@ -82,8 +82,8 @@ class CargoConnection:
         via spring to the structural node.
 
     Example:
-        # Static connection (bearing pad) - only takes gravity load
-        CargoConnection("Pad 1", [0, 0, 0], [0, 0, 1e9, 0, 0, 0], loading_condition="static")
+        # All connection (bearing pad) - always active including gravity
+        CargoConnection("Pad 1", [0, 0, 0], [0, 0, 1e9, 0, 0, 0], loading_condition="all")
 
         # Dynamic connection (seafastening) - only takes environmental loads
         CargoConnection("SF-1", [5, 0, 0], [1e9, 1e9, 0, 0, 0, 0], loading_condition="dynamic")
@@ -92,7 +92,7 @@ class CargoConnection:
     structural_position: List[float]
     stiffness: List[float]  # [kx, ky, kz, krx, kry, krz]
     cargo_offset: Optional[List[float]] = None
-    loading_condition: str = "all"  # "all", "static", "dynamic"
+    loading_condition: str = "all"  # "all" or "dynamic"
 
     # Internal references (set during element generation)
     structural_node: Optional["Node"] = field(default=None, repr=False)
@@ -277,11 +277,11 @@ class Cargo:
                 name="Footing"
             )
 
-            # Static connection (bearing pad) - only takes gravity load
+            # All connection (bearing pad) - always active including gravity
             cargo.add_connection(
                 [0.0, 0.0, 0.0],
                 [0, 0, 1e9, 0, 0, 0],
-                loading_condition="static",
+                loading_condition="all",
                 name="Pad 1"
             )
 

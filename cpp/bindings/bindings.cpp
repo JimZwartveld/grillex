@@ -1942,13 +1942,10 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         "Controls when a spring is active based on load case type.\n"
         "Used for modeling cargo connections that behave differently\n"
         "for static (set-down) vs dynamic (environmental) loads.\n\n"
-        "- All: Active for all load cases (default)\n"
-        "- Static: Only active for Permanent load cases (e.g., bearing pads)\n"
+        "- All: Active for all load cases (default, use for bearing pads)\n"
         "- Dynamic: Only active for Variable/Environmental load cases (e.g., seafastening)")
         .value("All", grillex::LoadingCondition::All,
-               "Active for all load cases (default)")
-        .value("Static", grillex::LoadingCondition::Static,
-               "Only active for Permanent load cases (gravity, dead load)")
+               "Active for all load cases (default, use for bearing pads)")
         .value("Dynamic", grillex::LoadingCondition::Dynamic,
                "Only active for Variable/Environmental/Accidental load cases")
         .export_values();
@@ -2076,7 +2073,6 @@ PYBIND11_MODULE(_grillex_cpp, m) {
             std::string cond_str;
             switch (s.loading_condition) {
                 case grillex::LoadingCondition::All: cond_str = "All"; break;
-                case grillex::LoadingCondition::Static: cond_str = "Static"; break;
                 case grillex::LoadingCondition::Dynamic: cond_str = "Dynamic"; break;
             }
             return "<SpringElement id=" + std::to_string(s.id) +

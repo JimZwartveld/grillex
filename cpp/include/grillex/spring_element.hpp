@@ -17,14 +17,22 @@ class DOFHandler;
  * Used for modeling cargo connections that behave differently
  * for static (set-down) vs dynamic (environmental) loads.
  *
- * - All: Spring is active for all load cases (default)
- * - Static: Spring only active for Permanent load cases (e.g., bearing pads)
- * - Dynamic: Spring only active for Variable/Environmental load cases (e.g., seafastening)
+ * The model uses two stiffness matrices:
+ * The model uses two stiffness matrices:
+ * - K_static: For permanent-only analyses (e.g., just gravity)
+ * - K_dynamic: For analyses including environmental/variable loads
+ *
+ * Spring inclusion in each matrix:
+ * - All: Included in BOTH K_static and K_dynamic (default, use for bearing pads)
+ * - Dynamic: ONLY included in K_dynamic (not in K_static)
+ *
+ * Example: Cargo on barge with bearing pads (All) and seafastening (Dynamic)
+ * - Permanent-only analysis: Bearing pads active, seafastening NOT active
+ * - Environmental analysis: Bearing pads STILL active + seafastening NOW active
  */
 enum class LoadingCondition {
-    All = 0,      ///< Active for all load cases (default)
-    Static = 1,   ///< Only active for Permanent load cases
-    Dynamic = 2   ///< Only active for Variable/Environmental/Accidental load cases
+    All = 0,      ///< Active for all load cases (default, use for bearing pads)
+    Dynamic = 1   ///< Only active when environmental/variable loads are present
 };
 
 /**
@@ -65,15 +73,14 @@ enum class SpringBehavior {
  * For uncoupled springs, each DOF is independent.
  *
  * The loading_condition property controls when the spring is active:
- * - LoadingCondition::All: Active for all load cases (default)
- * - LoadingCondition::Static: Only for Permanent load cases
+ * - LoadingCondition::All: Active for all load cases (default, use for bearing pads)
  * - LoadingCondition::Dynamic: Only for Variable/Environmental/Accidental
  *
  * Usage:
  *   SpringElement spring(1, node_i, node_j);
  *   spring.kx = 1000.0;  // Axial stiffness [kN/m]
  *   spring.kz = 500.0;   // Vertical stiffness [kN/m]
- *   spring.loading_condition = LoadingCondition::Static;  // Only for gravity
+ *   spring.loading_condition = LoadingCondition::Dynamic;  // Only for environmental
  *   auto K = spring.global_stiffness_matrix();
  */
 class SpringElement {
@@ -204,10 +211,17 @@ public:
      * @param type The load case type to check against
      * @return true if this spring should contribute to the load case
      *
+     * This function is used when building K_static (permanent-only analysis).
+     * For K_dynamic (includes environmental/variable), all springs are included
+     * regardless of this check (nullopt filter in model.cpp).
+     *
      * Based on loading_condition:
      * - All: Returns true for all load case types
-     * - Static: Returns true only for Permanent load cases
-     * - Dynamic: Returns true for Variable, Environmental, and Accidental
+     * - Static: Returns true for Permanent (these springs carry gravity)
+     * - Dynamic: Returns false for Permanent (only engage during motion)
+     *
+     * Note: Static springs ARE included in dynamic analyses via K_dynamic,
+     * which uses no filter. This function only filters for K_static.
      */
     bool is_active_for_load_case(LoadCaseType type) const;
 
