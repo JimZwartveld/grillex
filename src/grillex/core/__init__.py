@@ -34,6 +34,7 @@ from .data_types import (
 )
 
 from .model_wrapper import (
+    ActionType,
     Beam,
     StructuralModel,
     MeshStatistics
@@ -98,7 +99,7 @@ __all__ = [
     'EigensolverResult', 'EigenvalueSolver',
     # Phase 19: Plate Meshing
     'Plate', 'EdgeMeshControl', 'PlateBeamCoupling', 'SupportCurve',
-    'Beam', 'StructuralModel', 'MeshStatistics',
+    'ActionType', 'Beam', 'StructuralModel', 'MeshStatistics',
     # Phase 19 (Task 19.6): Element Type Infrastructure
     'PlateElementType', 'ELEMENT_TYPE_INFO',
     'get_element_type', 'get_element_info', 'get_available_element_types',
