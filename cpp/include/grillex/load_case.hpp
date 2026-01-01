@@ -167,6 +167,20 @@ public:
                                const Eigen::Vector3d& ref_point = Eigen::Vector3d::Zero());
 
     /**
+     * @brief Remove a nodal load by index
+     * @param index Index of the load to remove (0-based)
+     * @return true if removed, false if index out of range
+     */
+    bool remove_nodal_load(size_t index);
+
+    /**
+     * @brief Remove a line load by index
+     * @param index Index of the load to remove (0-based)
+     * @return true if removed, false if index out of range
+     */
+    bool remove_line_load(size_t index);
+
+    /**
      * @brief Clear all loads in this case
      */
     void clear();

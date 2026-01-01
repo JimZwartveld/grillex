@@ -904,6 +904,12 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Clear all loads in this load case")
         .def("is_empty", &grillex::LoadCase::is_empty,
              "Check if load case has any loads")
+        .def("remove_nodal_load", &grillex::LoadCase::remove_nodal_load,
+             py::arg("index"),
+             "Remove a nodal load by index (0-based). Returns true if removed, false if index out of range.")
+        .def("remove_line_load", &grillex::LoadCase::remove_line_load,
+             py::arg("index"),
+             "Remove a line load by index (0-based). Returns true if removed, false if index out of range.")
         .def("get_nodal_loads", &grillex::LoadCase::get_nodal_loads,
              py::return_value_policy::reference_internal,
              "Get list of nodal loads")

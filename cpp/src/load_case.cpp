@@ -88,6 +88,22 @@ void LoadCase::set_acceleration_field(const Eigen::Vector<double, 6>& accel,
     acceleration_ref_point_ = ref_point;
 }
 
+bool LoadCase::remove_nodal_load(size_t index) {
+    if (index >= nodal_loads_.size()) {
+        return false;
+    }
+    nodal_loads_.erase(nodal_loads_.begin() + static_cast<std::ptrdiff_t>(index));
+    return true;
+}
+
+bool LoadCase::remove_line_load(size_t index) {
+    if (index >= line_loads_.size()) {
+        return false;
+    }
+    line_loads_.erase(line_loads_.begin() + static_cast<std::ptrdiff_t>(index));
+    return true;
+}
+
 void LoadCase::clear() {
     nodal_loads_.clear();
     line_loads_.clear();
