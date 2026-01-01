@@ -188,6 +188,12 @@ TOOLS: List[Dict[str, Any]] = [
                 "material": {
                     "type": "string",
                     "description": "Name of material to use (must exist in model)"
+                },
+                "subdivisions": {
+                    "type": "integer",
+                    "description": "Number of FEM elements to subdivide the beam into (default: 1)",
+                    "minimum": 1,
+                    "default": 1
                 }
             },
             "required": ["start_position", "end_position", "section", "material"]
@@ -1671,6 +1677,7 @@ class ToolExecutor:
             end_pos=params["end_position"],
             section_name=params["section"],
             material_name=params["material"],
+            subdivisions=params.get("subdivisions", 1),
             name=beam_name
         )
         return ToolResult(
