@@ -916,7 +916,13 @@ class TestEndReleases:
         assert len(indices) == 2
 
     def test_get_released_indices_14dof(self):
-        """get_released_indices returns correct DOF indices for 14-DOF elements"""
+        """get_released_indices excludes warping releases (they use force-free BC, not condensation)
+
+        Warping releases represent bimoment = 0 (force-free condition), not structural
+        elimination of the DOF. The warping DOF remains in the system with full stiffness
+        coupling to torsion. Therefore, warping releases are NOT included in the static
+        condensation indices.
+        """
         from grillex.core import EndRelease
 
         release = EndRelease()
@@ -924,7 +930,14 @@ class TestEndReleases:
 
         indices = release.get_released_indices(True)  # 14-DOF
 
-        assert 6 in indices  # WARP_i
+        # Warping releases should NOT be included (force-free, not condensation)
+        assert 6 not in indices  # WARP_i is NOT condensed out
+        assert len(indices) == 0
+
+        # But standard moment releases still work
+        release.release_ry_i = True  # Moment about y
+        indices = release.get_released_indices(True)
+        assert 4 in indices  # RY_i is condensed out
         assert len(indices) == 1
 
     def test_simply_supported_beam_stiffness(self):
@@ -1050,7 +1063,17 @@ class TestEndReleases:
         assert M[1, 1] > 1e-8, "Transverse mass should remain"
 
     def test_warping_release_14dof(self):
-        """Warping release works for 14-DOF elements"""
+        """Warping release represents force-free condition, not structural elimination.
+
+        Warping releases represent bimoment = 0 (force-free condition) at the element end,
+        NOT structural elimination of the DOF via static condensation. The warping DOF
+        remains in the system with full torsion-warping coupling stiffness.
+
+        This is physically correct because:
+        1. Torsion and warping are coupled in thin-walled beams (Vlasov theory)
+        2. A force-free warping end (B=0) still contributes to overall torsional stiffness
+        3. Similar to a simply-supported beam: moment=0 at ends, but bending stiffness exists
+        """
         node_i = Node(1, 0.0, 0.0, 0.0)
         node_j = Node(2, 5.0, 0.0, 0.0)
 
@@ -1069,11 +1092,16 @@ class TestEndReleases:
 
         K = beam.local_stiffness_matrix_warping()
 
-        # Warping DOF at i (index 6) should be released
-        assert abs(K[6, 6]) < 1e-6, "WARP_i should be released"
+        # Warping DOF at i (index 6) retains stiffness (force-free, not eliminated)
+        # The stiffness comes from torsion-warping coupling in Vlasov beam theory
+        assert K[6, 6] > 1e-6, "WARP_i should retain stiffness (force-free BC, not condensed)"
 
-        # Warping DOF at j (index 13) should remain stiff
+        # Warping DOF at j (index 13) should also have stiffness
         assert K[13, 13] > 1e-6, "WARP_j should be stiff"
+
+        # Verify the release flag is set
+        assert beam.releases.release_warp_i == True
+        assert beam.releases.release_warp_j == False
 
     def test_multiple_releases_combined(self):
         """Multiple releases can be combined"""

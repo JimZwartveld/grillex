@@ -27,6 +27,12 @@ Section* Model::create_section(const std::string& name, double A, double Iy, dou
 BeamElement* Model::create_beam(Node* node_i, Node* node_j,
                                  Material* material, Section* section,
                                  const BeamConfig& config) {
+    // Enable warping DOF on nodes if beam has warping enabled
+    if (config.include_warping) {
+        node_i->dof_active[6] = true;
+        node_j->dof_active[6] = true;
+    }
+
     auto element = std::make_unique<BeamElement>(next_element_id_++, node_i, node_j,
                                                   material, section, config);
     BeamElement* ptr = element.get();

@@ -973,6 +973,9 @@ class StructuralModel:
         Iy: float,
         Iz: float,
         J: float,
+        Iw: float = 0.0,
+        Asy: float = 0.0,
+        Asz: float = 0.0,
         **kwargs
     ) -> _CppSection:
         """Add a section to the model library.
@@ -983,6 +986,9 @@ class StructuralModel:
             Iy: Second moment of area about local y-axis [m⁴]
             Iz: Second moment of area about local z-axis [m⁴]
             J: Torsional constant [m⁴]
+            Iw: Warping constant [m⁶] (for thin-walled sections)
+            Asy: Shear area in y-direction [m²]
+            Asz: Shear area in z-direction [m²]
             **kwargs: Additional section properties
 
         Returns:
@@ -992,6 +998,15 @@ class StructuralModel:
             return self._sections[name]
 
         sec = self._cpp_model.create_section(name, A, Iy, Iz, J)
+
+        # Set additional section properties
+        if Iw > 0:
+            sec.Iw = Iw
+        if Asy > 0:
+            sec.Asy = Asy
+        if Asz > 0:
+            sec.Asz = Asz
+
         self._sections[name] = sec
         return sec
 

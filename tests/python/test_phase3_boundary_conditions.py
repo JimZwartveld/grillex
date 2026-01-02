@@ -97,15 +97,20 @@ class TestBCHandler:
         assert set(local_dofs) == {0, 1, 2, 3, 4, 5}
 
     def test_fix_node_with_warping(self):
-        """Test fixing all 7 DOFs including warping"""
+        """Test fixing 6 DOFs (warping requires element-specific BC)
+
+        fix_node_with_warping(node_id) without an element_id only fixes the 6
+        standard DOFs (UX, UY, UZ, RX, RY, RZ). Warping DOFs are element-specific,
+        so to fix warping you must use fix_node_with_warping(node_id, element_id).
+        """
         bc = BCHandler()
         bc.fix_node_with_warping(1)
-        assert bc.num_fixed_dofs() == 7
+        assert bc.num_fixed_dofs() == 6
 
-        # Check that all 7 DOFs are fixed
+        # Check that 6 standard DOFs are fixed (not warping)
         fixed_dofs = bc.get_fixed_dofs()
         local_dofs = [fd.local_dof for fd in fixed_dofs]
-        assert set(local_dofs) == {0, 1, 2, 3, 4, 5, 6}
+        assert set(local_dofs) == {0, 1, 2, 3, 4, 5}  # No warping (6)
 
     def test_pin_node(self):
         """Test pinning a node (fix translations only)"""
@@ -167,7 +172,11 @@ class TestBCHandlerWithDOFHandler:
         assert global_dofs == [0, 1, 2, 3, 4, 5]  # First 6 DOFs
 
     def test_get_fixed_global_dofs_with_warping(self):
-        """Test getting global DOF indices with warping DOF"""
+        """Test getting global DOF indices (warping requires element-specific BC)
+
+        When using fix_node_with_warping(node_id) without an element_id,
+        only the 6 standard DOFs are fixed. Warping DOFs are element-specific.
+        """
         # Enable warping on both nodes
         self.node1.enable_warping_dof()
         self.node2.enable_warping_dof()
@@ -180,8 +189,9 @@ class TestBCHandlerWithDOFHandler:
         bc.fix_node_with_warping(self.node1.id)
 
         global_dofs = bc.get_fixed_global_dofs(dof_handler)
-        assert len(global_dofs) == 7
-        assert global_dofs == [0, 1, 2, 3, 4, 5, 6]  # First 7 DOFs
+        # Only 6 standard DOFs are fixed (warping requires element_id)
+        assert len(global_dofs) == 6
+        assert global_dofs == [0, 1, 2, 3, 4, 5]  # First 6 DOFs (no warping)
 
     def test_get_fixed_global_dofs_pin_support(self):
         """Test getting global DOFs for pin support"""
@@ -300,16 +310,20 @@ class TestWarpingBoundaryConditions:
         assert set(global_dofs) == {0, 1, 2}
 
     def test_built_in_with_warping_restrains_warping(self):
-        """Test that built-in support with warping restrains warping"""
+        """Test that built-in support without element_id only fixes 6 DOFs
+
+        fix_node_with_warping(node_id) without an element_id only fixes the 6
+        standard DOFs. To fix warping, use fix_node_with_warping(node_id, element_id).
+        """
         bc = BCHandler()
         bc.fix_node_with_warping(self.node1.id)
 
-        # All 7 DOFs should be fixed
-        assert bc.num_fixed_dofs() == 7
+        # Only 6 standard DOFs are fixed (warping requires element_id)
+        assert bc.num_fixed_dofs() == 6
 
         global_dofs = bc.get_fixed_global_dofs(self.dof_handler)
-        # Should fix all 7 DOFs at node 1 (0-6)
-        assert set(global_dofs) == {0, 1, 2, 3, 4, 5, 6}
+        # Should fix only 6 standard DOFs at node 1 (0-5)
+        assert set(global_dofs) == {0, 1, 2, 3, 4, 5}
 
 
 class TestAcceptanceCriteria:
@@ -363,7 +377,12 @@ class TestAcceptanceCriteria:
         assert set(global_dofs) == {0, 1, 2}
 
     def test_ac6_built_in_with_warping_restrains_warping(self):
-        """AC6: Built-in support with warping correctly restrains warping"""
+        """AC6: Built-in support without element_id only fixes standard DOFs
+
+        fix_node_with_warping(node_id) without an element_id only fixes the 6
+        standard DOFs. Warping DOFs are element-specific, so to fix warping
+        you must use fix_node_with_warping(node_id, element_id).
+        """
         # Enable warping
         self.node1.enable_warping_dof()
 
@@ -374,5 +393,5 @@ class TestAcceptanceCriteria:
         bc.fix_node_with_warping(self.node1.id)
 
         global_dofs = bc.get_fixed_global_dofs(dof_handler)
-        # All 7 DOFs should be fixed
-        assert set(global_dofs) == {0, 1, 2, 3, 4, 5, 6}
+        # Only 6 standard DOFs are fixed (warping requires element_id)
+        assert set(global_dofs) == {0, 1, 2, 3, 4, 5}

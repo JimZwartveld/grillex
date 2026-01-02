@@ -1388,21 +1388,20 @@ class TestEigenvalueIntegration:
         mat = model.create_material("Steel", 210e6, 0.3, 7.85e-3)
         # Section with warping properties
         sec = model.create_section("I-Section", 0.005, 8e-5, 5e-6, 2e-7)
-        # Set warping constant (Cw) if available
-        if hasattr(sec, 'Cw'):
-            sec.Cw = 1e-10  # Warping constant m^6
+        # Enable warping with warping constant Iw (m^6)
+        sec.enable_warping(1e-10, 0.1)  # Iw=1e-10 m^6, omega_max=0.1 m^2
 
         # Create beams with warping DOF
         config = BeamConfig()
         config.include_warping = True
 
-        model.create_beam(n1, n2, mat, sec, config)
-        model.create_beam(n2, n3, mat, sec, config)
+        beam1 = model.create_beam(n1, n2, mat, sec, config)
+        beam2 = model.create_beam(n2, n3, mat, sec, config)
 
         # Fix cantilever including warping DOF
         model.boundary_conditions.fix_node(n1.id)
-        # Also fix warping at support (DOF index 6)
-        model.boundary_conditions.add_fixed_dof(n1.id, 6, 0.0)
+        # Fix warping at support - warping DOFs are element-specific
+        model.boundary_conditions.add_fixed_warping_dof(beam1.id, n1.id, 0.0)
 
         settings = EigensolverSettings()
         settings.n_modes = 10

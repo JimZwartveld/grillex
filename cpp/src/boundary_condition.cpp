@@ -44,8 +44,10 @@ void BCHandler::fix_node(int node_id) {
 }
 
 void BCHandler::fix_node_with_warping(int node_id) {
-    // Fix all 7 DOFs including warping (for all elements)
-    for (int dof = 0; dof <= 6; ++dof) {
+    // Fix all 6 standard DOFs only
+    // Warping DOFs are element-specific - use fix_node_with_warping(node_id, element_id)
+    // to fix warping for a specific element at this node
+    for (int dof = 0; dof <= 5; ++dof) {
         add_fixed_dof(node_id, dof, 0.0);
     }
 }
@@ -102,17 +104,21 @@ std::pair<Eigen::SparseMatrix<double>, Eigen::VectorXd> BCHandler::apply_to_syst
     for (const auto& fixed : fixed_dofs_) {
         int global_dof = -1;
 
-        // For warping DOF with element-specific fixity
-        if (fixed.local_dof == WARP && fixed.element_id >= 0) {
-            global_dof = dof_handler.get_warping_dof(fixed.element_id, fixed.node_id);
+        // For warping DOF - always requires element-specific fixity
+        if (fixed.local_dof == WARP) {
+            if (fixed.element_id >= 0) {
+                global_dof = dof_handler.get_warping_dof(fixed.element_id, fixed.node_id);
+            }
+            // Skip warping DOFs without element_id - they are invalid
+            // User must use fix_node_with_warping(node_id, element_id)
         }
-        // For standard DOFs or node-level warping
+        // For standard DOFs (0-5)
         else {
             global_dof = dof_handler.get_global_dof(fixed.node_id, fixed.local_dof);
         }
 
         if (global_dof < 0) {
-            // DOF is not active - skip
+            // DOF is not active or invalid - skip
             continue;
         }
 

@@ -29,7 +29,12 @@ std::vector<int> EndRelease::get_released_indices(bool has_warping) const {
     if (release_rx_i) indices.push_back(3);
     if (release_ry_i) indices.push_back(4);
     if (release_rz_i) indices.push_back(5);
-    if (has_warping && release_warp_i) indices.push_back(6);
+    // NOTE: Warping releases are NOT included here for static condensation.
+    // Warping releases represent bimoment = 0 (force-free condition), not
+    // structural elimination of the DOF. The warping DOF remains in the system
+    // with its full stiffness coupling to torsion. The bimoment = 0 condition
+    // is naturally satisfied when no warping loads are applied.
+    // See: Vlasov beam theory for thin-walled sections.
 
     // Node j DOFs (indices 6-11 for 12-DOF or 7-13 for 14-DOF)
     int offset = has_warping ? 7 : 6;
@@ -39,7 +44,7 @@ std::vector<int> EndRelease::get_released_indices(bool has_warping) const {
     if (release_rx_j) indices.push_back(offset + 3);
     if (release_ry_j) indices.push_back(offset + 4);
     if (release_rz_j) indices.push_back(offset + 5);
-    if (has_warping && release_warp_j) indices.push_back(offset + 6);
+    // NOTE: Warping releases at node j also NOT included (same reason as above)
 
     return indices;
 }
@@ -631,9 +636,20 @@ Eigen::Matrix<double, 14, 14> BeamElement::local_mass_matrix_warping(
     M(10, 10) = M12(9, 9);
 
     // Warping inertia terms (indices 6 and 13)
-    // Typically negligible for static analysis, left as zero
-    // For dynamic analysis, could add: M(6,6) = M(13,13) = rho * Iw * L / 3.0;
-    // but this is usually omitted in practice
+    // For eigenvalue analysis, warping mass is needed for positive definite mass matrix.
+    // Warping inertia: Iw_mass = rho * Iw * L / 3 (consistent mass formulation)
+    // where Iw is the warping constant [m^6]
+    double rho = material->rho;
+    double Iw = section->Iw;
+    double L = length;
+    if (Iw > 0.0) {
+        double warp_mass = rho * Iw * L / 3.0;
+        M(6, 6) = warp_mass;
+        M(13, 13) = warp_mass;
+        // Coupling term for consistent mass (similar to axial mass)
+        M(6, 13) = rho * Iw * L / 6.0;
+        M(13, 6) = rho * Iw * L / 6.0;
+    }
 
     // Apply offset transformation if offsets are present
     if (has_offsets()) {
