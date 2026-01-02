@@ -75,6 +75,7 @@ from grillex._grillex_cpp import (
     Material as _CppMaterial,
     Section as _CppSection,
     BeamElement as _CppBeamElement,
+    BeamConfig,
     LoadCase as _CppLoadCase,
     LoadCaseType,
     DOFIndex,
@@ -1119,6 +1120,7 @@ class StructuralModel:
         material_name: str,
         subdivisions: int = 1,
         name: Optional[str] = None,
+        warping_enabled: Optional[bool] = None,
         **kwargs
     ) -> Beam:
         """Add a beam using endpoint coordinates.
@@ -1130,6 +1132,7 @@ class StructuralModel:
             material_name: Name of material from library
             subdivisions: Number of FEM elements to subdivide the beam into (default: 1)
             name: Optional beam name for display
+            warping_enabled: Enable warping DOF (14-DOF element). If None, auto-enabled when section has Iw > 0.
             **kwargs: Additional beam properties
 
         Returns:
@@ -1150,6 +1153,15 @@ class StructuralModel:
         # Validate subdivisions
         subdivisions = max(1, int(subdivisions))
 
+        # Determine if warping should be enabled
+        # Auto-enable if section has warping constant set
+        if warping_enabled is None:
+            warping_enabled = hasattr(section, 'Iw') and section.Iw > 1e-20
+
+        # Create beam configuration
+        config = BeamConfig()
+        config.include_warping = warping_enabled
+
         # Create Python Beam object first
         beam = Beam(start_pos, end_pos, section, material, beam_id=self._beam_id_counter, name=name)
         self._beam_id_counter += 1
@@ -1160,7 +1172,7 @@ class StructuralModel:
 
         if subdivisions == 1:
             # Single element beam
-            cpp_element = self._cpp_model.create_beam(start_node, end_node, material, section)
+            cpp_element = self._cpp_model.create_beam(start_node, end_node, material, section, config)
             beam.add_element(cpp_element)
         else:
             # Multi-element beam - create intermediate nodes
@@ -1179,7 +1191,7 @@ class StructuralModel:
 
             # Create elements between consecutive nodes
             for i in range(subdivisions):
-                cpp_element = self._cpp_model.create_beam(nodes[i], nodes[i+1], material, section)
+                cpp_element = self._cpp_model.create_beam(nodes[i], nodes[i+1], material, section, config)
                 beam.add_element(cpp_element)
 
         self.beams.append(beam)
@@ -1858,16 +1870,28 @@ class StructuralModel:
 
         Args:
             position: [x, y, z] coordinates
-            include_warping: Whether to also fix warping DOF (7th DOF)
+            include_warping: Whether to also fix warping DOF (7th DOF).
+                            For warping, this finds all beam elements connected
+                            to this node and fixes their element-specific warping DOF.
         """
         node = self.find_node_at(position)
         if node is None:
             raise ValueError(f"No node found at position {position}")
 
+        # Fix standard 6 DOFs
+        self._cpp_model.boundary_conditions.fix_node(node.id)
+
         if include_warping:
-            self._cpp_model.boundary_conditions.fix_node_with_warping(node.id)
-        else:
-            self._cpp_model.boundary_conditions.fix_node(node.id)
+            # Warping DOFs are element-specific, so we need to find all beam
+            # elements connected to this node and fix warping for each
+            for beam in self.beams:
+                for element in beam.elements:
+                    # Check if this element is connected to the node
+                    if element.node_i.id == node.id or element.node_j.id == node.id:
+                        # Fix warping for this specific element at this node
+                        self._cpp_model.boundary_conditions.add_fixed_warping_dof(
+                            element.id, node.id, 0.0
+                        )
 
     def pin_node_at(self, position: List[float]) -> None:
         """Pin a node (fix translations only) at the specified position.

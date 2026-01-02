@@ -148,6 +148,10 @@ TOOLS: List[Dict[str, Any]] = [
                 "J": {
                     "type": "number",
                     "description": "Torsional constant (St. Venant) in m⁴"
+                },
+                "Iw": {
+                    "type": "number",
+                    "description": "Warping constant in m⁶. Required for thin-walled open sections like I-beams to capture warping torsion effects. For IPE300: 1.26e-7 m⁶"
                 }
             },
             "required": ["name", "A", "Iy", "Iz", "J"]
@@ -194,6 +198,10 @@ TOOLS: List[Dict[str, Any]] = [
                     "description": "Number of FEM elements to subdivide the beam into (default: 1)",
                     "minimum": 1,
                     "default": 1
+                },
+                "warping_enabled": {
+                    "type": "boolean",
+                    "description": "Enable warping DOF (14-DOF element) for capturing warping torsion effects. Auto-enabled when section has Iw > 0 if not specified."
                 }
             },
             "required": ["start_position", "end_position", "section", "material"]
@@ -1691,7 +1699,8 @@ class ToolExecutor:
             A=params["A"],
             Iy=params["Iy"],
             Iz=params["Iz"],
-            J=params["J"]
+            J=params["J"],
+            Iw=params.get("Iw", 0.0)
         )
         return ToolResult(
             success=True,
@@ -1714,7 +1723,8 @@ class ToolExecutor:
             section_name=params["section"],
             material_name=params["material"],
             subdivisions=params.get("subdivisions", 1),
-            name=beam_name
+            name=beam_name,
+            warping_enabled=params.get("warping_enabled")  # None = auto-detect from Iw
         )
         return ToolResult(
             success=True,
