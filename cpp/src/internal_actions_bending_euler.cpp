@@ -315,7 +315,8 @@ double ShearYEulerComputer::fixed_fixed_fixed_fixed(double x) const {
     double L4 = L3 * L;
 
     // Derivative of moment formula
-    return (60.0 * L2 * q1 * x + 30.0 * L2 * x * x * (-q1 + q2)
+    // x-terms multiplied by L to convert from dimensionless to dimensional x
+    return (60.0 * L3 * q1 * x + 30.0 * L3 * x * x * (-q1 + q2)
             + 3.0 * (120.0 * EI * L * (phi1 + phi2) + 240.0 * EI * (w1 - w2)
                     - L4 * (7.0 * q1 + 3.0 * q2)))
            / (60.0 * L3);
@@ -694,7 +695,8 @@ double ShearZEulerComputer::fixed_fixed_fixed_fixed(double x) const {
     double L3 = L2 * L;
     double L4 = L3 * L;
 
-    return (60.0 * L2 * q1 * x + 30.0 * L2 * x * x * (-q1 + q2)
+    // x-terms multiplied by L to convert from dimensionless to dimensional x
+    return (60.0 * L3 * q1 * x + 30.0 * L3 * x * x * (-q1 + q2)
             + 3.0 * (120.0 * EI * L * (phi1 + phi2) + 240.0 * EI * (w1 - w2)
                     - L4 * (7.0 * q1 + 3.0 * q2)))
            / (60.0 * L3);

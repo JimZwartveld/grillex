@@ -784,7 +784,13 @@ public:
      *
      * For Timoshenko beams, the rotation is an independent DOF,
      * interpolated separately.
+     *
+     * @deprecated Use the overload with load_case parameter instead.
+     *   This version uses Hermite interpolation only and does not include
+     *   distributed load effects. The version with load_case=nullptr provides
+     *   the same behavior when no load effects are needed.
      */
+    [[deprecated("Use get_displacements_at(x, displacements, dof_handler, load_case) instead")]]
     DisplacementLine get_displacements_at(
         double x,
         const Eigen::VectorXd& global_displacements,

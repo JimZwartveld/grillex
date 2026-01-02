@@ -410,7 +410,10 @@ double RotationZEulerComputer::fixed_fixed_fixed_fixed(double x) const {
 
     double theta_hermite = dN1_dx * v1 + dN2_dx * phi1 + dN3_dx * v2 + dN4_dx * phi2;
 
-    // Derivative of load-induced deflection
+    // Load-induced rotation correction for fixed-fixed beam
+    // This corrects for the difference between Hermite interpolation and the exact
+    // 4th-order polynomial under distributed load
+    // Formula: derivative of q*x²*(L-x)²/(24EI) for uniform + linear correction
     double theta_load = (q1 * x * (L - x) * (L - 2.0 * x) / (12.0 * EI * L)) +
                         ((q2 - q1) * x * (L - x) * (L - 3.0 * x) / (60.0 * EI * L));
 
@@ -456,15 +459,19 @@ double RotationZEulerComputer::fixed_fixed_free_free(double x) const {
 
     double L2 = L * L;
     double L3 = L2 * L;
+    double L4 = L3 * L;
     double x2 = x * x;
     double x3 = x2 * x;
+    double x4 = x3 * x;
 
     // Cantilever rotation: θ(x) = φ1 + load effect
-    double theta_load = -(q1 * (L3 - 3.0 * L * x2 + 2.0 * x3) / (6.0 * EI)) -
-                        ((q2 - q1) * (L3 * L - 4.0 * L * x3 + 3.0 * x3 * x) / (24.0 * EI * L));
+    // Corrected polynomial: -L³ + 3L²x - 3Lx² + x³ (derivative of deflection)
+    // Original had: L³ - 3Lx² + 2x³ (missing L²x term, wrong x³ coefficient)
+    double theta_load = -(q1 * (-L3 + 3.0 * L2 * x - 3.0 * L * x2 + x3) / (6.0 * EI)) -
+                        ((q2 - q1) * (-L4 + 6.0 * L2 * x2 - 8.0 * L * x3 + 4.0 * x4) / (24.0 * EI * L));
 
-    // Subtract value at x=0
-    double theta_load_0 = -(q1 * L3 / (6.0 * EI)) - ((q2 - q1) * L3 / (24.0 * EI));
+    // Subtract value at x=0 to ensure θ(0) = φ1
+    double theta_load_0 = -(q1 * (-L3) / (6.0 * EI)) - ((q2 - q1) * (-L3) / (24.0 * EI));
 
     return phi1 + (theta_load - theta_load_0);
 }

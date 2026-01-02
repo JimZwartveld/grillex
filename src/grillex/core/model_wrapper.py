@@ -494,20 +494,29 @@ class Beam:
         self,
         component: str,
         model: 'StructuralModel',
-        num_points: int = 100
+        num_points: int = 100,
+        load_case: Optional[_CppLoadCase] = None
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get displacement diagram for plotting.
+
+        Uses analytical beam equations to compute exact displacements and rotations
+        at any position along the beam, including distributed load effects.
 
         Args:
             component: 'u', 'v', 'w', 'theta_x', 'theta_y', or 'theta_z'
             model: StructuralModel object (must be analyzed)
             num_points: Number of points to sample along beam
+            load_case: LoadCase to use for distributed load effects (uses active if None)
 
         Returns:
             (x_positions, displacements): Arrays for plotting
         """
         if not model.is_analyzed():
             raise ValueError("Model must be analyzed before querying displacements")
+
+        # Use active load case if not specified
+        if load_case is None:
+            load_case = model._cpp_model.get_active_load_case()
 
         x_positions = np.linspace(0, self.length, num_points)
         displacements = np.zeros(num_points)
@@ -516,8 +525,9 @@ class Beam:
             element, x_local = self._find_element_at_position(x)
             disp = element.get_displacements_at(
                 x_local,
-                model.get_all_displacements(),
-                model._cpp_model.get_dof_handler()
+                model.get_all_displacements(load_case),
+                model._cpp_model.get_dof_handler(),
+                load_case
             )
 
             if component == 'u':

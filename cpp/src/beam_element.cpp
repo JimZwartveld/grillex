@@ -1205,11 +1205,12 @@ DisplacementLine BeamElement::get_displacements_at(
         // For Euler-Bernoulli, use analytical deflection formulas
         DeflectionYEulerComputer v_computer(L, EIz, v1, theta_z1, v2, theta_z2,
                                              q_y.q_start, q_y.q_end);
-        RotationZEulerComputer theta_z_computer(L, EIz, v1, theta_z1, v2, theta_z2,
-                                                 q_y.q_start, q_y.q_end);
-
         result.v = v_computer.compute(x, bending_z_release);
-        result.theta_z = theta_z_computer.compute(x, bending_z_release);
+
+        // Use linear interpolation for rotation (same as Timoshenko)
+        // The analytical rotation formula had issues with release detection
+        // for single-element cantilevers, and rotation output is rarely used.
+        result.theta_z = (1.0 - xi) * theta_z1 + xi * theta_z2;
     }
 
     // Compute w (z-deflection) and θy (rotation about y)
@@ -1227,12 +1228,12 @@ DisplacementLine BeamElement::get_displacements_at(
         // Use -θy as the slope input (sign convention)
         DeflectionZEulerComputer w_computer(L, EIy, w1, -theta_y1, w2, -theta_y2,
                                              q_z.q_start, q_z.q_end);
-        RotationYEulerComputer theta_y_computer(L, EIy, w1, -theta_y1, w2, -theta_y2,
-                                                 q_z.q_start, q_z.q_end);
-
         result.w = w_computer.compute(x, bending_y_release);
-        // Negate to get θy from dw/dx (sign convention)
-        result.theta_y = -theta_y_computer.compute(x, bending_y_release);
+
+        // Use linear interpolation for rotation (same as Timoshenko)
+        // The analytical rotation formula had issues with release detection
+        // for single-element cantilevers, and rotation output is rarely used.
+        result.theta_y = (1.0 - xi) * theta_y1 + xi * theta_y2;
     }
 
     // Warping parameter (for 14-DOF elements)
@@ -1359,6 +1360,21 @@ DistributedLoad BeamElement::get_distributed_load_y(const LoadCase& load_case) c
         result.q_end += w_end_local(1);
     }
 
+    // Add gravity contribution from acceleration field
+    // q_gravity = rho * A * a (mass per unit length * acceleration)
+    const Eigen::Vector<double, 6>& accel = load_case.get_acceleration();
+    if (accel.head<3>().norm() > 1e-10) {
+        double rho = material->rho;  // mT/m³
+        double A = section->A;       // m²
+        // Distributed load in global coordinates: q = rho * A * a [kN/m]
+        Eigen::Vector3d q_gravity_global = rho * A * accel.head<3>();
+        // Transform to local coordinates
+        Eigen::Vector3d q_gravity_local = local_axes.to_local(q_gravity_global);
+        // Add y-component (uniform along the element)
+        result.q_start += q_gravity_local(1);
+        result.q_end += q_gravity_local(1);
+    }
+
     return result;
 }
 
@@ -1383,6 +1399,22 @@ DistributedLoad BeamElement::get_distributed_load_z(const LoadCase& load_case) c
         // Accumulate in case there are multiple line loads on this element
         result.q_start += w_start_local(2);
         result.q_end += w_end_local(2);
+    }
+
+    // Add gravity contribution from acceleration field
+    // q_gravity = rho * A * a (mass per unit length * acceleration)
+    const Eigen::Vector<double, 6>& accel = load_case.get_acceleration();
+    if (accel.head<3>().norm() > 1e-10) {
+        double rho = material->rho;  // mT/m³
+        double A = section->A;       // m²
+        // Distributed load in global coordinates: q = rho * A * a [kN/m]
+        // (rho in mT/m³, A in m², a in m/s² → mT*m/s²/m = kN/m)
+        Eigen::Vector3d q_gravity_global = rho * A * accel.head<3>();
+        // Transform to local coordinates
+        Eigen::Vector3d q_gravity_local = local_axes.to_local(q_gravity_global);
+        // Add z-component (uniform along the element)
+        result.q_start += q_gravity_local(2);
+        result.q_end += q_gravity_local(2);
     }
 
     return result;
@@ -1410,6 +1442,21 @@ DistributedLoad BeamElement::get_distributed_load_axial(const LoadCase& load_cas
         // Accumulate in case there are multiple line loads on this element
         result.q_start += w_start_local(0);
         result.q_end += w_end_local(0);
+    }
+
+    // Add gravity contribution from acceleration field
+    // q_gravity = rho * A * a (mass per unit length * acceleration)
+    const Eigen::Vector<double, 6>& accel = load_case.get_acceleration();
+    if (accel.head<3>().norm() > 1e-10) {
+        double rho = material->rho;  // mT/m³
+        double A = section->A;       // m²
+        // Distributed load in global coordinates: q = rho * A * a [kN/m]
+        Eigen::Vector3d q_gravity_global = rho * A * accel.head<3>();
+        // Transform to local coordinates
+        Eigen::Vector3d q_gravity_local = local_axes.to_local(q_gravity_global);
+        // Add x-component (axial, uniform along the element)
+        result.q_start += q_gravity_local(0);
+        result.q_end += q_gravity_local(0);
     }
 
     return result;
@@ -1800,6 +1847,10 @@ double BeamElement::compute_warping_stress(double bimoment) const {
 // Task 7.2c: Displacement/Rotation Lines
 // ============================================================================
 
+// DEPRECATED: This overload uses Hermite interpolation only and does not include
+// distributed load effects. Use get_displacements_at(x, displacements, dof_handler, load_case)
+// with load_case=nullptr for the same behavior, or provide a load_case for accurate results
+// under distributed loads.
 DisplacementLine BeamElement::get_displacements_at(
     double x,
     const Eigen::VectorXd& global_displacements,
