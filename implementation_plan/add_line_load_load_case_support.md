@@ -1,5 +1,7 @@
 # Implementation Plan: Add Load Case Support to add_line_load Tool
 
+## Status: ✅ COMPLETED (2026-01-02)
+
 ## Problem Statement
 
 The `add_line_load` LLM tool currently doesn't support specifying which load case to add the line load to. It always uses the default/first load case.
@@ -168,3 +170,30 @@ assert result.success
 loads = lc.get_line_loads()
 assert len(loads) == 1
 ```
+
+---
+
+## Execution Notes (Completed 2026-01-02)
+
+**Steps Taken:**
+1. Updated tool schema in `src/grillex/llm/tools.py` (line 335) to add `load_case_id` property
+2. Updated `_tool_add_line_load` handler method (line 1802) to:
+   - Look up load case by ID if `load_case_id` parameter is provided
+   - Return error if specified load case ID is not found
+   - Pass the found load case to `add_line_load_by_coords`
+   - Include `load_case_id` in the result dictionary
+3. Added 3 test cases to `tests/python/test_phase12_llm_tooling.py`:
+   - `test_add_line_load_default_load_case`: Tests that line loads work with default load case (load_case_id=None)
+   - `test_add_line_load_with_load_case_id`: Tests that line loads can be added to specific load cases
+   - `test_add_line_load_invalid_load_case_id`: Tests error handling for non-existent load case IDs
+
+**Problems Encountered:**
+- None
+
+**Verification:**
+- All 3 new tests passing ✓
+- Ran: `PYTHONPATH=/home/user/grillex/src python3 -m pytest -o "addopts=-v" tests/python/test_phase12_llm_tooling.py -k "test_add_line_load"`
+
+**Files Modified:**
+- `src/grillex/llm/tools.py` - Schema and handler updates
+- `tests/python/test_phase12_llm_tooling.py` - Added 3 test methods
