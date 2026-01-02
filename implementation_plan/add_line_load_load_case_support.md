@@ -197,3 +197,40 @@ assert len(loads) == 1
 **Files Modified:**
 - `src/grillex/llm/tools.py` - Schema and handler updates
 - `tests/python/test_phase12_llm_tooling.py` - Added 3 test methods
+
+---
+
+## Additional Changes (Completed 2026-01-02)
+
+### Active Load Case Support
+
+Modified `_tool_add_line_load` to use the active load case instead of the default load case when no `load_case_id` is specified.
+
+**File:** `src/grillex/llm/tools.py`
+
+```python
+# When no load_case_id is specified, use active load case
+else:
+    load_case = self.model._cpp_model.get_active_load_case()
+    if load_case is not None:
+        load_case_id = load_case.id
+```
+
+### Beam-Level Line Load Display
+
+Added beam-level line load tracking to display line loads as a single load per beam instead of per-element.
+
+**Files Modified:**
+- `src/grillex/core/model_wrapper.py`:
+  - Added `BeamLineLoad` dataclass to store beam-level line load specifications
+  - Added `_beam_line_loads` list to `StructuralModel` for tracking
+  - Updated `add_line_load()` to store beam-level line load before distributing to elements
+  - Added `get_beam_line_loads()` method to query beam-level line loads
+- `src/grillex/core/__init__.py` - Exported `BeamLineLoad` class
+
+**Verification:**
+- All 17 line load tests from Phase 5 passing ✓
+- All 3 LLM tool tests passing ✓
+- Manual verification:
+  - Beam with 8 elements shows 1 beam-level line load (display) and 8 element-level line loads (analysis)
+  - Active load case is used when no load_case_id is specified
