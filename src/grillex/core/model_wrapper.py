@@ -334,11 +334,13 @@ class Beam:
 
         element, local_x = self._find_element_at_position(x)
 
-        dof_handler = model._cpp_model.get_dof_handler()
-        displacements = model._cpp_model.get_displacements()
-
+        # Resolve load case first
         if load_case is None:
             load_case = model._cpp_model.get_default_load_case()
+
+        # Get displacements for the specific load case
+        dof_handler = model._cpp_model.get_dof_handler()
+        displacements = model.get_all_displacements(load_case)
 
         return element.get_internal_actions(local_x, displacements, dof_handler, load_case)
 
@@ -835,12 +837,13 @@ class Beam:
         # Check if we need warping actions
         is_warping_action = action_type in (ActionType.BIMOMENT, ActionType.WARPING_TORSION)
 
-        # Get required data from model
-        dof_handler = model._cpp_model.get_dof_handler()
-        displacements = model._cpp_model.get_displacements()
-
+        # Resolve load case first
         if load_case is None:
             load_case = model._cpp_model.get_default_load_case()
+
+        # Get required data from model (must use load case to get correct displacements)
+        dof_handler = model._cpp_model.get_dof_handler()
+        displacements = model.get_all_displacements(load_case)
 
         for i, x in enumerate(x_positions):
             element, local_x = self._find_element_at_position(x)

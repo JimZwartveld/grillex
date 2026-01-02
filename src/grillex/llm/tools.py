@@ -4102,12 +4102,21 @@ class ToolExecutor:
                 )
 
         try:
+            # If no load case specified, use the default
+            if load_case is None:
+                load_case = self.model._cpp_model.get_default_load_case()
+
             data = beam.get_line_data(
                 action_type=action_type,
                 model=self.model,
                 num_points=num_points,
                 load_case=load_case
             )
+
+            # Add load case info to the result
+            data["load_case_id"] = load_case.id if load_case else None
+            data["load_case_name"] = load_case.name if load_case else None
+
             return ToolResult(success=True, result=data)
         except ValueError as e:
             return ToolResult(
