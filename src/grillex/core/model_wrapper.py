@@ -837,6 +837,15 @@ class Beam:
         # Check if we need warping actions
         is_warping_action = action_type in (ActionType.BIMOMENT, ActionType.WARPING_TORSION)
 
+        # Check if beam has warping enabled (check first element)
+        has_warping = len(self.elements) > 0 and self.elements[0].has_warping()
+
+        # For torsion with warping, we'll collect component values
+        is_torsion_with_warping = action_type == ActionType.TORSION and has_warping
+        if is_torsion_with_warping:
+            values_sv = np.zeros(num_points)  # St. Venant torsion
+            values_w = np.zeros(num_points)   # Warping torsion
+
         # Resolve load case first
         if load_case is None:
             load_case = model._cpp_model.get_default_load_case()
@@ -848,15 +857,19 @@ class Beam:
         for i, x in enumerate(x_positions):
             element, local_x = self._find_element_at_position(x)
 
-            if is_warping_action:
+            if is_warping_action or is_torsion_with_warping:
                 # Use warping internal actions method
                 warping_actions = element.get_warping_internal_actions(
                     local_x, displacements, dof_handler
                 )
                 if action_type == ActionType.BIMOMENT:
                     values[i] = warping_actions.B
-                else:  # WARPING_TORSION
+                elif action_type == ActionType.WARPING_TORSION:
                     values[i] = warping_actions.Mx_w
+                elif is_torsion_with_warping:
+                    values[i] = warping_actions.Mx  # Total torsion
+                    values_sv[i] = warping_actions.Mx_sv
+                    values_w[i] = warping_actions.Mx_w
             else:
                 # Use standard internal actions
                 actions = element.get_internal_actions(
@@ -878,7 +891,7 @@ class Beam:
         # Find extrema
         extrema = self._find_extrema(values, x_positions)
 
-        return {
+        result = {
             "x": x_positions.tolist(),
             "values": values.tolist(),
             "units": units,
@@ -888,6 +901,29 @@ class Beam:
             "beam_length": self.length,
             "extrema": extrema
         }
+
+        # Add torsion components for warping beams
+        if is_torsion_with_warping:
+            result["has_warping"] = True
+            result["series"] = {
+                "total": {
+                    "values": values.tolist(),
+                    "label": "Total Mx",
+                    "color": "#3b82f6"  # Blue
+                },
+                "st_venant": {
+                    "values": values_sv.tolist(),
+                    "label": "St. Venant Mx_sv",
+                    "color": "#22c55e"  # Green
+                },
+                "warping": {
+                    "values": values_w.tolist(),
+                    "label": "Warping Mx_w",
+                    "color": "#f97316"  # Orange
+                }
+            }
+
+        return result
 
 
 class StructuralModel:
