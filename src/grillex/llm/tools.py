@@ -1504,6 +1504,37 @@ TOOLS: List[Dict[str, Any]] = [
             "required": ["element_id"]
         }
     },
+
+    # =========================================================================
+    # Beam Line Diagram Data
+    # =========================================================================
+    {
+        "name": "get_beam_line_data",
+        "description": "Get internal action diagram data for a beam. Returns x positions and values for plotting moment, shear, axial, or torsion diagrams. Includes extrema (min/max values and positions).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "beam_id": {
+                    "type": "integer",
+                    "description": "ID of the beam"
+                },
+                "action_type": {
+                    "type": "string",
+                    "enum": ["moment_y", "moment_z", "shear_y", "shear_z", "axial", "torsion", "bimoment", "warping_torsion"],
+                    "description": "Type of internal action diagram to retrieve"
+                },
+                "num_points": {
+                    "type": "integer",
+                    "description": "Number of sample points along beam (default 100)"
+                },
+                "load_case_id": {
+                    "type": "integer",
+                    "description": "Optional load case ID (uses active load case if not specified)"
+                }
+            },
+            "required": ["beam_id", "action_type"]
+        }
+    },
 ]
 
 
@@ -3992,6 +4023,72 @@ class ToolExecutor:
                 "units": "kN/m²"
             }
         )
+
+    def _tool_get_beam_line_data(self, params: Dict[str, Any]) -> ToolResult:
+        """Get internal action diagram data for a beam.
+
+        Returns x positions and values for plotting moment, shear, axial,
+        or torsion diagrams along a beam.
+        """
+        if self.model is None:
+            return ToolResult(success=False, error="No model created.")
+        if not self.model.is_analyzed():
+            return ToolResult(
+                success=False,
+                error="Model not analyzed. Call analyze first.",
+                suggestion="Run the analyze tool before querying beam line data."
+            )
+
+        beam_id = params["beam_id"]
+        action_type = params["action_type"]
+        num_points = params.get("num_points", 100)
+        load_case_id = params.get("load_case_id")
+
+        # Find beam by ID
+        beam = None
+        for b in self.model.beams:
+            if b.beam_id == beam_id:
+                beam = b
+                break
+
+        if beam is None:
+            available_ids = [b.beam_id for b in self.model.beams]
+            return ToolResult(
+                success=False,
+                error=f"Beam with ID {beam_id} not found",
+                suggestion=f"Available beam IDs: {available_ids}"
+            )
+
+        # Get load case if specified
+        load_case = None
+        if load_case_id is not None:
+            load_cases = self.model._cpp_model.get_load_cases()
+            for lc in load_cases:
+                if lc.id == load_case_id:
+                    load_case = lc
+                    break
+            if load_case is None:
+                available_ids = [lc.id for lc in load_cases]
+                return ToolResult(
+                    success=False,
+                    error=f"Load case with ID {load_case_id} not found",
+                    suggestion=f"Available load case IDs: {available_ids}"
+                )
+
+        try:
+            data = beam.get_line_data(
+                action_type=action_type,
+                model=self.model,
+                num_points=num_points,
+                load_case=load_case
+            )
+            return ToolResult(success=True, result=data)
+        except ValueError as e:
+            return ToolResult(
+                success=False,
+                error=str(e),
+                suggestion="Check that the action_type is valid: moment_y, moment_z, shear_y, shear_z, axial, torsion, bimoment, warping_torsion"
+            )
 
 
 def execute_tool(

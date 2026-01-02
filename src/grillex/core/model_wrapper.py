@@ -35,9 +35,36 @@ Usage:
     disp = model.get_displacement_at([6, 0, 0], DOFIndex.UY)
 """
 
-from typing import List, Tuple, Optional, Union, Dict, TYPE_CHECKING
+from typing import List, Tuple, Optional, Union, Dict, Any, TYPE_CHECKING
 from dataclasses import dataclass
+from enum import Enum
 import numpy as np
+
+
+class ActionType(Enum):
+    """Type of internal action for line diagrams.
+
+    Used by the get_line_data() method to specify which internal action
+    to extract for plotting moment, shear, axial, or torsion diagrams.
+
+    Attributes:
+        MOMENT_Y: Bending moment about local Y-axis [kN·m]
+        MOMENT_Z: Bending moment about local Z-axis [kN·m]
+        SHEAR_Y: Shear force in local Y direction [kN]
+        SHEAR_Z: Shear force in local Z direction [kN]
+        AXIAL: Axial force (positive in tension) [kN]
+        TORSION: Total torsion moment about local X-axis [kN·m]
+        BIMOMENT: Bimoment for warping torsion [kN·m²]
+        WARPING_TORSION: Warping torsion component [kN·m]
+    """
+    MOMENT_Y = "moment_y"
+    MOMENT_Z = "moment_z"
+    SHEAR_Y = "shear_y"
+    SHEAR_Z = "shear_z"
+    AXIAL = "axial"
+    TORSION = "torsion"
+    BIMOMENT = "bimoment"
+    WARPING_TORSION = "warping_torsion"
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -467,20 +494,29 @@ class Beam:
         self,
         component: str,
         model: 'StructuralModel',
-        num_points: int = 100
+        num_points: int = 100,
+        load_case: Optional[_CppLoadCase] = None
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get displacement diagram for plotting.
+
+        Uses analytical beam equations to compute exact displacements and rotations
+        at any position along the beam, including distributed load effects.
 
         Args:
             component: 'u', 'v', 'w', 'theta_x', 'theta_y', or 'theta_z'
             model: StructuralModel object (must be analyzed)
             num_points: Number of points to sample along beam
+            load_case: LoadCase to use for distributed load effects (uses active if None)
 
         Returns:
             (x_positions, displacements): Arrays for plotting
         """
         if not model.is_analyzed():
             raise ValueError("Model must be analyzed before querying displacements")
+
+        # Use active load case if not specified
+        if load_case is None:
+            load_case = model._cpp_model.get_active_load_case()
 
         x_positions = np.linspace(0, self.length, num_points)
         displacements = np.zeros(num_points)
@@ -489,8 +525,9 @@ class Beam:
             element, x_local = self._find_element_at_position(x)
             disp = element.get_displacements_at(
                 x_local,
-                model.get_all_displacements(),
-                model._cpp_model.get_dof_handler()
+                model.get_all_displacements(load_case),
+                model._cpp_model.get_dof_handler(),
+                load_case
             )
 
             if component == 'u':
@@ -659,6 +696,174 @@ class Beam:
         plt.tight_layout()
 
         return fig
+
+    # ===== Unified Line Data API =====
+
+    def _find_extrema(
+        self,
+        values: np.ndarray,
+        x_positions: np.ndarray
+    ) -> List[Dict[str, Any]]:
+        """Find global extrema in values array.
+
+        Args:
+            values: Array of action values
+            x_positions: Array of corresponding x positions [m]
+
+        Returns:
+            List of {x, value, type, is_global} dicts for min and max values.
+            Returns empty list if values is empty.
+        """
+        if len(values) == 0:
+            return []
+
+        min_idx = int(np.argmin(values))
+        max_idx = int(np.argmax(values))
+
+        extrema = []
+
+        # Add minimum
+        extrema.append({
+            "x": float(x_positions[min_idx]),
+            "value": float(values[min_idx]),
+            "type": "min",
+            "is_global": True
+        })
+
+        # Add maximum if different from minimum
+        if min_idx != max_idx:
+            extrema.append({
+                "x": float(x_positions[max_idx]),
+                "value": float(values[max_idx]),
+                "type": "max",
+                "is_global": True
+            })
+
+        return extrema
+
+    def get_line_data(
+        self,
+        action_type: Union[str, ActionType],
+        model: 'StructuralModel',
+        num_points: int = 100,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> Dict[str, Any]:
+        """Get line diagram data for plotting.
+
+        Provides a unified API for retrieving internal action data along the beam
+        for plotting moment, shear, axial, torsion, or warping diagrams.
+
+        Args:
+            action_type: Type of internal action (ActionType enum or string like
+                         'moment_y', 'shear_z', 'axial', 'torsion', 'bimoment')
+            model: StructuralModel (must be analyzed)
+            num_points: Number of points to sample along beam (default 100)
+            load_case: Optional load case (uses active if None)
+
+        Returns:
+            Dictionary with:
+                - x: List of positions along beam [m]
+                - values: List of action values [kN or kN·m or kN·m²]
+                - units: Unit string for display
+                - label: Human-readable label
+                - beam_id: Beam ID
+                - beam_name: Beam name (or None)
+                - beam_length: Total beam length [m]
+                - extrema: List of {x, value, type, is_global} for min/max
+
+        Raises:
+            ValueError: If model not analyzed or invalid action type
+
+        Example:
+            >>> data = beam.get_line_data('moment_z', model)
+            >>> plt.plot(data['x'], data['values'])
+            >>> plt.ylabel(f"Mz [{data['units']}]")
+        """
+        if not model.is_analyzed():
+            raise ValueError("Model must be analyzed before querying line data")
+
+        # Convert string to ActionType enum if needed
+        if isinstance(action_type, str):
+            try:
+                action_type = ActionType(action_type.lower())
+            except ValueError:
+                valid_types = [at.value for at in ActionType]
+                raise ValueError(
+                    f"Invalid action type '{action_type}'. "
+                    f"Valid types: {valid_types}"
+                )
+
+        # Define units and labels
+        action_info = {
+            ActionType.MOMENT_Y: ("kN·m", "Bending Moment My"),
+            ActionType.MOMENT_Z: ("kN·m", "Bending Moment Mz"),
+            ActionType.SHEAR_Y: ("kN", "Shear Force Vy"),
+            ActionType.SHEAR_Z: ("kN", "Shear Force Vz"),
+            ActionType.AXIAL: ("kN", "Axial Force N"),
+            ActionType.TORSION: ("kN·m", "Torsion Moment Mx"),
+            ActionType.BIMOMENT: ("kN·m²", "Bimoment B"),
+            ActionType.WARPING_TORSION: ("kN·m", "Warping Torsion Mx_w"),
+        }
+
+        units, label = action_info[action_type]
+
+        # Sample positions along beam
+        x_positions = np.linspace(0, self.length, num_points)
+        values = np.zeros(num_points)
+
+        # Check if we need warping actions
+        is_warping_action = action_type in (ActionType.BIMOMENT, ActionType.WARPING_TORSION)
+
+        # Get required data from model
+        dof_handler = model._cpp_model.get_dof_handler()
+        displacements = model._cpp_model.get_displacements()
+
+        if load_case is None:
+            load_case = model._cpp_model.get_default_load_case()
+
+        for i, x in enumerate(x_positions):
+            element, local_x = self._find_element_at_position(x)
+
+            if is_warping_action:
+                # Use warping internal actions method
+                warping_actions = element.get_warping_internal_actions(
+                    local_x, displacements, dof_handler
+                )
+                if action_type == ActionType.BIMOMENT:
+                    values[i] = warping_actions.B
+                else:  # WARPING_TORSION
+                    values[i] = warping_actions.Mx_w
+            else:
+                # Use standard internal actions
+                actions = element.get_internal_actions(
+                    local_x, displacements, dof_handler, load_case
+                )
+                if action_type == ActionType.MOMENT_Y:
+                    values[i] = actions.My
+                elif action_type == ActionType.MOMENT_Z:
+                    values[i] = actions.Mz
+                elif action_type == ActionType.SHEAR_Y:
+                    values[i] = actions.Vy
+                elif action_type == ActionType.SHEAR_Z:
+                    values[i] = actions.Vz
+                elif action_type == ActionType.AXIAL:
+                    values[i] = actions.N
+                elif action_type == ActionType.TORSION:
+                    values[i] = actions.Mx
+
+        # Find extrema
+        extrema = self._find_extrema(values, x_positions)
+
+        return {
+            "x": x_positions.tolist(),
+            "values": values.tolist(),
+            "units": units,
+            "label": label,
+            "beam_id": self.beam_id,
+            "beam_name": self.name,
+            "beam_length": self.length,
+            "extrema": extrema
+        }
 
 
 class StructuralModel:
