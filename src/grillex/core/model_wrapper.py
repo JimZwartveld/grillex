@@ -899,12 +899,12 @@ class Beam:
             "beam_id": self.beam_id,
             "beam_name": self.name,
             "beam_length": self.length,
-            "extrema": extrema
+            "extrema": extrema,
+            "has_warping": has_warping  # Always include so frontend knows to show bimoment button
         }
 
         # Add torsion components for warping beams
         if is_torsion_with_warping:
-            result["has_warping"] = True
             result["series"] = {
                 "total": {
                     "values": values.tolist(),
