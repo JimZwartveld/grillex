@@ -331,6 +331,10 @@ TOOLS: List[Dict[str, Any]] = [
                     "minItems": 3,
                     "maxItems": 3,
                     "description": "Load intensity at end [wx, wy, wz] in kN/m. If omitted, uses load_start (uniform)."
+                },
+                "load_case_id": {
+                    "type": "integer",
+                    "description": "Optional load case ID. If not specified, uses the first/default load case."
                 }
             },
             "required": ["beam_start", "beam_end", "load_start"]
@@ -1801,11 +1805,32 @@ class ToolExecutor:
             return ToolResult(success=False, error="No model created. Call create_model first.")
 
         load_end = params.get("load_end", params["load_start"])
+
+        # Find load case by ID if specified, otherwise use active load case
+        load_case = None
+        load_case_id = params.get("load_case_id")
+        if load_case_id is not None:
+            for lc in self.model._cpp_model.get_load_cases():
+                if lc.id == load_case_id:
+                    load_case = lc
+                    break
+            if load_case is None:
+                return ToolResult(
+                    success=False,
+                    error=f"Load case with ID {load_case_id} not found"
+                )
+        else:
+            # Use active load case instead of default
+            load_case = self.model._cpp_model.get_active_load_case()
+            if load_case is not None:
+                load_case_id = load_case.id
+
         self.model.add_line_load_by_coords(
             start_pos=params["beam_start"],
             end_pos=params["beam_end"],
             w_start=params["load_start"],
-            w_end=load_end
+            w_end=load_end,
+            load_case=load_case
         )
         return ToolResult(
             success=True,
@@ -1814,6 +1839,7 @@ class ToolExecutor:
                 "beam_end": params["beam_end"],
                 "load_start": params["load_start"],
                 "load_end": load_end,
+                "load_case_id": load_case_id,
                 "message": "Line load applied to beam"
             }
         )

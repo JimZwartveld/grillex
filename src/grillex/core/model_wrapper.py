@@ -145,6 +145,27 @@ class MeshStatistics:
     n_support_dofs: int = 0
 
 
+@dataclass
+class BeamLineLoad:
+    """
+    Represents a beam-level line load specification.
+
+    This stores the original user-specified line load at the beam level,
+    before it is distributed to individual elements for analysis.
+    Used for display purposes to show a single line load per beam.
+
+    Attributes:
+        beam_id: ID of the beam the load is applied to
+        w_start: Load intensity at start [kN/m] as [wx, wy, wz] in global coordinates
+        w_end: Load intensity at end [kN/m] as [wx, wy, wz] in global coordinates
+        load_case_id: ID of the load case this load belongs to
+    """
+    beam_id: int
+    w_start: List[float]
+    w_end: List[float]
+    load_case_id: int
+
+
 class Beam:
     """
     Represents a structural beam in the model.
@@ -908,6 +929,7 @@ class StructuralModel:
         self._beam_id_counter = 1
         self._load_combinations: List[dict] = []
         self._combination_id_counter = 1
+        self._beam_line_loads: List[BeamLineLoad] = []  # Beam-level line load tracking
 
     # ===== Material and Section Management =====
 
@@ -2096,6 +2118,15 @@ class StructuralModel:
         w_start_vec = np.array(w_start, dtype=float)
         w_end_vec = np.array(w_end, dtype=float)
 
+        # Store beam-level line load for display purposes
+        beam_line_load = BeamLineLoad(
+            beam_id=beam.beam_id,
+            w_start=list(w_start_vec),
+            w_end=list(w_end_vec),
+            load_case_id=load_case.id
+        )
+        self._beam_line_loads.append(beam_line_load)
+
         # Add line load to each element of the beam
         # For multi-element beams (after subdivision), we need to interpolate loads
         if len(beam.elements) == 1:
@@ -2180,6 +2211,38 @@ class StructuralModel:
                 return beam
 
         return None
+
+    def get_beam_line_loads(
+        self,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> List[BeamLineLoad]:
+        """Get beam-level line loads.
+
+        Returns line loads at the beam level (as originally specified by the user),
+        not the element-level line loads used internally for analysis.
+        This is useful for displaying line loads as a single load per beam.
+
+        Args:
+            load_case: Optional load case to filter by. If None, returns all.
+
+        Returns:
+            List of BeamLineLoad objects.
+
+        Example:
+            # Get all beam line loads
+            loads = model.get_beam_line_loads()
+
+            # Get line loads for a specific load case
+            lc = model.create_load_case("Dead Load", LoadCaseType.Permanent)
+            loads = model.get_beam_line_loads(load_case=lc)
+        """
+        if load_case is None:
+            return list(self._beam_line_loads)
+        else:
+            return [
+                ll for ll in self._beam_line_loads
+                if ll.load_case_id == load_case.id
+            ]
 
     # ===== Analysis =====
 

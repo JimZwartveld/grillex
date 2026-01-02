@@ -213,6 +213,79 @@ class TestToolExecutor:
         })
         assert result.success is True
 
+    def test_add_line_load_default_load_case(self):
+        """Should add line load with default load case."""
+        executor = ToolExecutor()
+        executor.execute("create_model", {"name": "Test"})
+        executor.execute("add_material", {"name": "Steel", "E": 210e6, "nu": 0.3, "rho": 7.85e-3})
+        executor.execute("add_section", {"name": "IPE300", "A": 0.00538, "Iy": 8.36e-5, "Iz": 6.04e-6, "J": 2.01e-7})
+        executor.execute("create_beam", {
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        result = executor.execute("add_line_load", {
+            "beam_start": [0, 0, 0],
+            "beam_end": [6, 0, 0],
+            "load_start": [0, 0, -10.0]
+        })
+        assert result.success is True
+        assert result.result["load_case_id"] is None
+
+    def test_add_line_load_with_load_case_id(self):
+        """Should add line load to specific load case."""
+        from grillex.core import LoadCaseType
+        executor = ToolExecutor()
+        executor.execute("create_model", {"name": "Test"})
+        executor.execute("add_material", {"name": "Steel", "E": 210e6, "nu": 0.3, "rho": 7.85e-3})
+        executor.execute("add_section", {"name": "IPE300", "A": 0.00538, "Iy": 8.36e-5, "Iz": 6.04e-6, "J": 2.01e-7})
+        executor.execute("create_beam", {
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        # Create a specific load case
+        lc = executor.model.create_load_case("Live Load", LoadCaseType.Variable)
+
+        result = executor.execute("add_line_load", {
+            "beam_start": [0, 0, 0],
+            "beam_end": [6, 0, 0],
+            "load_start": [0, 0, -5.0],
+            "load_case_id": lc.id
+        })
+        assert result.success is True
+        assert result.result["load_case_id"] == lc.id
+
+        # Verify load is in correct load case
+        loads = lc.get_line_loads()
+        assert len(loads) == 1
+
+    def test_add_line_load_invalid_load_case_id(self):
+        """Should fail with invalid load case ID."""
+        executor = ToolExecutor()
+        executor.execute("create_model", {"name": "Test"})
+        executor.execute("add_material", {"name": "Steel", "E": 210e6, "nu": 0.3, "rho": 7.85e-3})
+        executor.execute("add_section", {"name": "IPE300", "A": 0.00538, "Iy": 8.36e-5, "Iz": 6.04e-6, "J": 2.01e-7})
+        executor.execute("create_beam", {
+            "start_position": [0, 0, 0],
+            "end_position": [6, 0, 0],
+            "section": "IPE300",
+            "material": "Steel"
+        })
+
+        result = executor.execute("add_line_load", {
+            "beam_start": [0, 0, 0],
+            "beam_end": [6, 0, 0],
+            "load_start": [0, 0, -5.0],
+            "load_case_id": 9999  # Non-existent ID
+        })
+        assert result.success is False
+        assert "not found" in result.error.lower()
+
     def test_analyze_and_get_results(self):
         """Should analyze and get results."""
         executor = ToolExecutor()
