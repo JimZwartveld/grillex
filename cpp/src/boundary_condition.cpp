@@ -170,4 +170,30 @@ std::vector<int> BCHandler::get_fixed_global_dofs(const DOFHandler& dof_handler)
     return global_dofs;
 }
 
+bool BCHandler::remove_fixed_dof(int node_id, int local_dof) {
+    auto it = std::remove_if(fixed_dofs_.begin(), fixed_dofs_.end(),
+        [node_id, local_dof](const FixedDOF& fd) {
+            return fd.node_id == node_id && fd.local_dof == local_dof;
+        });
+
+    if (it != fixed_dofs_.end()) {
+        fixed_dofs_.erase(it, fixed_dofs_.end());
+        return true;
+    }
+    return false;
+}
+
+int BCHandler::remove_all_fixed_dofs_at_node(int node_id) {
+    int original_size = static_cast<int>(fixed_dofs_.size());
+
+    auto it = std::remove_if(fixed_dofs_.begin(), fixed_dofs_.end(),
+        [node_id](const FixedDOF& fd) {
+            return fd.node_id == node_id;
+        });
+
+    fixed_dofs_.erase(it, fixed_dofs_.end());
+
+    return original_size - static_cast<int>(fixed_dofs_.size());
+}
+
 }  // namespace grillex

@@ -190,6 +190,21 @@ public:
     void clear() { fixed_dofs_.clear(); }
 
     /**
+     * @brief Remove a specific fixed DOF from a node
+     * @param node_id Node ID
+     * @param local_dof Local DOF index (0-6)
+     * @return true if DOF was found and removed, false otherwise
+     */
+    bool remove_fixed_dof(int node_id, int local_dof);
+
+    /**
+     * @brief Remove all fixed DOFs at a specific node
+     * @param node_id Node ID
+     * @return Number of DOFs removed
+     */
+    int remove_all_fixed_dofs_at_node(int node_id);
+
+    /**
      * @brief Get const reference to fixed DOFs list
      * @return Vector of FixedDOF structs
      */
