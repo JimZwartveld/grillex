@@ -68,6 +68,7 @@ class ActionType(Enum):
 
 if TYPE_CHECKING:
     import pandas as pd
+    from .vessel_motion import VesselMotion
 
 # Core imports
 from grillex._grillex_cpp import (
@@ -2321,6 +2322,146 @@ class StructuralModel:
                 ll for ll in self._beam_line_loads
                 if ll.load_case_id == load_case.id
             ]
+
+    # ===== Vessel Motions =====
+
+    def add_vessel_motion_load_case(
+        self,
+        name: str,
+        heave: float = 0.0,
+        pitch: float = 0.0,
+        roll: float = 0.0,
+        surge: float = 0.0,
+        sway: float = 0.0,
+        yaw: float = 0.0,
+        motion_center: Optional[List[float]] = None,
+        load_type: LoadCaseType = LoadCaseType.Environmental
+    ) -> "VesselMotion":
+        """
+        Create a load case with vessel motion accelerations.
+
+        Vessel motions are the 6-DOF motions of a floating vessel that induce
+        inertial loads on the structure. This method creates a load case with
+        the specified motion accelerations.
+
+        The motion center is the reference point for rotational motions.
+        Structures located away from the motion center experience additional
+        tangential accelerations due to rotation.
+
+        Args:
+            name: Load case name
+            heave: Vertical acceleration in m/s² (positive = up)
+            pitch: Pitch angular acceleration in rad/s² (positive = bow down)
+            roll: Roll angular acceleration in rad/s² (positive = starboard down)
+            surge: Longitudinal acceleration in m/s² (positive = forward)
+            sway: Transverse acceleration in m/s² (positive = port)
+            yaw: Yaw angular acceleration in rad/s² (positive = bow to port)
+            motion_center: Reference point [x, y, z] in meters (default: origin)
+            load_type: LoadCaseType (default: Environmental)
+
+        Returns:
+            The created VesselMotion object
+
+        Example:
+            >>> from grillex.core import StructuralModel
+            >>> model = StructuralModel("Offshore Module")
+            >>> motion = model.add_vessel_motion_load_case(
+            ...     "Design Heave + Pitch",
+            ...     heave=2.5,
+            ...     pitch=0.08,
+            ...     motion_center=[50.0, 0.0, 5.0]
+            ... )
+        """
+        from .vessel_motion import VesselMotion
+
+        # Create the VesselMotion object
+        motion = VesselMotion(name)
+        if motion_center is not None:
+            motion.set_motion_center(motion_center)
+
+        # Add components
+        if surge != 0.0:
+            motion.add_surge(surge)
+        if sway != 0.0:
+            motion.add_sway(sway)
+        if heave != 0.0:
+            motion.add_heave(heave)
+        if roll != 0.0:
+            motion.add_roll(roll)
+        if pitch != 0.0:
+            motion.add_pitch(pitch)
+        if yaw != 0.0:
+            motion.add_yaw(yaw)
+
+        # Create the load case
+        load_case = self.create_load_case(name, load_type)
+
+        # Apply the vessel motion to the load case
+        motion.apply_to_load_case(load_case)
+
+        # Store the vessel motion for retrieval
+        if not hasattr(self, '_vessel_motions'):
+            self._vessel_motions: Dict[str, "VesselMotion"] = {}
+        self._vessel_motions[name] = motion
+
+        return motion
+
+    def add_gravity_load_case(
+        self,
+        name: str = "Gravity",
+        acceleration: float = 9.81,
+        load_type: LoadCaseType = LoadCaseType.Permanent
+    ) -> _CppLoadCase:
+        """
+        Create a load case with gravity acceleration.
+
+        This is a convenience method for the common case of gravity loading.
+        The acceleration is applied in the negative Z direction.
+
+        Args:
+            name: Load case name (default: "Gravity")
+            acceleration: Gravitational acceleration in m/s² (default: 9.81)
+            load_type: LoadCaseType (default: Permanent)
+
+        Returns:
+            The created LoadCase object
+
+        Example:
+            >>> model = StructuralModel("Bridge")
+            >>> model.add_gravity_load_case()  # Standard gravity
+            >>> model.add_gravity_load_case("1.1g Gravity", 10.79)  # 1.1x gravity
+        """
+        load_case = self.create_load_case(name, load_type)
+
+        # Apply gravity acceleration (negative Z direction)
+        accel = [0.0, 0.0, -acceleration, 0.0, 0.0, 0.0]
+        ref_point = [0.0, 0.0, 0.0]
+        load_case.set_acceleration_field(accel, ref_point)
+
+        return load_case
+
+    def get_vessel_motions(self) -> List["VesselMotion"]:
+        """Return all vessel motions defined in this model.
+
+        Returns:
+            List of VesselMotion objects
+        """
+        if not hasattr(self, '_vessel_motions'):
+            return []
+        return list(self._vessel_motions.values())
+
+    def get_vessel_motion(self, name: str) -> Optional["VesselMotion"]:
+        """Get a vessel motion by name.
+
+        Args:
+            name: Name of the vessel motion
+
+        Returns:
+            VesselMotion if found, None otherwise
+        """
+        if not hasattr(self, '_vessel_motions'):
+            return None
+        return self._vessel_motions.get(name)
 
     # ===== Analysis =====
 

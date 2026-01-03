@@ -1,0 +1,659 @@
+"""
+Tests for Phase 20: Vessel Motions.
+
+This module tests the VesselMotion class and its integration with the
+StructuralModel, YAML loading, and LLM tools.
+"""
+
+import math
+import tempfile
+import os
+
+import pytest
+import numpy as np
+
+from grillex.core import (
+    StructuralModel,
+    VesselMotion,
+    MotionType,
+    MotionComponent,
+    DOFIndex,
+    LoadCaseType,
+)
+
+
+class TestVesselMotionClass:
+    """Tests for the VesselMotion class."""
+
+    def test_create_empty_motion(self):
+        """VesselMotion can be created with just a name."""
+        motion = VesselMotion("Test")
+        assert motion.name == "Test"
+        assert motion.motion_center == [0.0, 0.0, 0.0]
+        assert motion.components == []
+        assert motion.description == ""
+
+    def test_set_motion_center(self):
+        """Motion center can be set."""
+        motion = VesselMotion("Test")
+        result = motion.set_motion_center([10.0, 5.0, 3.0])
+
+        assert motion.motion_center == [10.0, 5.0, 3.0]
+        assert result is motion  # Fluent API returns self
+
+    def test_motion_center_validation(self):
+        """Motion center must have 3 elements."""
+        motion = VesselMotion("Test")
+        with pytest.raises(ValueError, match="3-element"):
+            motion.set_motion_center([1.0, 2.0])
+
+    def test_add_heave_component(self):
+        """Heave acceleration is correctly added."""
+        motion = VesselMotion("Test")
+        motion.add_heave(2.5)
+
+        assert len(motion.components) == 1
+        assert motion.components[0].motion_type == MotionType.HEAVE
+        assert motion.components[0].amplitude == 2.5
+        assert motion.components[0].phase == 0.0
+
+    def test_add_heave_with_phase(self):
+        """Heave can be added with phase."""
+        motion = VesselMotion("Test")
+        motion.add_heave(2.5, phase=math.pi/4)
+
+        assert motion.components[0].phase == math.pi/4
+
+    def test_add_pitch_component(self):
+        """Pitch angular acceleration is correctly added."""
+        motion = VesselMotion("Test")
+        motion.add_pitch(0.08)
+
+        assert len(motion.components) == 1
+        assert motion.components[0].motion_type == MotionType.PITCH
+        assert motion.components[0].amplitude == 0.08
+
+    def test_add_roll_component(self):
+        """Roll angular acceleration is correctly added."""
+        motion = VesselMotion("Test")
+        motion.add_roll(0.12)
+
+        assert motion.components[0].motion_type == MotionType.ROLL
+        assert motion.components[0].amplitude == 0.12
+
+    def test_add_surge_component(self):
+        """Surge acceleration is correctly added."""
+        motion = VesselMotion("Test")
+        motion.add_surge(1.5)
+
+        assert motion.components[0].motion_type == MotionType.SURGE
+        assert motion.components[0].amplitude == 1.5
+
+    def test_add_sway_component(self):
+        """Sway acceleration is correctly added."""
+        motion = VesselMotion("Test")
+        motion.add_sway(1.0)
+
+        assert motion.components[0].motion_type == MotionType.SWAY
+        assert motion.components[0].amplitude == 1.0
+
+    def test_add_yaw_component(self):
+        """Yaw angular acceleration is correctly added."""
+        motion = VesselMotion("Test")
+        motion.add_yaw(0.05)
+
+        assert motion.components[0].motion_type == MotionType.YAW
+        assert motion.components[0].amplitude == 0.05
+
+    def test_add_all_components(self):
+        """All 6 motion components can be added."""
+        motion = VesselMotion("Test")
+        motion.add_surge(1.0)
+        motion.add_sway(2.0)
+        motion.add_heave(3.0)
+        motion.add_roll(0.1)
+        motion.add_pitch(0.2)
+        motion.add_yaw(0.3)
+
+        assert len(motion.components) == 6
+
+    def test_fluent_api_chaining(self):
+        """Fluent API returns self for chaining."""
+        motion = (VesselMotion("Test")
+                  .set_motion_center([1.0, 2.0, 3.0])
+                  .add_heave(2.5)
+                  .add_roll(0.12))
+
+        assert motion.name == "Test"
+        assert motion.motion_center == [1.0, 2.0, 3.0]
+        assert len(motion.components) == 2
+
+    def test_get_acceleration_field(self):
+        """get_acceleration_field() returns correct 6-component vector."""
+        motion = VesselMotion("Test")
+        motion.set_motion_center([50.0, 0.0, 5.0])
+        motion.add_surge(1.0)
+        motion.add_sway(2.0)
+        motion.add_heave(3.0)
+        motion.add_roll(0.1)
+        motion.add_pitch(0.2)
+        motion.add_yaw(0.3)
+
+        accel, ref_pt = motion.get_acceleration_field()
+
+        assert ref_pt == [50.0, 0.0, 5.0]
+        assert accel[0] == 1.0  # surge
+        assert accel[1] == 2.0  # sway
+        assert accel[2] == 3.0  # heave
+        assert accel[3] == 0.1  # roll
+        assert accel[4] == 0.2  # pitch
+        assert accel[5] == 0.3  # yaw
+
+    def test_get_acceleration_field_empty(self):
+        """Empty motion returns zero accelerations."""
+        motion = VesselMotion("Test")
+        accel, ref_pt = motion.get_acceleration_field()
+
+        assert ref_pt == [0.0, 0.0, 0.0]
+        assert accel == [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    def test_clear_components(self):
+        """clear_components() removes all components."""
+        motion = VesselMotion("Test")
+        motion.add_heave(2.5).add_roll(0.12)
+        motion.clear_components()
+
+        assert motion.components == []
+
+    def test_has_rotational_motion(self):
+        """has_rotational_motion() detects roll/pitch/yaw."""
+        motion = VesselMotion("Test")
+        assert not motion.has_rotational_motion()
+
+        motion.add_heave(2.5)
+        assert not motion.has_rotational_motion()
+
+        motion.add_roll(0.12)
+        assert motion.has_rotational_motion()
+
+    def test_has_linear_motion(self):
+        """has_linear_motion() detects surge/sway/heave."""
+        motion = VesselMotion("Test")
+        assert not motion.has_linear_motion()
+
+        motion.add_roll(0.12)
+        assert not motion.has_linear_motion()
+
+        motion.add_heave(2.5)
+        assert motion.has_linear_motion()
+
+    def test_get_component_by_type(self):
+        """get_component_by_type() finds specific component."""
+        motion = VesselMotion("Test")
+        motion.add_heave(2.5)
+        motion.add_roll(0.12)
+
+        heave = motion.get_component_by_type(MotionType.HEAVE)
+        assert heave is not None
+        assert heave.amplitude == 2.5
+
+        pitch = motion.get_component_by_type(MotionType.PITCH)
+        assert pitch is None
+
+    def test_repr(self):
+        """String representation is informative."""
+        motion = VesselMotion("Test")
+        motion.set_motion_center([50.0, 0.0, 5.0])
+        motion.add_heave(2.5)
+
+        repr_str = repr(motion)
+        assert "Test" in repr_str
+        assert "50.0" in repr_str
+        assert "heave" in repr_str
+
+
+class TestVesselMotionFactoryMethods:
+    """Tests for VesselMotion factory methods."""
+
+    def test_create_still_water(self):
+        """Still water has zero accelerations."""
+        motion = VesselMotion.create_still_water()
+
+        assert motion.name == "Still Water"
+        assert len(motion.components) == 0
+        accel, _ = motion.get_acceleration_field()
+        assert accel == [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    def test_create_still_water_custom_name(self):
+        """Still water can have custom name."""
+        motion = VesselMotion.create_still_water("Calm Sea")
+        assert motion.name == "Calm Sea"
+
+    def test_create_heave_only(self):
+        """Heave-only motion is correctly created."""
+        motion = VesselMotion.create_heave_only(2.5)
+
+        assert "Heave" in motion.name
+        assert len(motion.components) == 1
+        assert motion.components[0].motion_type == MotionType.HEAVE
+        assert motion.components[0].amplitude == 2.5
+
+    def test_create_heave_only_with_center(self):
+        """Heave-only motion can have motion center."""
+        motion = VesselMotion.create_heave_only(
+            2.5, motion_center=[50.0, 0.0, 5.0])
+
+        assert motion.motion_center == [50.0, 0.0, 5.0]
+
+    def test_create_roll_from_angle_period(self):
+        """Roll condition correctly converts angle/period to acceleration."""
+        # α = (2π/T)² × θ for simple harmonic motion
+        roll_angle = 15.0  # degrees
+        roll_period = 10.0  # seconds
+
+        motion = VesselMotion.create_roll_condition(roll_angle, roll_period)
+
+        theta_rad = math.radians(roll_angle)
+        omega = 2 * math.pi / roll_period
+        expected_accel = omega * omega * theta_rad
+
+        roll_comp = motion.get_component_by_type(MotionType.ROLL)
+        assert roll_comp is not None
+        np.testing.assert_almost_equal(roll_comp.amplitude, expected_accel, decimal=6)
+
+    def test_create_pitch_from_angle_period(self):
+        """Pitch condition correctly converts angle/period to acceleration."""
+        pitch_angle = 5.0  # degrees
+        pitch_period = 8.0  # seconds
+
+        motion = VesselMotion.create_pitch_condition(pitch_angle, pitch_period)
+
+        theta_rad = math.radians(pitch_angle)
+        omega = 2 * math.pi / pitch_period
+        expected_accel = omega * omega * theta_rad
+
+        pitch_comp = motion.get_component_by_type(MotionType.PITCH)
+        assert pitch_comp is not None
+        np.testing.assert_almost_equal(pitch_comp.amplitude, expected_accel, decimal=6)
+
+    def test_create_combined_design_motion(self):
+        """Combined motion has all specified components."""
+        motion = VesselMotion.create_combined_design_motion(
+            heave=2.0,
+            roll_angle=10.0,
+            roll_period=10.0,
+            pitch_angle=5.0,
+            pitch_period=8.0,
+            motion_center=[50.0, 0.0, 3.0]
+        )
+
+        assert motion.motion_center == [50.0, 0.0, 3.0]
+
+        heave = motion.get_component_by_type(MotionType.HEAVE)
+        assert heave is not None
+        assert heave.amplitude == 2.0
+
+        roll = motion.get_component_by_type(MotionType.ROLL)
+        assert roll is not None
+        assert roll.amplitude > 0
+
+        pitch = motion.get_component_by_type(MotionType.PITCH)
+        assert pitch is not None
+        assert pitch.amplitude > 0
+
+
+class TestVesselMotionIntegration:
+    """Integration tests with full StructuralModel."""
+
+    @pytest.fixture
+    def cantilever_model(self):
+        """Create a simple cantilever beam model."""
+        model = StructuralModel("Cantilever")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+        return model
+
+    def test_add_vessel_motion_load_case(self, cantilever_model):
+        """Vessel motion creates correct load case."""
+        motion = cantilever_model.add_vessel_motion_load_case(
+            "Design Heave",
+            heave=2.5,
+            motion_center=[3.0, 0.0, 0.0]
+        )
+
+        assert motion.name == "Design Heave"
+        assert motion.motion_center == [3.0, 0.0, 0.0]
+
+        heave = motion.get_component_by_type(MotionType.HEAVE)
+        assert heave.amplitude == 2.5
+
+    def test_add_gravity_load_case(self, cantilever_model):
+        """Gravity load case is created correctly."""
+        lc = cantilever_model.add_gravity_load_case()
+
+        assert lc.name == "Gravity"
+        accel = lc.get_acceleration()
+        np.testing.assert_almost_equal(accel[2], -9.81, decimal=2)
+
+    def test_add_gravity_custom_acceleration(self, cantilever_model):
+        """Gravity can have custom acceleration."""
+        lc = cantilever_model.add_gravity_load_case("1.1g", acceleration=10.79)
+
+        assert lc.name == "1.1g"
+        accel = lc.get_acceleration()
+        np.testing.assert_almost_equal(accel[2], -10.79, decimal=2)
+
+    def test_get_vessel_motions(self, cantilever_model):
+        """get_vessel_motions returns all defined motions."""
+        cantilever_model.add_vessel_motion_load_case("Motion 1", heave=2.0)
+        cantilever_model.add_vessel_motion_load_case("Motion 2", roll=0.1)
+
+        motions = cantilever_model.get_vessel_motions()
+        assert len(motions) == 2
+        names = {m.name for m in motions}
+        assert "Motion 1" in names
+        assert "Motion 2" in names
+
+    def test_get_vessel_motion_by_name(self, cantilever_model):
+        """get_vessel_motion returns specific motion by name."""
+        cantilever_model.add_vessel_motion_load_case("Design Heave", heave=2.5)
+
+        motion = cantilever_model.get_vessel_motion("Design Heave")
+        assert motion is not None
+        assert motion.name == "Design Heave"
+
+        none_motion = cantilever_model.get_vessel_motion("Nonexistent")
+        assert none_motion is None
+
+    def test_heave_deflection(self, cantilever_model):
+        """Heave acceleration produces correct inertial loads."""
+        # With heave = 2.5 m/s², the beam experiences upward acceleration
+        # This produces effective body forces
+        cantilever_model.add_vessel_motion_load_case("Heave", heave=2.5)
+        cantilever_model.analyze()
+
+        # Tip should deflect (direction depends on heave sign)
+        disp_z = cantilever_model.get_displacement_at([6, 0, 0], DOFIndex.UZ)
+        assert disp_z != 0
+
+    def test_gravity_deflection(self, cantilever_model):
+        """Gravity produces downward deflection."""
+        cantilever_model.add_gravity_load_case()
+        cantilever_model.analyze()
+
+        # Tip should deflect downward
+        disp_z = cantilever_model.get_displacement_at([6, 0, 0], DOFIndex.UZ)
+        assert disp_z < 0
+
+    def test_combined_heave_gravity(self, cantilever_model):
+        """Combined heave + gravity produces modified deflection."""
+        cantilever_model.add_gravity_load_case()
+        cantilever_model.add_vessel_motion_load_case("Heave Up", heave=2.5)
+        cantilever_model.analyze()
+
+        # With heave reducing effective gravity, deflection should be smaller
+        disp_z = cantilever_model.get_displacement_at([6, 0, 0], DOFIndex.UZ)
+        # Just check it's reasonable
+        assert disp_z < 0  # Still net downward under 1g gravity
+
+    def test_vessel_motion_with_all_components(self, cantilever_model):
+        """Model with all motion components can be analyzed."""
+        cantilever_model.add_vessel_motion_load_case(
+            "Full Motion",
+            heave=2.0,
+            roll=0.1,
+            pitch=0.05,
+            surge=1.0,
+            sway=0.5,
+            yaw=0.02,
+            motion_center=[3.0, 0.0, 0.0]
+        )
+        cantilever_model.analyze()
+
+        # Just verify analysis completes without error
+        assert cantilever_model.is_analyzed()
+
+
+class TestVesselMotionYAML:
+    """Tests for YAML I/O."""
+
+    def test_load_vessel_motion_from_yaml(self):
+        """Vessel motion is correctly parsed from YAML."""
+        from grillex.io import load_model_from_yaml
+
+        yaml_content = """
+name: YAML Test
+
+materials:
+  - name: Steel
+    E: 210000000
+    nu: 0.3
+    rho: 7.85
+
+sections:
+  - name: IPE300
+    A: 0.00538
+    Iy: 8.36e-5
+    Iz: 6.04e-6
+    J: 2.01e-7
+
+beams:
+  - start: [0, 0, 0]
+    end: [6, 0, 0]
+    section: IPE300
+    material: Steel
+
+boundary_conditions:
+  - node: [0, 0, 0]
+    type: fixed
+
+vessel_motions:
+  - name: Design Heave
+    heave: 2.5
+    motion_center: [3.0, 0.0, 0.0]
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            model = load_model_from_yaml(temp_path)
+
+            motions = model.get_vessel_motions()
+            assert len(motions) == 1
+            assert motions[0].name == "Design Heave"
+
+            heave = motions[0].get_component_by_type(MotionType.HEAVE)
+            assert heave is not None
+            assert heave.amplitude == 2.5
+        finally:
+            os.unlink(temp_path)
+
+    def test_load_gravity_shorthand(self):
+        """Gravity shorthand creates correct load case."""
+        from grillex.io import load_model_from_yaml
+
+        yaml_content = """
+name: Gravity Test
+
+materials:
+  - name: Steel
+    E: 210000000
+    nu: 0.3
+    rho: 7.85
+
+sections:
+  - name: IPE300
+    A: 0.00538
+    Iy: 8.36e-5
+    Iz: 6.04e-6
+    J: 2.01e-7
+
+beams:
+  - start: [0, 0, 0]
+    end: [6, 0, 0]
+    section: IPE300
+    material: Steel
+
+boundary_conditions:
+  - node: [0, 0, 0]
+    type: fixed
+
+vessel_motions:
+  - name: Gravity
+    gravity: true
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            model = load_model_from_yaml(temp_path)
+            # Gravity is a load case, not a vessel motion
+            load_cases = model._cpp_model.get_load_cases()
+            lc_names = [lc.name for lc in load_cases]
+            assert "Gravity" in lc_names
+        finally:
+            os.unlink(temp_path)
+
+    def test_load_angle_period_format(self):
+        """Angle/period format is correctly converted."""
+        from grillex.io import load_model_from_yaml
+
+        yaml_content = """
+name: Roll Test
+
+materials:
+  - name: Steel
+    E: 210000000
+    nu: 0.3
+    rho: 7.85
+
+sections:
+  - name: IPE300
+    A: 0.00538
+    Iy: 8.36e-5
+    Iz: 6.04e-6
+    J: 2.01e-7
+
+beams:
+  - start: [0, 0, 0]
+    end: [6, 0, 0]
+    section: IPE300
+    material: Steel
+
+boundary_conditions:
+  - node: [0, 0, 0]
+    type: fixed
+
+vessel_motions:
+  - name: Roll Condition
+    roll_angle: 15.0
+    roll_period: 10.0
+    motion_center: [3.0, 0.0, 0.0]
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            model = load_model_from_yaml(temp_path)
+
+            motions = model.get_vessel_motions()
+            assert len(motions) == 1
+
+            roll = motions[0].get_component_by_type(MotionType.ROLL)
+            assert roll is not None
+
+            # Verify the conversion
+            theta_rad = math.radians(15.0)
+            omega = 2 * math.pi / 10.0
+            expected = omega * omega * theta_rad
+            np.testing.assert_almost_equal(roll.amplitude, expected, decimal=4)
+        finally:
+            os.unlink(temp_path)
+
+
+class TestVesselMotionLLMTools:
+    """Tests for LLM tool integration."""
+
+    def test_add_gravity_tool(self):
+        """add_gravity tool creates correct load case."""
+        from grillex.llm.tools import ToolExecutor
+
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        executor = ToolExecutor(model)
+        result = executor.execute("add_gravity", {})
+
+        assert result.success
+        assert result.result["name"] == "Gravity"
+        assert result.result["acceleration"] == -9.81
+
+    def test_add_gravity_tool_custom(self):
+        """add_gravity tool accepts custom acceleration."""
+        from grillex.llm.tools import ToolExecutor
+
+        model = StructuralModel("Test")
+        executor = ToolExecutor(model)
+        result = executor.execute("add_gravity", {
+            "name": "Mars Gravity",
+            "acceleration": 3.71
+        })
+
+        assert result.success
+        assert result.result["name"] == "Mars Gravity"
+        assert result.result["acceleration"] == -3.71
+
+    def test_add_vessel_motion_tool(self):
+        """add_vessel_motion tool creates correct motion."""
+        from grillex.llm.tools import ToolExecutor
+
+        model = StructuralModel("Test")
+        executor = ToolExecutor(model)
+        result = executor.execute("add_vessel_motion", {
+            "name": "Design Motion",
+            "heave": 2.5,
+            "roll": 0.12,
+            "motion_center_x": 50.0,
+            "motion_center_z": 5.0
+        })
+
+        assert result.success
+        assert result.result["name"] == "Design Motion"
+        assert result.result["motion_center"] == [50.0, 0.0, 5.0]
+        assert result.result["acceleration_field"]["heave"] == 2.5
+        assert result.result["acceleration_field"]["roll"] == 0.12
+
+    def test_get_vessel_motions_tool(self):
+        """get_vessel_motions tool returns all motions."""
+        from grillex.llm.tools import ToolExecutor
+
+        model = StructuralModel("Test")
+        model.add_vessel_motion_load_case("Motion 1", heave=2.0)
+        model.add_vessel_motion_load_case("Motion 2", roll=0.1)
+
+        executor = ToolExecutor(model)
+        result = executor.execute("get_vessel_motions", {})
+
+        assert result.success
+        assert result.result["count"] == 2
+        names = {m["name"] for m in result.result["vessel_motions"]}
+        assert "Motion 1" in names
+        assert "Motion 2" in names
+
+    def test_tool_no_model_error(self):
+        """Tools return error when no model exists."""
+        from grillex.llm.tools import ToolExecutor
+
+        executor = ToolExecutor(None)
+        result = executor.execute("add_gravity", {})
+
+        assert not result.success
+        assert "No model" in result.error

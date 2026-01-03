@@ -136,3 +136,8 @@ The implementation plan is organized into 19 phases:
 
 → [See full Phase 19 details](implementation_plan_phase19_plate_meshing.md)
 
+### Phase 20: Vessel Motions
+**Requirements:** R-ARCH-007, R-LOAD-003 **Dependencies:** Phase 5 **Difficulty:** Medium **Description:** Vessel motion support for offshore structural analysis. Implements VesselMotion class for 6-DOF vessel accelerations (surge, sway, heave, roll, pitch, yaw), convenience methods on StructuralModel (add_vessel_motion_load_case, add_gravity_load_case), YAML I/O support for vessel motions, and LLM tools for vessel motion setup.
+
+→ [See full Phase 20 details](implementation_plan_phase20_vessel_motions.md)
+

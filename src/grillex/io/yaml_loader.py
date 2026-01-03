@@ -41,6 +41,19 @@ YAML Schema:
             dof: UY
             value: -10.0  # [kN] or [kN·m]
 
+    vessel_motions:
+      - name: "Design Heave + Roll"
+        motion_center: [50.0, 0.0, 5.0]  # [m] reference point for rotations
+        heave: 2.5       # [m/s²] vertical acceleration
+        roll: 0.12       # [rad/s²] roll angular acceleration
+        pitch: 0.08      # [rad/s²] pitch angular acceleration
+        # Alternative: angle/period format (converted to rad/s²)
+        # roll_angle: 15.0   # [degrees]
+        # roll_period: 10.0  # [seconds]
+
+      - name: "Gravity"
+        gravity: true     # Shorthand for -9.81 m/s² in Z
+
 Usage:
     from grillex.io import load_model_from_yaml
 
@@ -144,6 +157,12 @@ def build_model_from_dict(data: dict[str, Any], default_name: str = "Unnamed") -
         _load_load_cases(model, data.get('load_cases', []))
     except Exception as e:
         raise YAMLLoadError(f"Error loading load cases: {e}")
+
+    # Load vessel motions
+    try:
+        _load_vessel_motions(model, data.get('vessel_motions', []))
+    except Exception as e:
+        raise YAMLLoadError(f"Error loading vessel motions: {e}")
 
     return model
 
@@ -478,3 +497,110 @@ def _parse_load_case_type(type_str: str) -> LoadCaseType:
         raise ValueError(f"Invalid load case type '{type_str}'. Valid values: {valid}")
 
     return type_map[type_upper]
+
+
+def _load_vessel_motions(model: StructuralModel, vessel_motions_data: list[dict]) -> None:
+    """Load vessel motions into the model.
+
+    Vessel motions define 6-DOF accelerations for offshore structures on floating
+    vessels. Each vessel motion creates a load case with the appropriate acceleration
+    field applied.
+
+    Args:
+        model: StructuralModel instance
+        vessel_motions_data: List of vessel motion dictionaries
+
+    Raises:
+        ValueError: If vessel motion data is invalid
+    """
+    import math
+
+    if not isinstance(vessel_motions_data, list):
+        raise ValueError("'vessel_motions' must be a list")
+
+    for i, vm_data in enumerate(vessel_motions_data):
+        if not isinstance(vm_data, dict):
+            raise ValueError(f"Vessel motion {i} must be a dictionary")
+
+        if 'name' not in vm_data:
+            raise ValueError(f"Vessel motion {i} missing 'name' field")
+
+        name = vm_data['name']
+
+        # Check for gravity shorthand
+        if vm_data.get('gravity', False):
+            model.add_gravity_load_case(
+                name=name,
+                acceleration=vm_data.get('acceleration', 9.81),
+                load_type=LoadCaseType.Permanent
+            )
+            continue
+
+        # Parse motion center
+        motion_center = None
+        if 'motion_center' in vm_data:
+            mc = vm_data['motion_center']
+            if not isinstance(mc, list) or len(mc) != 3:
+                raise ValueError(
+                    f"Vessel motion '{name}': 'motion_center' must be a list of 3 coordinates"
+                )
+            motion_center = [float(x) for x in mc]
+
+        # Parse load type
+        lc_type_str = vm_data.get('load_type', 'Environmental')
+        lc_type = _parse_load_case_type(lc_type_str)
+
+        # Parse accelerations - either direct values or computed from angle/period
+
+        # Linear accelerations (direct values in m/s²)
+        surge = float(vm_data.get('surge', 0.0))
+        sway = float(vm_data.get('sway', 0.0))
+        heave = float(vm_data.get('heave', 0.0))
+
+        # Angular accelerations - can be direct (rad/s²) or computed from angle/period
+        roll = 0.0
+        pitch = 0.0
+        yaw = 0.0
+
+        # Roll: direct value or angle/period
+        if 'roll' in vm_data:
+            roll = float(vm_data['roll'])
+        elif 'roll_angle' in vm_data and 'roll_period' in vm_data:
+            angle_deg = float(vm_data['roll_angle'])
+            period = float(vm_data['roll_period'])
+            angle_rad = math.radians(angle_deg)
+            omega = 2 * math.pi / period
+            roll = omega * omega * angle_rad
+
+        # Pitch: direct value or angle/period
+        if 'pitch' in vm_data:
+            pitch = float(vm_data['pitch'])
+        elif 'pitch_angle' in vm_data and 'pitch_period' in vm_data:
+            angle_deg = float(vm_data['pitch_angle'])
+            period = float(vm_data['pitch_period'])
+            angle_rad = math.radians(angle_deg)
+            omega = 2 * math.pi / period
+            pitch = omega * omega * angle_rad
+
+        # Yaw: direct value or angle/period
+        if 'yaw' in vm_data:
+            yaw = float(vm_data['yaw'])
+        elif 'yaw_angle' in vm_data and 'yaw_period' in vm_data:
+            angle_deg = float(vm_data['yaw_angle'])
+            period = float(vm_data['yaw_period'])
+            angle_rad = math.radians(angle_deg)
+            omega = 2 * math.pi / period
+            yaw = omega * omega * angle_rad
+
+        # Create the vessel motion load case
+        model.add_vessel_motion_load_case(
+            name=name,
+            heave=heave,
+            pitch=pitch,
+            roll=roll,
+            surge=surge,
+            sway=sway,
+            yaw=yaw,
+            motion_center=motion_center,
+            load_type=lc_type
+        )

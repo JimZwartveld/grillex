@@ -65,6 +65,12 @@ from .element_types import (
     supports_shear_deformation,
 )
 
+from .vessel_motion import (
+    VesselMotion,
+    MotionType,
+    MotionComponent,
+)
+
 __all__ = [
     'Node', 'NodeRegistry', 'Material', 'Section', 'LocalAxes',
     'BeamElement', 'BeamFormulation', 'EndRelease',
@@ -106,4 +112,6 @@ __all__ = [
     'get_element_type', 'get_element_info', 'get_available_element_types',
     'create_plate_element', 'is_quad_element', 'is_triangle_element',
     'supports_shear_deformation',
+    # Phase 20: Vessel Motions
+    'VesselMotion', 'MotionType', 'MotionComponent',
 ]

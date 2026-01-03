@@ -1547,6 +1547,85 @@ TOOLS: List[Dict[str, Any]] = [
             "required": ["beam_id", "action_type"]
         }
     },
+
+    # =========================================================================
+    # Vessel Motions (Phase 20)
+    # =========================================================================
+    {
+        "name": "add_gravity",
+        "description": "Add a gravity load case. Creates a load case with downward acceleration (negative Z direction). Use for dead loads and self-weight calculations.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the load case (default: 'Gravity')"
+                },
+                "acceleration": {
+                    "type": "number",
+                    "description": "Gravitational acceleration in m/s² (default: 9.81 for standard gravity)"
+                }
+            }
+        }
+    },
+    {
+        "name": "add_vessel_motion",
+        "description": "Add a vessel motion load case with heave, pitch, roll accelerations. Use for offshore/marine structures on barges or ships. Creates inertial loads on the structure based on vessel motion accelerations.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Load case name (e.g., 'Design Heave', 'Roll Condition')"
+                },
+                "heave": {
+                    "type": "number",
+                    "description": "Vertical acceleration in m/s² (positive = up). Typical design values: 1-3 m/s²"
+                },
+                "pitch": {
+                    "type": "number",
+                    "description": "Pitch angular acceleration in rad/s² (positive = bow down). Typical: 0.01-0.1 rad/s²"
+                },
+                "roll": {
+                    "type": "number",
+                    "description": "Roll angular acceleration in rad/s² (positive = starboard down). Typical: 0.01-0.15 rad/s²"
+                },
+                "surge": {
+                    "type": "number",
+                    "description": "Longitudinal acceleration in m/s² (positive = forward)"
+                },
+                "sway": {
+                    "type": "number",
+                    "description": "Transverse acceleration in m/s² (positive = port)"
+                },
+                "yaw": {
+                    "type": "number",
+                    "description": "Yaw angular acceleration in rad/s² (positive = bow to port)"
+                },
+                "motion_center_x": {
+                    "type": "number",
+                    "description": "X coordinate of motion center in meters (reference point for rotations)"
+                },
+                "motion_center_y": {
+                    "type": "number",
+                    "description": "Y coordinate of motion center in meters"
+                },
+                "motion_center_z": {
+                    "type": "number",
+                    "description": "Z coordinate of motion center in meters (typically at waterline)"
+                }
+            },
+            "required": ["name"]
+        }
+    },
+    {
+        "name": "get_vessel_motions",
+        "description": "List all vessel motion definitions in the model. Returns the name, motion center, and acceleration components for each motion condition.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
 ]
 
 
@@ -4134,6 +4213,145 @@ class ToolExecutor:
                 error=str(e),
                 suggestion="Check that the action_type is valid: moment_y, moment_z, shear_y, shear_z, axial, torsion, bimoment, warping_torsion"
             )
+
+    # =========================================================================
+    # Vessel Motion Tools (Phase 20)
+    # =========================================================================
+
+    def _tool_add_gravity(self, params: Dict[str, Any]) -> ToolResult:
+        """Add a gravity load case.
+
+        Creates a load case with downward acceleration (negative Z direction).
+        """
+        if self.model is None:
+            return ToolResult(
+                success=False,
+                error="No model created.",
+                suggestion="Call create_model first."
+            )
+
+        name = params.get("name", "Gravity")
+        acceleration = params.get("acceleration", 9.81)
+
+        try:
+            load_case = self.model.add_gravity_load_case(
+                name=name,
+                acceleration=acceleration
+            )
+            return ToolResult(
+                success=True,
+                result={
+                    "load_case_id": load_case.id,
+                    "name": load_case.name,
+                    "acceleration": -acceleration,  # Report as negative Z
+                    "units": "m/s²"
+                }
+            )
+        except Exception as e:
+            return ToolResult(success=False, error=str(e))
+
+    def _tool_add_vessel_motion(self, params: Dict[str, Any]) -> ToolResult:
+        """Add a vessel motion load case.
+
+        Creates a load case with heave, pitch, roll accelerations for
+        offshore/marine structures.
+        """
+        if self.model is None:
+            return ToolResult(
+                success=False,
+                error="No model created.",
+                suggestion="Call create_model first."
+            )
+
+        name = params["name"]
+
+        # Parse motion center
+        motion_center = None
+        mc_x = params.get("motion_center_x")
+        mc_y = params.get("motion_center_y")
+        mc_z = params.get("motion_center_z")
+
+        if mc_x is not None or mc_y is not None or mc_z is not None:
+            motion_center = [
+                mc_x if mc_x is not None else 0.0,
+                mc_y if mc_y is not None else 0.0,
+                mc_z if mc_z is not None else 0.0
+            ]
+
+        try:
+            motion = self.model.add_vessel_motion_load_case(
+                name=name,
+                heave=params.get("heave", 0.0),
+                pitch=params.get("pitch", 0.0),
+                roll=params.get("roll", 0.0),
+                surge=params.get("surge", 0.0),
+                sway=params.get("sway", 0.0),
+                yaw=params.get("yaw", 0.0),
+                motion_center=motion_center
+            )
+
+            # Get acceleration field for reporting
+            accel, ref_pt = motion.get_acceleration_field()
+
+            return ToolResult(
+                success=True,
+                result={
+                    "name": motion.name,
+                    "motion_center": ref_pt,
+                    "acceleration_field": {
+                        "surge": accel[0],
+                        "sway": accel[1],
+                        "heave": accel[2],
+                        "roll": accel[3],
+                        "pitch": accel[4],
+                        "yaw": accel[5]
+                    },
+                    "units": {
+                        "linear": "m/s²",
+                        "angular": "rad/s²"
+                    }
+                }
+            )
+        except Exception as e:
+            return ToolResult(success=False, error=str(e))
+
+    def _tool_get_vessel_motions(self, params: Dict[str, Any]) -> ToolResult:
+        """Get all vessel motion definitions in the model."""
+        if self.model is None:
+            return ToolResult(
+                success=False,
+                error="No model created.",
+                suggestion="Call create_model first."
+            )
+
+        motions = self.model.get_vessel_motions()
+
+        result = []
+        for motion in motions:
+            accel, ref_pt = motion.get_acceleration_field()
+            result.append({
+                "name": motion.name,
+                "motion_center": ref_pt,
+                "acceleration_field": {
+                    "surge": accel[0],
+                    "sway": accel[1],
+                    "heave": accel[2],
+                    "roll": accel[3],
+                    "pitch": accel[4],
+                    "yaw": accel[5]
+                },
+                "has_rotational_motion": motion.has_rotational_motion(),
+                "has_linear_motion": motion.has_linear_motion(),
+                "description": motion.description
+            })
+
+        return ToolResult(
+            success=True,
+            result={
+                "vessel_motions": result,
+                "count": len(result)
+            }
+        )
 
 
 def execute_tool(
