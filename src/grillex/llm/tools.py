@@ -213,7 +213,7 @@ TOOLS: List[Dict[str, Any]] = [
     # =========================================================================
     {
         "name": "fix_node",
-        "description": "Fix all 6 degrees of freedom at a node (fully fixed support). Use for cantilever roots or fully restrained connections.",
+        "description": "Fix all 6 degrees of freedom at a node (fully fixed support). Use for cantilever roots or fully restrained connections. For beams with warping DOFs (thin-walled open sections like I-beams), set include_warping=true to also fix the warping DOF.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -223,6 +223,11 @@ TOOLS: List[Dict[str, Any]] = [
                     "minItems": 3,
                     "maxItems": 3,
                     "description": "Node position [x, y, z] in meters. Must match an existing node."
+                },
+                "include_warping": {
+                    "type": "boolean",
+                    "description": "If true, also fix the warping DOF for all beam elements connected to this node. Required for proper torsion analysis of thin-walled open sections (I-beams, channels). Default: false.",
+                    "default": False
                 }
             },
             "required": ["position"]
@@ -974,6 +979,10 @@ TOOLS: List[Dict[str, Any]] = [
                 "J": {
                     "type": "number",
                     "description": "New torsional constant in m⁴. Optional."
+                },
+                "Iw": {
+                    "type": "number",
+                    "description": "New warping constant in m⁶. Optional. Set to enable warping torsion analysis for thin-walled open sections (I-beams, channels)."
                 }
             },
             "required": ["name"]
@@ -1820,10 +1829,17 @@ class ToolExecutor:
         if self.model is None:
             return ToolResult(success=False, error="No model created. Call create_model first.")
 
-        self.model.fix_node_at(params["position"])
+        include_warping = params.get("include_warping", False)
+        self.model.fix_node_at(params["position"], include_warping=include_warping)
+
+        if include_warping:
+            message = "Node fixed (all DOFs including warping)"
+        else:
+            message = "Node fixed (all DOFs)"
+
         return ToolResult(
             success=True,
-            result={"position": params["position"], "message": "Node fixed (all DOFs)"}
+            result={"position": params["position"], "include_warping": include_warping, "message": message}
         )
 
     def _tool_pin_node(self, params: Dict[str, Any]) -> ToolResult:
@@ -3077,6 +3093,10 @@ class ToolExecutor:
         if "J" in params and params["J"] is not None:
             section.J = params["J"]
             changes.append(f"J -> {params['J']}")
+
+        if "Iw" in params and params["Iw"] is not None:
+            section.Iw = params["Iw"]
+            changes.append(f"Iw -> {params['Iw']}")
 
         if not changes:
             return ToolResult(
