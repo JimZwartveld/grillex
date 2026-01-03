@@ -842,8 +842,17 @@ class Beam:
         # Check if beam has warping enabled (check first element)
         has_warping = len(self.elements) > 0 and self.elements[0].has_warping()
 
+        # DEBUG: Log warping detection
+        import logging
+        _logger = logging.getLogger("grillex.beam_line_data")
+        _logger.info(f"[BEAM_LINE_DATA] beam_id={self.beam_id}, action_type={action_type}")
+        _logger.info(f"[BEAM_LINE_DATA] n_elements={len(self.elements)}, has_warping={has_warping}")
+        _logger.info(f"[BEAM_LINE_DATA] is_warping_action={is_warping_action}")
+
         # For torsion with warping, we'll collect component values
         is_torsion_with_warping = action_type == ActionType.TORSION and has_warping
+        _logger.info(f"[BEAM_LINE_DATA] is_torsion_with_warping={is_torsion_with_warping}")
+
         if is_torsion_with_warping:
             values_sv = np.zeros(num_points)  # St. Venant torsion
             values_w = np.zeros(num_points)   # Warping torsion
@@ -864,6 +873,10 @@ class Beam:
                 warping_actions = element.get_warping_internal_actions(
                     local_x, displacements, dof_handler
                 )
+                # DEBUG: Log first few warping values
+                if i < 5:
+                    _logger.info(f"[BEAM_LINE_DATA] x={x:.3f}: Mx_sv={warping_actions.Mx_sv:.4f}, Mx_w={warping_actions.Mx_w:.4f}, B={warping_actions.B:.4f}")
+
                 if action_type == ActionType.BIMOMENT:
                     values[i] = warping_actions.B
                 elif action_type == ActionType.WARPING_TORSION:
