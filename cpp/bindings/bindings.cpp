@@ -752,6 +752,13 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Clear all boundary conditions")
         .def("get_fixed_dofs", &grillex::BCHandler::get_fixed_dofs,
              "Get const reference to fixed DOFs list")
+        .def("remove_fixed_dof", &grillex::BCHandler::remove_fixed_dof,
+             py::arg("node_id"),
+             py::arg("local_dof"),
+             "Remove a specific fixed DOF from a node. Returns true if found and removed.")
+        .def("remove_all_fixed_dofs_at_node", &grillex::BCHandler::remove_all_fixed_dofs_at_node,
+             py::arg("node_id"),
+             "Remove all fixed DOFs at a specific node. Returns number of DOFs removed.")
         .def("__repr__", [](const grillex::BCHandler &bc) {
             return "<BCHandler num_fixed=" + std::to_string(bc.num_fixed_dofs()) + ">";
         });
@@ -1556,6 +1563,18 @@ PYBIND11_MODULE(_grillex_cpp, m) {
              "Get analysis error message (if analyze() failed)")
         .def("clear", &grillex::Model::clear,
              "Clear the model (remove all entities except nodes)")
+        .def("remove_bc_at", [](grillex::Model &m, const std::vector<double>& pos, int dof_index) {
+            if (pos.size() != 3) throw std::invalid_argument("Position must have 3 elements [x, y, z]");
+            Eigen::Vector3d position(pos[0], pos[1], pos[2]);
+            return m.remove_bc_at(position, dof_index);
+        }, py::arg("position"), py::arg("dof_index"),
+             "Remove a specific boundary condition at a position. Returns true if removed.")
+        .def("remove_all_bcs_at", [](grillex::Model &m, const std::vector<double>& pos) {
+            if (pos.size() != 3) throw std::invalid_argument("Position must have 3 elements [x, y, z]");
+            Eigen::Vector3d position(pos[0], pos[1], pos[2]);
+            return m.remove_all_bcs_at(position);
+        }, py::arg("position"),
+             "Remove all boundary conditions at a position. Returns number of BCs removed.")
         // Eigenvalue analysis methods
         .def("analyze_eigenvalues", &grillex::Model::analyze_eigenvalues,
              py::arg("settings") = grillex::EigensolverSettings{},

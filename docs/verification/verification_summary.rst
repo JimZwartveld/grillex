@@ -43,6 +43,12 @@ Different tolerances are used based on problem complexity:
    * - Continuous beams
      - < 2%
      - Complex stress redistribution
+   * - Warping torsion (components)
+     - < 10%
+     - Rapid spatial variation in warping
+   * - Warping torsion (total)
+     - < 5%
+     - Equilibrium constraint improves accuracy
 
 Test Summary by Category
 ========================
@@ -113,6 +119,37 @@ Continuous Beams
 
 See :doc:`continuous_beam` for detailed results.
 
+Warping Torsion (SCI P385)
+--------------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 30 30
+
+   * - Test Case
+     - Verified Quantities
+     - Status
+   * - Cantilever with end torque
+     - Bimoment B(x)
+     - PASS
+   * - Cantilever with end torque
+     - Warping torsion Mx,w(x)
+     - PASS
+   * - Cantilever with end torque
+     - St. Venant torsion Mx,sv(x)
+     - PASS
+   * - Cantilever with end torque
+     - Total torsion Mx(x)
+     - PASS
+   * - Boundary conditions
+     - 100% warping at fixed end
+     - PASS
+   * - Boundary conditions
+     - 100% St. Venant at free end
+     - PASS
+
+See :doc:`warping_torsion` for detailed results.
+
 Running Verification Tests
 ==========================
 
@@ -158,6 +195,8 @@ structural engineering references:
 2. Ghali, A. & Neville, A.M. (2017). *Structural Analysis*
 3. Hibbeler, R.C. (2018). *Structural Analysis*
 4. Roark, R.J. & Young, W.C. (2012). *Roark's Formulas for Stress and Strain*
+5. SCI P385 (2011). *Design of Steel Beams in Torsion*, Steel Construction Institute
+6. Vlasov, V.Z. (1961). *Thin-Walled Elastic Beams*, 2nd Edition
 
 Document History
 ================

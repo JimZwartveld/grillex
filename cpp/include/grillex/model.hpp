@@ -553,6 +553,23 @@ public:
      */
     void clear();
 
+    /**
+     * @brief Remove a specific boundary condition at a position
+     * @param position [x, y, z] coordinates in meters
+     * @param dof_index Local DOF index (0-6)
+     * @return true if BC was found and removed
+     * @throws std::runtime_error if no node at position
+     */
+    bool remove_bc_at(const Eigen::Vector3d& position, int dof_index);
+
+    /**
+     * @brief Remove all boundary conditions at a position
+     * @param position [x, y, z] coordinates in meters
+     * @return Number of BCs removed
+     * @throws std::runtime_error if no node at position
+     */
+    int remove_all_bcs_at(const Eigen::Vector3d& position);
+
 private:
     // Analysis components
     DOFHandler dof_handler_;

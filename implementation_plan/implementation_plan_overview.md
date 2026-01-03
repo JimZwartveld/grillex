@@ -15,7 +15,7 @@ This document provides a detailed, step-by-step implementation plan for building
 
 ## Phases Overview
 
-The implementation plan is organized into 19 phases:
+The implementation plan is organized into 20 phases:
 
 ### Phase 0: Project Setup & Infrastructure
 **Requirements:** R-ARCH-001, R-DEV-001, R-DEV-003 **Dependencies:** None **Difficulty:** Low **Description:** Create the basic project directory structure.
@@ -135,4 +135,9 @@ The implementation plan is organized into 19 phases:
 **Requirements:** R-ELEM-004, R-MESH-001, R-MPC-003 **Dependencies:** Phase 8, Phase 6 **Difficulty:** High **Description:** Comprehensive plate meshing using gmsh with quad preference. Supports general polygons (3+ corners), higher-order elements (MITC8, MITC9), triangular fallback (DKT), mesh size and per-edge division control, plate-beam coupling via rigid links with DOF releases and eccentric offsets, support curves along plate edges, and a unified mesh() function for plates and beams.
 
 → [See full Phase 19 details](implementation_plan_phase19_plate_meshing.md)
+
+### Phase 20: Vessel Motions
+**Requirements:** R-VESSEL-001, R-VESSEL-002, R-VESSEL-003, R-VESSEL-004 **Dependencies:** Phase 5, Phase 9 **Difficulty:** Medium **Description:** Python front-end abstraction for vessel (barge) motion-induced loading. Generates environmental load cases from motion amplitudes (both direct amplitude input and Noble Denton guidelines) and automatically creates LRFD (ULS-a, ULS-b) or ASD load combinations. Supports regular vs removal operation types with appropriate load factors.
+
+→ [See full Phase 20 details](implementation_plan_phase20_vessel_motions.md)
 

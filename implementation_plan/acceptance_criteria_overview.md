@@ -2,7 +2,7 @@
 
 This document provides a comprehensive overview of all acceptance criteria across implementation phases. It is automatically updated when tasks are completed.
 
-**Last Updated:** 2025-12-29 (Phase 17 moved to grillex-webapp repository)
+**Last Updated:** 2026-01-03 (Phase 20 Vessel Motions added)
 
 ## Summary Statistics
 
@@ -27,7 +27,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 16 | Eigenvalue Analysis | 78 | 75 | 3 | 96% |
 | 17 | Web Application Interface | - | - | - | Moved to grillex-webapp |
 | 19 | Plate Meshing | 12 | 12 | 0 | 100% |
-| **Total** | | **411** | **374** | **37** | **91%** |
+| 20 | Vessel Motions | 35 | 0 | 35 | 0% |
+| **Total** | | **446** | **374** | **72** | **84%** |
 
 ---
 
@@ -769,6 +770,73 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [x] User documentation with working examples
 - [x] Doctests pass
 - [x] CLAUDE.md updated with plate meshing guidance
+
+---
+
+## Phase 20: Vessel Motions
+
+### Task 20.1: Define VesselMotions Base Class and Data Structures
+- [ ] VesselMotions base class defined with center_of_rotation
+- [ ] Acceleration and RotaryAcceleration dataclasses work correctly
+- [ ] acceleration_at_point correctly computes total acceleration including rotary effects
+- [ ] DesignMethod and OperationType enums defined
+- [ ] Classes are exported from grillex.core module
+
+### Task 20.2: Implement VesselMotionsFromAmplitudes
+- [ ] VesselMotionsFromAmplitudes generates correct number of combinations
+- [ ] Coupling rules correctly constrain surge/pitch and sway/roll signs
+- [ ] Changing acceleration/rotary_acceleration rebuilds motion cases
+- [ ] Zero amplitudes are handled correctly (reduced combinations)
+
+### Task 20.3: Implement VesselMotionsFromNobleDenton
+- [ ] VesselMotionsFromNobleDenton generates 8 motion combinations
+- [ ] Roll and pitch cases are correctly separated (orthogonal)
+- [ ] Computed accelerations match Noble Denton guideline formulas
+- [ ] Default values match typical marine transport assumptions
+
+### Task 20.4: Implement Load Case Generation
+- [ ] generate_load_cases creates gravity + environmental load cases
+- [ ] Gravity load case has LoadCaseType.Permanent
+- [ ] Environmental load cases have LoadCaseType.Environmental
+- [ ] Acceleration fields include both translation and rotation
+- [ ] Center of rotation is used as reference point
+
+### Task 20.5: Define Load Combination Factors
+- [ ] LRFD factors defined for ULS-a and ULS-b
+- [ ] ASD factors defined for Operating condition
+- [ ] Regular and Removal operation types have appropriate factors
+- [ ] get_load_factors returns correct factors based on inputs
+
+### Task 20.6: Implement Load Combination Generation
+- [ ] generate_load_combinations creates correct number of combinations
+- [ ] Each combination includes gravity and one environmental case
+- [ ] Load factors are correctly applied based on design method
+- [ ] Operation type affects factors appropriately
+- [ ] Combination names are descriptive and unique
+- [ ] generate_all convenience method works correctly
+
+### Task 20.7: Add DataFrame/Summary Methods
+- [ ] get_accelerations_dataframe returns properly formatted DataFrame
+- [ ] get_summary returns readable text output
+- [ ] __str__ returns summary for print()
+
+### Task 20.8: Integration with StructuralModel
+- [ ] add_vessel_motions is accessible from StructuralModel
+- [ ] Default design method is LRFD, default operation is Regular
+- [ ] Returns tuple of (load_cases, combinations)
+- [ ] Integration with cargo and other model features works
+
+### Task 20.9: Comprehensive Tests
+- [ ] All test cases pass
+- [ ] Edge cases are covered (zero amplitudes, extreme values)
+- [ ] Integration with other model features verified
+- [ ] Coverage for all public methods
+
+### Task 20.10: Documentation and Examples
+- [ ] Module docstring includes complete usage example
+- [ ] User documentation explains all concepts
+- [ ] Doctest examples pass
+- [ ] Analysis workflow documentation updated
 
 ---
 

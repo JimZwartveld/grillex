@@ -1308,6 +1308,46 @@ void Model::clear() {
     next_load_case_id_ = 1;
 }
 
+bool Model::remove_bc_at(const Eigen::Vector3d& position, int dof_index) {
+    // Find node at position
+    Node* node = nodes.find_node(position(0), position(1), position(2));
+    if (!node) {
+        throw std::runtime_error("No node found at position [" +
+            std::to_string(position(0)) + ", " +
+            std::to_string(position(1)) + ", " +
+            std::to_string(position(2)) + "]");
+    }
+
+    bool removed = boundary_conditions.remove_fixed_dof(node->id, dof_index);
+
+    // Mark analysis as stale if BC was removed
+    if (removed) {
+        analyzed_ = false;
+    }
+
+    return removed;
+}
+
+int Model::remove_all_bcs_at(const Eigen::Vector3d& position) {
+    // Find node at position
+    Node* node = nodes.find_node(position(0), position(1), position(2));
+    if (!node) {
+        throw std::runtime_error("No node found at position [" +
+            std::to_string(position(0)) + ", " +
+            std::to_string(position(1)) + ", " +
+            std::to_string(position(2)) + "]");
+    }
+
+    int removed = boundary_conditions.remove_all_fixed_dofs_at_node(node->id);
+
+    // Mark analysis as stale if any BCs were removed
+    if (removed > 0) {
+        analyzed_ = false;
+    }
+
+    return removed;
+}
+
 // =============================================================================
 // Eigenvalue Analysis Methods
 // =============================================================================

@@ -19,4 +19,5 @@ comparison with analytical solutions.
    cantilever_beam
    simply_supported_beam
    continuous_beam
+   warping_torsion
    verification_summary
