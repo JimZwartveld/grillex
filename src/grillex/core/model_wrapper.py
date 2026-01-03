@@ -3453,13 +3453,17 @@ class StructuralModel:
     def _split_beam_at_nodes(
         self,
         beam: Beam,
-        internal_nodes: List[Tuple[float, Node]]
+        internal_nodes: List[Tuple[float, Node]],
+        had_warping: Optional[bool] = None
     ) -> List[Beam]:
         """Split a beam at internal nodes into multiple sub-beams.
 
         Args:
             beam: Original beam to split
             internal_nodes: List of (distance, node) tuples sorted by distance
+            had_warping: Whether original beam had warping enabled.
+                        If None, will try to detect from beam.elements (may fail if
+                        elements were already removed from C++ model).
 
         Returns:
             List of new Beam objects replacing the original beam
@@ -3470,6 +3474,14 @@ class StructuralModel:
         # Get material and section
         material = beam.material
         section = beam.section
+
+        # Use provided warping state, or try to detect from elements if still available
+        if had_warping is None:
+            try:
+                had_warping = any(elem.has_warping() for elem in beam.elements) if beam.elements else False
+            except Exception:
+                # Element may have been removed from C++ model
+                had_warping = False
 
         # Get start and end nodes
         start_node = self.find_node_at(beam.start_pos.tolist())
@@ -3486,6 +3498,10 @@ class StructuralModel:
         # The C++ model maintains its own element list - old elements remain
         # but new ones are created. model.analyze() will use all elements.
 
+        # Create beam configuration preserving warping setting
+        config = BeamConfig()
+        config.include_warping = had_warping
+
         # Create new sub-beams
         new_beams = []
         for i in range(len(all_nodes) - 1):
@@ -3495,8 +3511,8 @@ class StructuralModel:
             start_pos = [node_i.x, node_i.y, node_i.z]
             end_pos = [node_j.x, node_j.y, node_j.z]
 
-            # Create new beam element in C++ model
-            cpp_element = self._cpp_model.create_beam(node_i, node_j, material, section)
+            # Create new beam element in C++ model with preserved config
+            cpp_element = self._cpp_model.create_beam(node_i, node_j, material, section, config)
 
             # Create Python Beam object
             sub_beam = Beam(start_pos, end_pos, section, material, beam_id=self._beam_id_counter)
@@ -3537,6 +3553,10 @@ class StructuralModel:
         material = beam.material
         section = beam.section
 
+        # Preserve warping configuration from existing elements
+        # Check if any of the original elements had warping enabled
+        had_warping = any(elem.has_warping() for elem in beam.elements) if beam.elements else False
+
         # Get start and end nodes
         start_node = self.find_node_at(beam.start_pos.tolist())
         end_node = self.find_node_at(beam.end_pos.tolist())
@@ -3557,13 +3577,17 @@ class StructuralModel:
         # Clear the beam's elements list
         beam.elements.clear()
 
+        # Create beam configuration preserving warping setting
+        config = BeamConfig()
+        config.include_warping = had_warping
+
         # Create new elements and add to this beam
         for i in range(len(all_nodes) - 1):
             node_i = all_nodes[i]
             node_j = all_nodes[i + 1]
 
-            # Create new beam element in C++ model
-            cpp_element = self._cpp_model.create_beam(node_i, node_j, material, section)
+            # Create new beam element in C++ model with preserved config
+            cpp_element = self._cpp_model.create_beam(node_i, node_j, material, section, config)
 
             # Add to this beam's elements
             beam.add_element(cpp_element)
@@ -3603,6 +3627,9 @@ class StructuralModel:
             internal_nodes = self._find_internal_nodes(beam)
 
             if internal_nodes:
+                # Capture warping state BEFORE removing elements
+                had_warping = any(elem.has_warping() for elem in beam.elements) if beam.elements else False
+
                 # Remove original beam's element from the model
                 # We need to mark it for removal
                 if beam.elements:
@@ -3610,8 +3637,8 @@ class StructuralModel:
                     # Remove from C++ model's elements list
                     self._remove_element_from_cpp_model(old_element)
 
-                # Split the beam
-                new_beams = self._split_beam_at_nodes(beam, internal_nodes)
+                # Split the beam, preserving warping configuration
+                new_beams = self._split_beam_at_nodes(beam, internal_nodes, had_warping=had_warping)
                 new_beams_list.extend(new_beams)
                 subdivided_count += 1
             else:
