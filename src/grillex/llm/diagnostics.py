@@ -365,6 +365,26 @@ def _suggest_for_empty_load_case(error: GrillexError) -> List[FixSuggestion]:
             },
             priority=1,
             confidence=0.9
+        ),
+        FixSuggestion(
+            description="Add gravity load case for self-weight analysis.",
+            tool_name="add_gravity",
+            tool_params={},
+            priority=2,
+            confidence=0.8
+        ),
+        FixSuggestion(
+            description="For offshore structures, add vessel motion load case with "
+                        "heave, roll, and pitch accelerations.",
+            tool_name="add_vessel_motion",
+            tool_params={
+                "name": "Vessel Motion",
+                "heave": 2.0,
+                "roll": 0.1,
+                "pitch": 0.05
+            },
+            priority=3,
+            confidence=0.6
         )
     ]
 
@@ -473,6 +493,19 @@ def get_warning_advice(warning: GrillexWarning) -> str:
         WarningCode.HIGH_STRESS: (
             "High stress detected (may exceed yield). Check if material nonlinearity "
             "or plastic analysis should be considered."
+        ),
+        WarningCode.ACCELERATION_WITHOUT_MASS: (
+            "Acceleration field is set on a load case but some elements have zero mass. "
+            "For vessel motion analysis: (1) Verify material density (rho) is set correctly "
+            "(typical steel: 7.85 mT/m³), (2) Check that beams have valid section areas, "
+            "(3) For point masses, ensure mass values are non-zero. Inertial loads will "
+            "only be computed for elements with mass."
+        ),
+        WarningCode.LARGE_LOAD: (
+            "Large load values detected. For vessel motion analysis: (1) Verify acceleration "
+            "values are in m/s² (not g), (2) Check motion center is specified correctly, "
+            "(3) Typical vessel accelerations are 0.5-5 m/s² for heave, 0.05-0.2 rad/s² for "
+            "roll/pitch. Values much higher may indicate unit errors."
         ),
     }
 

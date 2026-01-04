@@ -41,6 +41,10 @@ YAML Schema:
             dof: UY
             value: -10.0  # [kN] or [kN·m]
 
+      - name: "Design Motion LC"
+        type: Environmental
+        vessel_motion: "Design Heave + Roll"  # Reference to vessel motion
+
     vessel_motions:
       - name: "Design Heave + Roll"
         motion_center: [50.0, 0.0, 5.0]  # [m] reference point for rotations
@@ -64,10 +68,12 @@ Usage:
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, Optional
 import yaml
+import numpy as np
 
 from grillex.core import StructuralModel, DOFIndex, LoadCaseType
+from grillex.core.vessel_motion import VesselMotion
 
 
 class YAMLLoadError(Exception):
@@ -152,17 +158,18 @@ def build_model_from_dict(data: dict[str, Any], default_name: str = "Unnamed") -
     except Exception as e:
         raise YAMLLoadError(f"Error loading boundary conditions: {e}")
 
-    # Load load cases
+    # Load vessel motions first (so load cases can reference them)
+    vessel_motion_defs: Dict[str, VesselMotion] = {}
     try:
-        _load_load_cases(model, data.get('load_cases', []))
-    except Exception as e:
-        raise YAMLLoadError(f"Error loading load cases: {e}")
-
-    # Load vessel motions
-    try:
-        _load_vessel_motions(model, data.get('vessel_motions', []))
+        vessel_motion_defs = _load_vessel_motions(model, data.get('vessel_motions', []))
     except Exception as e:
         raise YAMLLoadError(f"Error loading vessel motions: {e}")
+
+    # Load load cases (pass vessel motion definitions for references)
+    try:
+        _load_load_cases(model, data.get('load_cases', []), vessel_motion_defs)
+    except Exception as e:
+        raise YAMLLoadError(f"Error loading load cases: {e}")
 
     return model
 
@@ -332,16 +339,25 @@ def _load_boundary_conditions(model: StructuralModel, bc_data: list[dict]) -> No
             raise ValueError(f"Error applying boundary condition {i}: {e}")
 
 
-def _load_load_cases(model: StructuralModel, load_cases_data: list[dict]) -> None:
+def _load_load_cases(
+    model: StructuralModel,
+    load_cases_data: list[dict],
+    vessel_motion_defs: Optional[Dict[str, VesselMotion]] = None
+) -> None:
     """Load load cases into the model.
 
     Args:
         model: StructuralModel instance
         load_cases_data: List of load case dictionaries
+        vessel_motion_defs: Dictionary of pre-defined vessel motions that
+            load cases can reference by name
 
     Raises:
         ValueError: If load case data is invalid
     """
+    if vessel_motion_defs is None:
+        vessel_motion_defs = {}
+
     if not isinstance(load_cases_data, list):
         raise ValueError("'load_cases' must be a list")
 
@@ -359,6 +375,24 @@ def _load_load_cases(model: StructuralModel, load_cases_data: list[dict]) -> Non
         # Create load case
         lc_name = lc_data['name']
         load_case = model.create_load_case(lc_name, lc_type)
+
+        # Check for vessel motion reference
+        if 'vessel_motion' in lc_data:
+            vm_name = lc_data['vessel_motion']
+            if vm_name not in vessel_motion_defs:
+                available = list(vessel_motion_defs.keys())
+                raise ValueError(
+                    f"Load case '{lc_name}': vessel motion '{vm_name}' not found. "
+                    f"Available vessel motions: {available}"
+                )
+
+            # Get the vessel motion and apply its accelerations to this load case
+            vessel_motion = vessel_motion_defs[vm_name]
+            accel_6d, motion_center = vessel_motion.get_acceleration_field()
+            load_case.set_acceleration_field(
+                np.array(accel_6d),
+                np.array(motion_center)
+            )
 
         # Load nodal loads
         loads = lc_data.get('loads', [])
@@ -499,24 +533,30 @@ def _parse_load_case_type(type_str: str) -> LoadCaseType:
     return type_map[type_upper]
 
 
-def _load_vessel_motions(model: StructuralModel, vessel_motions_data: list[dict]) -> None:
+def _load_vessel_motions(model: StructuralModel, vessel_motions_data: list[dict]) -> dict:
     """Load vessel motions into the model.
 
     Vessel motions define 6-DOF accelerations for offshore structures on floating
-    vessels. Each vessel motion creates a load case with the appropriate acceleration
-    field applied.
+    vessels. Each vessel motion can optionally create a load case with the
+    appropriate acceleration field applied.
 
     Args:
         model: StructuralModel instance
         vessel_motions_data: List of vessel motion dictionaries
 
+    Returns:
+        Dictionary mapping vessel motion names to VesselMotion objects
+
     Raises:
         ValueError: If vessel motion data is invalid
     """
     import math
+    from grillex.core.vessel_motion import VesselMotion
 
     if not isinstance(vessel_motions_data, list):
         raise ValueError("'vessel_motions' must be a list")
+
+    vessel_motion_defs = {}
 
     for i, vm_data in enumerate(vessel_motions_data):
         if not isinstance(vm_data, dict):
@@ -592,15 +632,42 @@ def _load_vessel_motions(model: StructuralModel, vessel_motions_data: list[dict]
             omega = 2 * math.pi / period
             yaw = omega * omega * angle_rad
 
-        # Create the vessel motion load case
-        model.add_vessel_motion_load_case(
-            name=name,
-            heave=heave,
-            pitch=pitch,
-            roll=roll,
-            surge=surge,
-            sway=sway,
-            yaw=yaw,
-            motion_center=motion_center,
-            load_type=lc_type
-        )
+        # Check if we should auto-create a load case (default: True)
+        auto_create_load_case = vm_data.get('auto_create_load_case', True)
+
+        if auto_create_load_case:
+            # Create the vessel motion load case
+            motion = model.add_vessel_motion_load_case(
+                name=name,
+                heave=heave,
+                pitch=pitch,
+                roll=roll,
+                surge=surge,
+                sway=sway,
+                yaw=yaw,
+                motion_center=motion_center,
+                load_type=lc_type
+            )
+            vessel_motion_defs[name] = motion
+        else:
+            # Just create the VesselMotion object without creating a load case
+            motion = VesselMotion(name)
+            if motion_center is not None:
+                motion.set_motion_center(motion_center)
+            if surge != 0.0:
+                motion.add_surge(surge)
+            if sway != 0.0:
+                motion.add_sway(sway)
+            if heave != 0.0:
+                motion.add_heave(heave)
+            if roll != 0.0:
+                motion.add_roll(roll)
+            if pitch != 0.0:
+                motion.add_pitch(pitch)
+            if yaw != 0.0:
+                motion.add_yaw(yaw)
+            # Register the motion on the model so it can be queried later
+            model.register_vessel_motion(motion)
+            vessel_motion_defs[name] = motion
+
+    return vessel_motion_defs

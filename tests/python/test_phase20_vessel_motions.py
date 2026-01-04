@@ -657,3 +657,268 @@ class TestVesselMotionLLMTools:
 
         assert not result.success
         assert "No model" in result.error
+
+
+class TestVesselMotionYAMLReference:
+    """Test 20.4: Load cases can reference vessel motions by name in YAML."""
+
+    def test_load_case_references_vessel_motion(self):
+        """Load case with vessel_motion field applies acceleration from vessel motion."""
+        from grillex.io.yaml_loader import build_model_from_dict
+
+        data = {
+            'name': 'Test Model',
+            'materials': [{'name': 'Steel', 'E': 210e6, 'nu': 0.3, 'rho': 7.85}],
+            'sections': [{'name': 'IPE300', 'A': 0.01, 'Iy': 1e-4, 'Iz': 1e-5, 'J': 1e-6}],
+            'beams': [{'start': [0, 0, 0], 'end': [10, 0, 0], 'section': 'IPE300', 'material': 'Steel'}],
+            'boundary_conditions': [{'node': [0, 0, 0], 'type': 'fixed'}],
+            'vessel_motions': [
+                {
+                    'name': 'Design Motion',
+                    'heave': 2.5,
+                    'roll': 0.12,
+                    'motion_center': [50.0, 0.0, 5.0],
+                    'auto_create_load_case': False  # Don't auto-create, we'll reference it
+                }
+            ],
+            'load_cases': [
+                {
+                    'name': 'Motion LC',
+                    'type': 'Environmental',
+                    'vessel_motion': 'Design Motion'  # Reference the vessel motion
+                }
+            ]
+        }
+
+        model = build_model_from_dict(data)
+
+        # The load case should have the acceleration field from the vessel motion
+        load_cases = model._cpp_model.get_load_cases()
+        motion_lc = next(lc for lc in load_cases if lc.name == 'Motion LC')
+
+        accel = motion_lc.get_acceleration()
+        assert accel[2] == 2.5  # heave (az)
+        assert accel[3] == pytest.approx(0.12)  # roll (ωx)
+
+    def test_load_case_reference_invalid_motion(self):
+        """Load case referencing non-existent vessel motion raises error."""
+        from grillex.io.yaml_loader import build_model_from_dict, YAMLLoadError
+
+        data = {
+            'name': 'Test Model',
+            'materials': [{'name': 'Steel', 'E': 210e6, 'nu': 0.3, 'rho': 7.85}],
+            'sections': [{'name': 'IPE300', 'A': 0.01, 'Iy': 1e-4, 'Iz': 1e-5, 'J': 1e-6}],
+            'beams': [{'start': [0, 0, 0], 'end': [10, 0, 0], 'section': 'IPE300', 'material': 'Steel'}],
+            'boundary_conditions': [{'node': [0, 0, 0], 'type': 'fixed'}],
+            'vessel_motions': [],  # No vessel motions defined
+            'load_cases': [
+                {
+                    'name': 'Motion LC',
+                    'vessel_motion': 'Non-existent Motion'
+                }
+            ]
+        }
+
+        with pytest.raises(YAMLLoadError) as exc:
+            build_model_from_dict(data)
+
+        assert "vessel motion 'Non-existent Motion' not found" in str(exc.value)
+
+    def test_load_case_reference_lists_available_motions(self):
+        """Error message includes list of available vessel motions."""
+        from grillex.io.yaml_loader import build_model_from_dict, YAMLLoadError
+
+        data = {
+            'name': 'Test Model',
+            'materials': [{'name': 'Steel', 'E': 210e6, 'nu': 0.3, 'rho': 7.85}],
+            'sections': [{'name': 'IPE300', 'A': 0.01, 'Iy': 1e-4, 'Iz': 1e-5, 'J': 1e-6}],
+            'beams': [{'start': [0, 0, 0], 'end': [10, 0, 0], 'section': 'IPE300', 'material': 'Steel'}],
+            'boundary_conditions': [{'node': [0, 0, 0], 'type': 'fixed'}],
+            'vessel_motions': [
+                {'name': 'Heave Only', 'heave': 2.0, 'auto_create_load_case': False},
+                {'name': 'Roll Only', 'roll': 0.1, 'auto_create_load_case': False}
+            ],
+            'load_cases': [
+                {'name': 'Motion LC', 'vessel_motion': 'Wrong Name'}
+            ]
+        }
+
+        with pytest.raises(YAMLLoadError) as exc:
+            build_model_from_dict(data)
+
+        error_msg = str(exc.value)
+        assert "Heave Only" in error_msg
+        assert "Roll Only" in error_msg
+
+    def test_load_case_with_motion_and_loads(self):
+        """Load case can have both vessel motion reference and point loads."""
+        from grillex.io.yaml_loader import build_model_from_dict
+
+        data = {
+            'name': 'Test Model',
+            'materials': [{'name': 'Steel', 'E': 210e6, 'nu': 0.3, 'rho': 7.85}],
+            'sections': [{'name': 'IPE300', 'A': 0.01, 'Iy': 1e-4, 'Iz': 1e-5, 'J': 1e-6}],
+            'beams': [{'start': [0, 0, 0], 'end': [10, 0, 0], 'section': 'IPE300', 'material': 'Steel'}],
+            'boundary_conditions': [{'node': [0, 0, 0], 'type': 'fixed'}],
+            'vessel_motions': [
+                {
+                    'name': 'Motion',
+                    'heave': 2.0,
+                    'auto_create_load_case': False
+                }
+            ],
+            'load_cases': [
+                {
+                    'name': 'Combined LC',
+                    'vessel_motion': 'Motion',
+                    'loads': [
+                        {'position': [10, 0, 0], 'force': [0, 0, -50.0]}
+                    ]
+                }
+            ]
+        }
+
+        model = build_model_from_dict(data)
+
+        # Check acceleration field is applied
+        load_cases = model._cpp_model.get_load_cases()
+        combined_lc = next(lc for lc in load_cases if lc.name == 'Combined LC')
+        accel = combined_lc.get_acceleration()
+        assert accel[2] == 2.0  # heave
+
+        # Check point load is also applied (would need to verify via analysis)
+        # Just verify the load case exists and the name is correct
+        assert combined_lc.name == 'Combined LC'
+
+
+class TestVesselMotionRoundTrip:
+    """Test 20.4: Round-trip serialization of vessel motions."""
+
+    def test_to_dict_basic(self):
+        """VesselMotion.to_dict() returns correct structure."""
+        motion = VesselMotion("Test Motion")
+        motion.set_motion_center([50.0, 0.0, 5.0])
+        motion.add_heave(2.5)
+        motion.add_roll(0.12)
+
+        d = motion.to_dict()
+
+        assert d['name'] == "Test Motion"
+        assert d['motion_center'] == [50.0, 0.0, 5.0]
+        assert d['heave'] == 2.5
+        assert d['roll'] == 0.12
+
+    def test_to_dict_omits_default_center(self):
+        """to_dict() omits motion_center if at origin."""
+        motion = VesselMotion("Test").add_heave(1.0)
+
+        d = motion.to_dict()
+
+        assert 'motion_center' not in d
+
+    def test_from_dict_basic(self):
+        """VesselMotion.from_dict() reconstructs motion correctly."""
+        data = {
+            'name': 'Reconstructed',
+            'motion_center': [10.0, 5.0, 2.0],
+            'heave': 2.5,
+            'pitch': 0.08
+        }
+
+        motion = VesselMotion.from_dict(data)
+
+        assert motion.name == 'Reconstructed'
+        assert motion.motion_center == [10.0, 5.0, 2.0]
+
+        heave_comp = motion.get_component_by_type(MotionType.HEAVE)
+        assert heave_comp is not None
+        assert heave_comp.amplitude == 2.5
+
+        pitch_comp = motion.get_component_by_type(MotionType.PITCH)
+        assert pitch_comp is not None
+        assert pitch_comp.amplitude == 0.08
+
+    def test_round_trip_preservation(self):
+        """Round trip: VesselMotion -> dict -> VesselMotion preserves data."""
+        original = VesselMotion("Design Motion")
+        original.set_motion_center([50.0, 0.0, 5.0])
+        original.add_heave(2.5)
+        original.add_roll(0.12)
+        original.add_pitch(0.08)
+        original.add_surge(0.5)
+
+        # Serialize and deserialize
+        data = original.to_dict()
+        reconstructed = VesselMotion.from_dict(data)
+
+        # Verify all fields match
+        assert reconstructed.name == original.name
+        assert reconstructed.motion_center == original.motion_center
+
+        # Verify all components
+        orig_accel, orig_center = original.get_acceleration_field()
+        recon_accel, recon_center = reconstructed.get_acceleration_field()
+
+        for i in range(6):
+            assert pytest.approx(orig_accel[i]) == recon_accel[i]
+
+    def test_yaml_round_trip(self):
+        """Round trip through YAML: dict -> YAML string -> dict -> VesselMotion."""
+        import yaml
+
+        original = VesselMotion("YAML Test")
+        original.set_motion_center([25.0, 0.0, 3.0])
+        original.add_heave(3.0)
+        original.add_roll(0.15)
+
+        # Serialize to YAML
+        yaml_str = yaml.dump(original.to_dict())
+
+        # Parse back from YAML
+        parsed = yaml.safe_load(yaml_str)
+        reconstructed = VesselMotion.from_dict(parsed)
+
+        assert reconstructed.name == "YAML Test"
+        assert reconstructed.motion_center == [25.0, 0.0, 3.0]
+
+        heave_comp = reconstructed.get_component_by_type(MotionType.HEAVE)
+        assert heave_comp is not None
+        assert heave_comp.amplitude == 3.0
+
+    def test_full_model_round_trip(self):
+        """Full model round trip: YAML -> Model -> VesselMotion -> dict matches original."""
+        from grillex.io.yaml_loader import build_model_from_dict
+
+        original_data = {
+            'name': 'Round Trip Test',
+            'materials': [{'name': 'Steel', 'E': 210e6, 'nu': 0.3, 'rho': 7.85}],
+            'sections': [{'name': 'IPE300', 'A': 0.01, 'Iy': 1e-4, 'Iz': 1e-5, 'J': 1e-6}],
+            'beams': [{'start': [0, 0, 0], 'end': [10, 0, 0], 'section': 'IPE300', 'material': 'Steel'}],
+            'boundary_conditions': [{'node': [0, 0, 0], 'type': 'fixed'}],
+            'vessel_motions': [
+                {
+                    'name': 'Test Motion',
+                    'motion_center': [50.0, 0.0, 5.0],
+                    'heave': 2.5,
+                    'roll': 0.12,
+                    'pitch': 0.08,
+                    'auto_create_load_case': False
+                }
+            ],
+        }
+
+        model = build_model_from_dict(original_data)
+
+        # Get the vessel motion back and convert to dict
+        vessel_motions = model.get_vessel_motions()
+        assert len(vessel_motions) == 1
+
+        motion = vessel_motions[0]
+        exported = motion.to_dict()
+
+        # Verify key fields match
+        assert exported['name'] == 'Test Motion'
+        assert exported['motion_center'] == [50.0, 0.0, 5.0]
+        assert exported['heave'] == 2.5
+        assert exported['roll'] == pytest.approx(0.12)
+        assert exported['pitch'] == pytest.approx(0.08)
