@@ -1,883 +1,1271 @@
-## Phase 20: Vessel Motions
+# Phase 20: Vessel Motions
 
-### Overview
+## Overview
 
-This phase implements vessel motion support for offshore structural analysis. Vessel motions are the 6-DOF motions of a floating vessel (barge, ship, platform) that induce inertial loads on the structure and cargo.
+This phase implements a Python front-end abstraction for vessel (barge) motion-induced loading. Similar to the Cargo abstraction (Phase 9), VesselMotions is a Python-level wrapper that generates load cases and load combinations from motion amplitude inputs.
 
-**Key Concepts:**
-- **6-DOF Vessel Motions**: Surge (X), Sway (Y), Heave (Z), Roll (RX), Pitch (RY), Yaw (RZ)
-- **Motion Center**: Reference point for rotational motions (typically vessel CoG or waterline)
-- **Design Accelerations**: Maximum accelerations from vessel motion analysis (DNV, NORSOK, etc.)
-- **Combined Motions**: Multiple motion components can be combined with phase relationships
+**Purpose**: Simplify the workflow for marine/offshore structural analysis by automatically generating environmental load cases from vessel motion parameters (roll, pitch, heave) and combining them with gravity loads according to LRFD/ASD design code requirements.
 
-**Dependencies:** Phase 5 (Acceleration Fields), Phase 9 (Cargo Modelling)
+**Input Options**:
+1. **From Amplitudes**: User provides translational and rotational acceleration amplitudes directly
+2. **From Noble Denton**: User provides motion amplitudes (degrees, G's) and the Noble Denton guidelines are used to compute acceleration combinations
 
-**Implementation Approach:**
-The C++ acceleration field foundation (R-LOAD-003 through R-LOAD-006) is already complete. This phase adds:
-1. High-level Python `VesselMotion` class for vessel-specific parameters
-2. Convenience methods on `StructuralModel` for common vessel scenarios
-3. YAML I/O support for vessel motion definitions
-4. LLM tooling for vessel motion setup
-5. Comprehensive tests and documentation
+**Output**:
+- Environmental load cases (one per motion combination)
+- A gravity (static) load case
+- ULS-a and ULS-b load combinations for LRFD
+- ASD load combinations (if selected)
+- Separate combinations for "removal" vs "regular" operations
 
 ---
 
-### Task 20.1: Implement VesselMotion Class
+## Requirements Traceability
 
-**Requirements:** R-ARCH-007, R-LOAD-003
-**Dependencies:** Phase 5 complete
+New requirements to be added:
+- **R-VESSEL-001**: Vessel motion abstraction shall generate load cases from acceleration inputs
+- **R-VESSEL-002**: Vessel motions shall support both amplitude-based and Noble Denton inputs
+- **R-VESSEL-003**: Vessel motions shall generate LRFD and ASD load combinations
+- **R-VESSEL-004**: Vessel motions shall support removal vs regular operation conditions
+
+---
+
+## Task 20.1: Define VesselMotions Base Class and Data Structures
+
+**Requirements:** R-VESSEL-001, R-VESSEL-002
+**Dependencies:** Phase 5 (Load Cases), Phase 9 (Cargo pattern reference)
 **Difficulty:** Medium
 
 **Description:**
-Create a Python-level `VesselMotion` class that encapsulates vessel motion parameters and generates appropriate acceleration fields for load cases.
+Create the VesselMotions base class and supporting data structures in `grillex/core/vessel_motions.py`.
 
 **Steps:**
 
-1. Create `src/grillex/core/vessel_motion.py`:
-   ```python
-   from dataclasses import dataclass, field
-   from typing import List, Optional, Dict
-   from enum import Enum
-   import numpy as np
+1. Create `src/grillex/core/vessel_motions.py` with the following structure:
 
-   class MotionType(Enum):
-       """Vessel motion types in ship coordinate system."""
-       SURGE = "surge"    # X translation (fore-aft)
-       SWAY = "sway"      # Y translation (port-starboard)
-       HEAVE = "heave"    # Z translation (vertical)
-       ROLL = "roll"      # Rotation about X (heel)
-       PITCH = "pitch"    # Rotation about Y (trim)
-       YAW = "yaw"        # Rotation about Z (heading)
+```python
+from typing import List, Optional, Tuple, TYPE_CHECKING
+from dataclasses import dataclass, field
+from enum import Enum
+import math
+import itertools
+import numpy as np
 
-   @dataclass
-   class MotionComponent:
-       """Single motion component with amplitude and phase."""
-       motion_type: MotionType
-       amplitude: float          # m/s² for linear, rad/s² for angular
-       phase: float = 0.0        # Phase angle in radians (for combining motions)
+if TYPE_CHECKING:
+    from grillex.core.model_wrapper import StructuralModel
 
-   @dataclass
-   class VesselMotion:
-       """
-       Vessel motion definition for offshore structural analysis.
 
-       Encapsulates the motion parameters for a floating vessel and provides
-       methods to generate acceleration fields for load cases.
+class DesignMethod(Enum):
+    """Design method for load combinations."""
+    LRFD = "lrfd"  # Load and Resistance Factor Design
+    ASD = "asd"    # Allowable Stress Design
 
-       Attributes:
-           name: Descriptive name for this motion condition
-           motion_center: Reference point for rotational motions [x, y, z] in meters
-           components: List of motion components (heave, pitch, roll, etc.)
-           description: Optional description of the motion condition
 
-       Example:
-           >>> motion = VesselMotion("Design Heave")
-           >>> motion.set_motion_center([50.0, 0.0, 5.0])  # Midship, waterline
-           >>> motion.add_heave(2.5)  # 2.5 m/s² vertical acceleration
-           >>> motion.add_pitch(0.08)  # 0.08 rad/s² pitch acceleration
-           >>> motion.add_roll(0.12)  # 0.12 rad/s² roll acceleration
-       """
-       name: str
-       motion_center: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
-       components: List[MotionComponent] = field(default_factory=list)
-       description: str = ""
+class OperationType(Enum):
+    """Type of marine operation."""
+    REGULAR = "regular"   # Normal transport/operations
+    REMOVAL = "removal"   # Lift-on/lift-off operations
 
-       def set_motion_center(self, position: List[float]) -> "VesselMotion":
-           """Set the motion center (pivot point for rotational motions)."""
-           self.motion_center = list(position)
-           return self
 
-       def add_component(self, motion_type: MotionType, amplitude: float,
-                        phase: float = 0.0) -> "VesselMotion":
-           """Add a motion component."""
-           self.components.append(MotionComponent(motion_type, amplitude, phase))
-           return self
+@dataclass
+class Acceleration:
+    """Translational accelerations in global coordinates.
 
-       # Convenience methods
-       def add_surge(self, amplitude: float, phase: float = 0.0) -> "VesselMotion":
-           """Add surge acceleration (m/s², positive = forward)."""
-           return self.add_component(MotionType.SURGE, amplitude, phase)
+    Attributes:
+        ax: Surge acceleration [m/s²] (positive toward bow)
+        ay: Sway acceleration [m/s²] (positive toward port)
+        az: Heave acceleration [m/s²] (positive upward)
+    """
+    ax: float = 0.0
+    ay: float = 0.0
+    az: float = 0.0
 
-       def add_sway(self, amplitude: float, phase: float = 0.0) -> "VesselMotion":
-           """Add sway acceleration (m/s², positive = port)."""
-           return self.add_component(MotionType.SWAY, amplitude, phase)
+    def as_array(self) -> np.ndarray:
+        return np.array([self.ax, self.ay, self.az])
 
-       def add_heave(self, amplitude: float, phase: float = 0.0) -> "VesselMotion":
-           """Add heave acceleration (m/s², positive = up)."""
-           return self.add_component(MotionType.HEAVE, amplitude, phase)
+    def __mul__(self, factor: float) -> "Acceleration":
+        return Acceleration(self.ax * factor, self.ay * factor, self.az * factor)
 
-       def add_roll(self, amplitude: float, phase: float = 0.0) -> "VesselMotion":
-           """Add roll angular acceleration (rad/s², positive = starboard down)."""
-           return self.add_component(MotionType.ROLL, amplitude, phase)
+    def __rmul__(self, factor: float) -> "Acceleration":
+        return self.__mul__(factor)
 
-       def add_pitch(self, amplitude: float, phase: float = 0.0) -> "VesselMotion":
-           """Add pitch angular acceleration (rad/s², positive = bow down)."""
-           return self.add_component(MotionType.PITCH, amplitude, phase)
 
-       def add_yaw(self, amplitude: float, phase: float = 0.0) -> "VesselMotion":
-           """Add yaw angular acceleration (rad/s², positive = bow to port)."""
-           return self.add_component(MotionType.YAW, amplitude, phase)
+@dataclass
+class RotaryAcceleration:
+    """Rotational accelerations about global axes.
 
-       def get_acceleration_field(self) -> tuple:
-           """
-           Compute the 6-component acceleration field from motion components.
+    Attributes:
+        rx: Roll acceleration [rad/s²] (about X axis, positive starboard down)
+        ry: Pitch acceleration [rad/s²] (about Y axis, positive bow down)
+        rz: Yaw acceleration [rad/s²] (about Z axis, positive clockwise from above)
+    """
+    rx: float = 0.0
+    ry: float = 0.0
+    rz: float = 0.0
 
-           Returns:
-               Tuple of (acceleration_6d, motion_center) where:
-               - acceleration_6d: [ax, ay, az, αx, αy, αz] in m/s² and rad/s²
-               - motion_center: [x, y, z] reference point in meters
+    def as_array(self) -> np.ndarray:
+        return np.array([self.rx, self.ry, self.rz])
 
-           Note:
-               For quasi-static analysis, only the instantaneous acceleration
-               matters (phases are used when combining results, not here).
-           """
-           accel = np.zeros(6)
+    def __mul__(self, factor: float) -> "RotaryAcceleration":
+        return RotaryAcceleration(self.rx * factor, self.ry * factor, self.rz * factor)
 
-           for comp in self.components:
-               # Apply amplitude directly (phase handling is for result combination)
-               if comp.motion_type == MotionType.SURGE:
-                   accel[0] += comp.amplitude
-               elif comp.motion_type == MotionType.SWAY:
-                   accel[1] += comp.amplitude
-               elif comp.motion_type == MotionType.HEAVE:
-                   accel[2] += comp.amplitude
-               elif comp.motion_type == MotionType.ROLL:
-                   accel[3] += comp.amplitude
-               elif comp.motion_type == MotionType.PITCH:
-                   accel[4] += comp.amplitude
-               elif comp.motion_type == MotionType.YAW:
-                   accel[5] += comp.amplitude
+    def __rmul__(self, factor: float) -> "RotaryAcceleration":
+        return self.__mul__(factor)
 
-           return (accel.tolist(), self.motion_center)
 
-       def apply_to_load_case(self, load_case) -> None:
-           """
-           Apply this vessel motion to a LoadCase.
+@dataclass
+class MotionCase:
+    """A single motion combination with its accelerations.
 
-           Args:
-               load_case: LoadCase object to apply the acceleration field to
-           """
-           accel, ref_point = self.get_acceleration_field()
-           load_case.set_acceleration_field(accel, ref_point)
-   ```
+    Attributes:
+        name: Descriptive name (e.g., "Roll_Pos_Heave_Down")
+        acceleration: Translational accelerations [m/s²]
+        rotary_acceleration: Rotational accelerations [rad/s²]
+    """
+    name: str
+    acceleration: Acceleration
+    rotary_acceleration: RotaryAcceleration
+```
 
-2. Export from `src/grillex/core/__init__.py`:
-   ```python
-   from .vessel_motion import VesselMotion, MotionType, MotionComponent
-   ```
+2. Add the base `VesselMotions` class:
+
+```python
+class VesselMotions:
+    """
+    Base class for vessel motion loading.
+
+    VesselMotions generates environmental load cases from vessel motion parameters.
+    Each motion combination produces a load case with translational and rotational
+    accelerations that create inertial forces on the structure.
+
+    The coordinate system follows marine convention:
+    - X axis: Points from stern to bow (surge positive forward)
+    - Y axis: Points to port side (sway positive port)
+    - Z axis: Points upward (heave positive up)
+
+    Motion coupling assumptions:
+    - Positive roll (rotation about X) causes negative sway acceleration
+    - Positive pitch (rotation about Y) causes positive surge acceleration
+
+    Attributes:
+        name: Descriptive name for this motion set
+        center_of_rotation: [x, y, z] location for acceleration calculations [m]
+        motion_cases: List of generated MotionCase objects
+        gravity: Gravitational acceleration [m/s²], default -9.81
+
+    Subclasses:
+        VesselMotionsFromAmplitudes: Direct amplitude input
+        VesselMotionsFromNobleDenton: Noble Denton guidelines input
+    """
+
+    def __init__(
+        self,
+        name: str,
+        center_of_rotation: List[float],
+        gravity: float = -9.81
+    ):
+        if len(center_of_rotation) != 3:
+            raise ValueError("center_of_rotation must be [x, y, z]")
+
+        self.name = name
+        self.center_of_rotation = list(center_of_rotation)
+        self.gravity = gravity
+        self.motion_cases: List[MotionCase] = []
+        self._load_cases: List = []  # Generated load cases
+        self._gravity_load_case = None
+        self._generated = False
+
+    @property
+    def acceleration_combinations(self) -> List[List[float]]:
+        """Return acceleration combinations as list of [ax, ay, az, rx, ry, rz].
+
+        Must be implemented by subclasses.
+        """
+        raise NotImplementedError("Subclasses must implement acceleration_combinations")
+
+    def _build_motion_cases(self) -> None:
+        """Build MotionCase objects from acceleration_combinations."""
+        self.motion_cases = []
+        for i, combo in enumerate(self.acceleration_combinations):
+            acc = Acceleration(combo[0], combo[1], combo[2])
+            rot = RotaryAcceleration(combo[3], combo[4], combo[5])
+            case = MotionCase(
+                name=f"{self.name}_Env_{i+1}",
+                acceleration=acc,
+                rotary_acceleration=rot
+            )
+            self.motion_cases.append(case)
+
+    def acceleration_at_point(
+        self,
+        case: MotionCase,
+        point: List[float]
+    ) -> np.ndarray:
+        """
+        Calculate total translational acceleration at a point.
+
+        The acceleration at a point includes:
+        - The base translational acceleration
+        - Additional acceleration from rotary motion about center of rotation
+
+        Args:
+            case: MotionCase with accelerations
+            point: [x, y, z] location of interest [m]
+
+        Returns:
+            [ax, ay, az] total acceleration at point [m/s²]
+        """
+        # Vector from center of rotation to point
+        d = np.array(point) - np.array(self.center_of_rotation)
+
+        # Cross product matrix for rotary acceleration
+        r = case.rotary_acceleration.as_array()
+        rot_matrix = np.array([
+            [0, -r[2], r[1]],
+            [r[2], 0, -r[0]],
+            [-r[1], r[0], 0]
+        ])
+
+        # Total acceleration = translational + rotational contribution
+        return case.acceleration.as_array() + rot_matrix @ d
+```
+
+3. Export from `grillex/core/__init__.py`:
+   - VesselMotions
+   - VesselMotionsFromAmplitudes
+   - VesselMotionsFromNobleDenton
+   - DesignMethod
+   - OperationType
+   - Acceleration
+   - RotaryAcceleration
 
 **Acceptance Criteria:**
-- [ ] VesselMotion class exists with fluent API
-- [ ] MotionType enum covers all 6 DOFs
-- [ ] Motion components can be added individually
-- [ ] Convenience methods exist for all motion types (add_heave, add_pitch, etc.)
-- [ ] get_acceleration_field() returns correct 6-component acceleration
-- [ ] apply_to_load_case() correctly sets acceleration on LoadCase
-- [ ] Type hints and docstrings are complete
+- [ ] VesselMotions base class defined with center_of_rotation
+- [ ] Acceleration and RotaryAcceleration dataclasses work correctly
+- [ ] acceleration_at_point correctly computes total acceleration including rotary effects
+- [ ] DesignMethod and OperationType enums defined
+- [ ] Classes are exported from grillex.core module
 
 ---
 
-### Task 20.2: Add Vessel Motion Methods to StructuralModel
+## Task 20.2: Implement VesselMotionsFromAmplitudes
 
-**Requirements:** R-ARCH-007, R-LOAD-003, R-LLM-001
+**Requirements:** R-VESSEL-001, R-VESSEL-002
 **Dependencies:** Task 20.1
 **Difficulty:** Medium
 
 **Description:**
-Add high-level methods to `StructuralModel` for creating vessel motion load cases.
+Implement the amplitude-based vessel motions class that generates all combinations of positive/negative amplitudes.
 
 **Steps:**
 
-1. Add to `src/grillex/core/model_wrapper.py`:
-   ```python
-   def add_vessel_motion_load_case(
-       self,
-       name: str,
-       heave: float = 0.0,
-       pitch: float = 0.0,
-       roll: float = 0.0,
-       surge: float = 0.0,
-       sway: float = 0.0,
-       yaw: float = 0.0,
-       motion_center: Optional[List[float]] = None,
-       load_type: LoadCaseType = LoadCaseType.Environmental
-   ) -> VesselMotion:
-       """
-       Create a load case with vessel motion accelerations.
+1. Add `VesselMotionsFromAmplitudes` class to `vessel_motions.py`:
 
-       Args:
-           name: Load case name
-           heave: Vertical acceleration in m/s² (positive = up)
-           pitch: Pitch angular acceleration in rad/s² (positive = bow down)
-           roll: Roll angular acceleration in rad/s² (positive = starboard down)
-           surge: Longitudinal acceleration in m/s² (positive = forward)
-           sway: Transverse acceleration in m/s² (positive = port)
-           yaw: Yaw angular acceleration in rad/s² (positive = bow to port)
-           motion_center: Reference point [x, y, z] in meters (default: origin)
-           load_type: LoadCaseType (default: Environmental)
+```python
+class VesselMotionsFromAmplitudes(VesselMotions):
+    """
+    Generate vessel motion load cases from acceleration amplitudes.
 
-       Returns:
-           The created VesselMotion object
+    Given maximum acceleration amplitudes, generates all physical combinations
+    of positive/negative amplitudes while respecting motion coupling:
+    - Positive roll causes negative sway (port-down = sway to starboard)
+    - Positive pitch causes positive surge (bow-down = surge forward)
 
-       Example:
-           >>> motion = model.add_vessel_motion_load_case(
-           ...     "Design Heave + Pitch",
-           ...     heave=2.5,
-           ...     pitch=0.08,
-           ...     motion_center=[50.0, 0.0, 5.0]
-           ... )
-       """
+    This produces 16 unique combinations (2^4 independent sign choices with
+    2 degrees of freedom constrained by coupling).
 
-   def add_gravity_load_case(
-       self,
-       name: str = "Gravity",
-       acceleration: float = 9.81,
-       load_type: LoadCaseType = LoadCaseType.Permanent
-   ) -> None:
-       """
-       Create a load case with gravity acceleration.
+    Args:
+        name: Descriptive name for this motion set
+        center_of_rotation: [x, y, z] reference point for accelerations [m]
+        acceleration: Maximum translational accelerations [m/s²]
+        rotary_acceleration: Maximum rotational accelerations [rad/s²]
+        gravity: Gravitational acceleration [m/s²], default -9.81
 
-       This is a convenience method for the common case of gravity loading.
-       The acceleration is applied in the negative Z direction.
+    Example:
+        >>> from grillex.core import VesselMotionsFromAmplitudes, Acceleration, RotaryAcceleration
+        >>>
+        >>> motions = VesselMotionsFromAmplitudes(
+        ...     name="Barge Transport",
+        ...     center_of_rotation=[50.0, 0.0, 5.0],
+        ...     acceleration=Acceleration(ax=1.5, ay=2.0, az=3.0),
+        ...     rotary_acceleration=RotaryAcceleration(rx=0.15, ry=0.10, rz=0.05)
+        ... )
+        >>>
+        >>> print(f"Generated {len(motions.motion_cases)} motion cases")
+        Generated 16 motion cases
+    """
 
-       Args:
-           name: Load case name (default: "Gravity")
-           acceleration: Gravitational acceleration in m/s² (default: 9.81)
-           load_type: LoadCaseType (default: Permanent)
+    def __init__(
+        self,
+        name: str,
+        center_of_rotation: List[float],
+        acceleration: Acceleration,
+        rotary_acceleration: RotaryAcceleration,
+        gravity: float = -9.81
+    ):
+        super().__init__(name, center_of_rotation, gravity)
 
-       Example:
-           >>> model.add_gravity_load_case()  # Standard gravity
-           >>> model.add_gravity_load_case("1.1g Gravity", 10.79)  # 1.1x gravity
-       """
+        self._acceleration = acceleration
+        self._rotary_acceleration = rotary_acceleration
 
-   def get_vessel_motions(self) -> List[VesselMotion]:
-       """Return all vessel motions defined in this model."""
-   ```
+        # Build motion cases from combinations
+        self._build_motion_cases()
 
-2. Track vessel motions in model state:
-   ```python
-   self._vessel_motions: Dict[str, VesselMotion] = {}
-   ```
+    @property
+    def acceleration(self) -> Acceleration:
+        """Maximum translational acceleration amplitudes."""
+        return self._acceleration
+
+    @acceleration.setter
+    def acceleration(self, value: Acceleration) -> None:
+        self._acceleration = value
+        self._build_motion_cases()
+        self._generated = False
+
+    @property
+    def rotary_acceleration(self) -> RotaryAcceleration:
+        """Maximum rotational acceleration amplitudes."""
+        return self._rotary_acceleration
+
+    @rotary_acceleration.setter
+    def rotary_acceleration(self, value: RotaryAcceleration) -> None:
+        self._rotary_acceleration = value
+        self._build_motion_cases()
+        self._generated = False
+
+    @property
+    def acceleration_combinations(self) -> List[List[float]]:
+        """
+        Generate all combinations of acceleration signs.
+
+        Applies coupling rules:
+        - surge sign (ax) = pitch sign (ry): positive pitch -> bow down -> surge forward
+        - sway sign (ay) = -roll sign (rx): positive roll -> starboard down -> sway to port
+
+        Returns:
+            List of [ax, ay, az, rx, ry, rz] combinations
+        """
+        # Generate all 2^6 = 64 sign combinations
+        all_signs = list(itertools.product([-1, 1], repeat=6))
+
+        # Filter by coupling rules:
+        # - sign(ax) == sign(ry): surge couples with pitch
+        # - sign(ay) == -sign(rx): sway couples opposite to roll
+        valid_signs = [
+            s for s in all_signs
+            if s[0] == s[4] and s[1] == -s[3]  # ax==ry, ay==-rx
+        ]
+
+        # Build amplitude combinations
+        amplitudes = [
+            self._acceleration.ax,
+            self._acceleration.ay,
+            self._acceleration.az,
+            self._rotary_acceleration.rx,
+            self._rotary_acceleration.ry,
+            self._rotary_acceleration.rz
+        ]
+
+        combinations = [
+            [s * a for s, a in zip(signs, amplitudes)]
+            for signs in valid_signs
+        ]
+
+        # Remove duplicates (can occur if some amplitudes are zero)
+        unique = []
+        for combo in combinations:
+            if combo not in unique:
+                unique.append(combo)
+
+        return unique
+
+    def __repr__(self) -> str:
+        return (
+            f"VesselMotionsFromAmplitudes(name='{self.name}', "
+            f"center={self.center_of_rotation}, "
+            f"acc={self._acceleration}, rot={self._rotary_acceleration})"
+        )
+```
+
+2. Add unit tests in `tests/python/test_phase17_vessel_motions.py`:
+   - Test that 16 combinations are generated (for non-zero amplitudes)
+   - Test coupling rules are correctly applied
+   - Test that acceleration_at_point includes rotary effects
+   - Test with zero amplitudes produces fewer combinations
 
 **Acceptance Criteria:**
-- [ ] add_vessel_motion_load_case() creates load case with correct acceleration field
-- [ ] add_gravity_load_case() provides convenient gravity setup
-- [ ] Motion center is correctly passed to acceleration field
-- [ ] Default motion center is origin [0, 0, 0]
-- [ ] Vessel motions are tracked and retrievable
-- [ ] Type hints and docstrings are complete
+- [ ] VesselMotionsFromAmplitudes generates correct number of combinations
+- [ ] Coupling rules correctly constrain surge/pitch and sway/roll signs
+- [ ] Changing acceleration/rotary_acceleration rebuilds motion cases
+- [ ] Zero amplitudes are handled correctly (reduced combinations)
 
 ---
 
-### Task 20.3: Add Standard Motion Profiles
+## Task 20.3: Implement VesselMotionsFromNobleDenton
 
-**Requirements:** R-ARCH-007
-**Dependencies:** Task 20.1
-**Difficulty:** Low
-
-**Description:**
-Add factory methods for common vessel motion scenarios based on offshore industry standards.
-
-**Steps:**
-
-1. Add to `vessel_motion.py`:
-   ```python
-   @classmethod
-   def create_still_water(cls, name: str = "Still Water") -> "VesselMotion":
-       """Create still water condition (gravity only, no vessel motions)."""
-       return cls(name=name, description="Still water condition - no vessel motions")
-
-   @classmethod
-   def create_heave_only(cls, heave_accel: float,
-                         motion_center: List[float] = None,
-                         name: str = None) -> "VesselMotion":
-       """
-       Create a heave-only motion condition.
-
-       Args:
-           heave_accel: Heave acceleration in m/s² (positive = up)
-           motion_center: Reference point [x, y, z] in meters
-           name: Optional name (default: "Heave {value} m/s²")
-       """
-
-   @classmethod
-   def create_roll_condition(cls, roll_angle: float, roll_period: float,
-                            motion_center: List[float] = None,
-                            name: str = None) -> "VesselMotion":
-       """
-       Create roll motion from angle and period.
-
-       Computes angular acceleration as α = (2π/T)² × θ for simple harmonic motion.
-
-       Args:
-           roll_angle: Maximum roll angle in degrees
-           roll_period: Roll period in seconds
-           motion_center: Reference point [x, y, z] in meters
-           name: Optional name
-       """
-
-   @classmethod
-   def create_pitch_condition(cls, pitch_angle: float, pitch_period: float,
-                             motion_center: List[float] = None,
-                             name: str = None) -> "VesselMotion":
-       """
-       Create pitch motion from angle and period.
-
-       Computes angular acceleration as α = (2π/T)² × θ for simple harmonic motion.
-       """
-
-   @classmethod
-   def create_combined_design_motion(
-       cls,
-       heave: float = 0.0,
-       roll_angle: float = 0.0,
-       roll_period: float = 10.0,
-       pitch_angle: float = 0.0,
-       pitch_period: float = 8.0,
-       motion_center: List[float] = None,
-       name: str = "Design Motion"
-   ) -> "VesselMotion":
-       """
-       Create a combined design motion condition.
-
-       This is the most common scenario for offshore design where multiple
-       motion components are combined for design verification.
-
-       Args:
-           heave: Heave acceleration in m/s² (direct value)
-           roll_angle: Roll amplitude in degrees
-           roll_period: Roll period in seconds
-           pitch_angle: Pitch amplitude in degrees
-           pitch_period: Pitch period in seconds
-           motion_center: Reference point [x, y, z] in meters
-           name: Condition name
-       """
-   ```
-
-**Acceptance Criteria:**
-- [ ] create_still_water() returns zero-acceleration motion
-- [ ] create_heave_only() correctly sets heave acceleration
-- [ ] create_roll_condition() converts angle/period to angular acceleration
-- [ ] create_pitch_condition() converts angle/period to angular acceleration
-- [ ] create_combined_design_motion() combines multiple components
-- [ ] All factory methods return properly configured VesselMotion objects
-
----
-
-### Task 20.4: Add YAML Support for Vessel Motions
-
-**Requirements:** R-DATA-001, R-DATA-004
+**Requirements:** R-VESSEL-001, R-VESSEL-002
 **Dependencies:** Task 20.1
 **Difficulty:** Medium
 
 **Description:**
-Add YAML input/output support for vessel motion definitions.
+Implement the Noble Denton guidelines-based vessel motions class.
 
 **Steps:**
 
-1. Update `src/grillex/io/yaml_loader.py` to parse vessel motions:
-   ```yaml
-   vessel_motions:
-     - name: "Design Heave + Pitch"
-       motion_center: [50.0, 0.0, 5.0]
-       heave: 2.5        # m/s²
-       pitch: 0.08       # rad/s²
-       roll: 0.12        # rad/s²
-       description: "Design condition for heavy lift operation"
+1. Add `VesselMotionsFromNobleDenton` class to `vessel_motions.py`:
 
-   load_cases:
-     - name: "Vessel Motion LC"
-       type: Environmental
-       vessel_motion: "Design Heave + Pitch"  # Reference to vessel motion
-   ```
+```python
+class VesselMotionsFromNobleDenton(VesselMotions):
+    """
+    Generate vessel motion load cases from Noble Denton guidelines.
 
-2. Alternative format using angle/period:
-   ```yaml
-   vessel_motions:
-     - name: "Roll Condition"
-       motion_center: [50.0, 0.0, 5.0]
-       roll_angle: 15.0     # degrees
-       roll_period: 10.0    # seconds
-       pitch_angle: 5.0     # degrees
-       pitch_period: 8.0    # seconds
-       heave: 2.0           # m/s² (direct acceleration)
-   ```
+    Computes accelerations based on motion amplitudes following Noble Denton
+    marine transport guidelines. Produces 8 combinations representing extreme
+    roll and pitch conditions with associated heave.
 
-3. Add parsing logic:
-   ```python
-   def _load_vessel_motions(self, data: dict) -> dict:
-       """Parse vessel motion definitions from YAML."""
-       motions = {}
-       for vm_data in data.get("vessel_motions", []):
-           name = vm_data["name"]
-           motion = VesselMotion(name)
+    The combinations consider:
+    - Roll motion: Static tilt + dynamic heave acceleration
+    - Pitch motion: Static tilt + dynamic heave acceleration
+    - Each with positive/negative rotational direction
+    - Each with heave in-phase or out-of-phase with tilt
 
-           # Motion center
-           if "motion_center" in vm_data:
-               motion.set_motion_center(vm_data["motion_center"])
+    Note: Gravitational effects are NOT included in these environmental cases.
+    Gravity is added separately as a Permanent load case.
 
-           # Direct accelerations
-           if "heave" in vm_data:
-               motion.add_heave(vm_data["heave"])
-           # ... etc for other components
+    Args:
+        name: Descriptive name for this motion set
+        center_of_rotation: [x, y, z] reference point for accelerations [m]
+        roll_amplitude: Maximum roll angle [degrees], default 20
+        pitch_amplitude: Maximum pitch angle [degrees], default 12.5
+        heave_amplitude: Maximum heave acceleration [G], default 0.2
+        period: Motion period [seconds], default 10
+        gravity: Gravitational acceleration [m/s²], default 9.81 (positive)
 
-           # Angle/period format (converted to acceleration)
-           if "roll_angle" in vm_data and "roll_period" in vm_data:
-               roll_accel = self._angle_period_to_acceleration(
-                   vm_data["roll_angle"], vm_data["roll_period"])
-               motion.add_roll(roll_accel)
+    Example:
+        >>> from grillex.core import VesselMotionsFromNobleDenton
+        >>>
+        >>> motions = VesselMotionsFromNobleDenton(
+        ...     name="Noble Denton Transport",
+        ...     center_of_rotation=[50.0, 0.0, 5.0],
+        ...     roll_amplitude=20,      # degrees
+        ...     pitch_amplitude=12.5,   # degrees
+        ...     heave_amplitude=0.2,    # G
+        ...     period=10               # seconds
+        ... )
+        >>>
+        >>> print(f"Generated {len(motions.motion_cases)} motion cases")
+        Generated 8 motion cases
+    """
 
-           motions[name] = motion
-       return motions
-   ```
+    def __init__(
+        self,
+        name: str,
+        center_of_rotation: List[float],
+        roll_amplitude: float = 20.0,
+        pitch_amplitude: float = 12.5,
+        heave_amplitude: float = 0.2,
+        period: float = 10.0,
+        gravity: float = 9.81
+    ):
+        # Note: gravity is positive here (magnitude for calculations)
+        super().__init__(name, center_of_rotation, gravity=-gravity)
+
+        self.roll_amplitude = roll_amplitude
+        self.pitch_amplitude = pitch_amplitude
+        self.heave_amplitude = heave_amplitude
+        self.period = period
+        self._g = abs(gravity)  # Use magnitude for calculations
+
+        # Build motion cases
+        self._build_motion_cases()
+
+    # === Private calculation properties ===
+
+    @property
+    def _ax_static_pitch(self) -> float:
+        """Surge due to static pitch tilt."""
+        return -self._g * math.sin(math.radians(self.pitch_amplitude))
+
+    @property
+    def _ay_static_roll(self) -> float:
+        """Sway due to static roll tilt."""
+        return -self._g * math.sin(math.radians(self.roll_amplitude))
+
+    @property
+    def _az_static_pitch(self) -> float:
+        """Heave reduction due to pitch tilt (gravity component)."""
+        return -self._g * (1 - math.cos(math.radians(self.pitch_amplitude)))
+
+    @property
+    def _az_static_roll(self) -> float:
+        """Heave reduction due to roll tilt (gravity component)."""
+        return -self._g * (1 - math.cos(math.radians(self.roll_amplitude)))
+
+    @property
+    def _ax_heave_pitch(self) -> float:
+        """Surge component from heave during pitch."""
+        return -self.heave_amplitude * self._g * math.sin(math.radians(self.pitch_amplitude))
+
+    @property
+    def _ay_heave_roll(self) -> float:
+        """Sway component from heave during roll."""
+        return -self.heave_amplitude * self._g * math.sin(math.radians(self.roll_amplitude))
+
+    @property
+    def _az_heave_pitch(self) -> float:
+        """Heave component during pitch."""
+        return -self.heave_amplitude * self._g * math.cos(math.radians(self.pitch_amplitude))
+
+    @property
+    def _az_heave_roll(self) -> float:
+        """Heave component during roll."""
+        return -self.heave_amplitude * self._g * math.cos(math.radians(self.roll_amplitude))
+
+    @property
+    def _a_pitch(self) -> float:
+        """Angular acceleration from pitch motion."""
+        omega = 2 * math.pi / self.period
+        return math.radians(self.pitch_amplitude) * omega**2
+
+    @property
+    def _a_roll(self) -> float:
+        """Angular acceleration from roll motion."""
+        omega = 2 * math.pi / self.period
+        return math.radians(self.roll_amplitude) * omega**2
+
+    @property
+    def acceleration_combinations(self) -> List[List[float]]:
+        """
+        Generate Noble Denton acceleration combinations.
+
+        Returns 8 combinations:
+        - 4 roll cases (positive/negative roll, heave in-phase/out-of-phase)
+        - 4 pitch cases (positive/negative pitch, heave in-phase/out-of-phase)
+
+        Each row: [ax, ay, az, rx, ry, rz]
+        """
+        # Roll cases (surge=0, yaw=0)
+        roll_cases = [
+            # Negative roll, heave in-phase
+            [0,
+             self._ay_static_roll - self._ay_heave_roll,
+             self._az_static_roll + self._az_heave_roll,
+             -self._a_roll, 0, 0],
+            # Negative roll, heave out-of-phase
+            [0,
+             self._ay_static_roll + self._ay_heave_roll,
+             self._az_static_roll - self._az_heave_roll,
+             -self._a_roll, 0, 0],
+            # Positive roll, heave in-phase
+            [0,
+             -self._ay_static_roll + self._ay_heave_roll,
+             self._az_static_roll + self._az_heave_roll,
+             self._a_roll, 0, 0],
+            # Positive roll, heave out-of-phase
+            [0,
+             -self._ay_static_roll - self._ay_heave_roll,
+             self._az_static_roll - self._az_heave_roll,
+             self._a_roll, 0, 0],
+        ]
+
+        # Pitch cases (sway=0, yaw=0)
+        pitch_cases = [
+            # Negative pitch, heave in-phase
+            [-self._ax_static_pitch + self._ax_heave_pitch,
+             0,
+             self._az_static_pitch + self._az_heave_pitch,
+             0, -self._a_pitch, 0],
+            # Negative pitch, heave out-of-phase
+            [-self._ax_static_pitch - self._ax_heave_pitch,
+             0,
+             self._az_static_pitch - self._az_heave_pitch,
+             0, -self._a_pitch, 0],
+            # Positive pitch, heave in-phase
+            [self._ax_static_pitch - self._ax_heave_pitch,
+             0,
+             self._az_static_pitch + self._az_heave_pitch,
+             0, self._a_pitch, 0],
+            # Positive pitch, heave out-of-phase
+            [self._ax_static_pitch + self._ax_heave_pitch,
+             0,
+             self._az_static_pitch - self._az_heave_pitch,
+             0, self._a_pitch, 0],
+        ]
+
+        return roll_cases + pitch_cases
+
+    def __repr__(self) -> str:
+        return (
+            f"VesselMotionsFromNobleDenton(name='{self.name}', "
+            f"roll={self.roll_amplitude}°, pitch={self.pitch_amplitude}°, "
+            f"heave={self.heave_amplitude}G, period={self.period}s)"
+        )
+```
+
+2. Add tests:
+   - Verify 8 combinations are generated
+   - Verify roll cases have zero surge and yaw
+   - Verify pitch cases have zero sway and yaw
+   - Verify computed accelerations match hand calculations
 
 **Acceptance Criteria:**
-- [ ] Vessel motions can be defined in YAML
-- [ ] Motion center is parsed correctly
-- [ ] Direct acceleration values are supported
-- [ ] Angle/period format is supported with correct conversion
-- [ ] Load cases can reference vessel motions by name
-- [ ] Validation errors for invalid vessel motion references
-- [ ] Round-trip (load/save) preserves vessel motion data
+- [ ] VesselMotionsFromNobleDenton generates 8 motion combinations
+- [ ] Roll and pitch cases are correctly separated (orthogonal)
+- [ ] Computed accelerations match Noble Denton guideline formulas
+- [ ] Default values match typical marine transport assumptions
 
 ---
 
-### Task 20.5: Add LLM Tools for Vessel Motions
+## Task 20.4: Implement Load Case Generation
 
-**Requirements:** R-LLM-001, R-LLM-002, R-LLM-003
-**Dependencies:** Task 20.2
+**Requirements:** R-VESSEL-001
+**Dependencies:** Task 20.2, Task 20.3, Phase 5 (Load Cases)
 **Difficulty:** Medium
 
 **Description:**
-Add LLM tools for vessel motion setup and querying.
+Add methods to VesselMotions to generate load cases from motion combinations.
 
 **Steps:**
 
-1. Add to `src/grillex/llm/tools.py`:
-   ```python
-   {
-       "name": "add_vessel_motion",
-       "description": "Add a vessel motion load case with heave, pitch, roll accelerations. Use for offshore/marine structures on barges or ships.",
-       "input_schema": {
-           "type": "object",
-           "properties": {
-               "name": {
-                   "type": "string",
-                   "description": "Load case name"
-               },
-               "heave": {
-                   "type": "number",
-                   "description": "Vertical acceleration in m/s² (positive = up)"
-               },
-               "pitch": {
-                   "type": "number",
-                   "description": "Pitch angular acceleration in rad/s² (positive = bow down)"
-               },
-               "roll": {
-                   "type": "number",
-                   "description": "Roll angular acceleration in rad/s² (positive = starboard down)"
-               },
-               "surge": {
-                   "type": "number",
-                   "description": "Longitudinal acceleration in m/s² (positive = forward)"
-               },
-               "sway": {
-                   "type": "number",
-                   "description": "Transverse acceleration in m/s² (positive = port)"
-               },
-               "yaw": {
-                   "type": "number",
-                   "description": "Yaw angular acceleration in rad/s² (positive = bow to port)"
-               },
-               "motion_center_x": {
-                   "type": "number",
-                   "description": "X coordinate of motion center in meters"
-               },
-               "motion_center_y": {
-                   "type": "number",
-                   "description": "Y coordinate of motion center in meters"
-               },
-               "motion_center_z": {
-                   "type": "number",
-                   "description": "Z coordinate of motion center in meters"
-               }
-           },
-           "required": ["name"]
-       }
-   },
-   {
-       "name": "add_gravity",
-       "description": "Add gravity load case with specified acceleration (default 9.81 m/s²)",
-       "input_schema": {
-           "type": "object",
-           "properties": {
-               "name": {
-                   "type": "string",
-                   "description": "Load case name (default: 'Gravity')"
-               },
-               "acceleration": {
-                   "type": "number",
-                   "description": "Gravitational acceleration in m/s² (default: 9.81)"
-               }
-           }
-       }
-   },
-   {
-       "name": "get_vessel_motions",
-       "description": "List all vessel motion definitions in the model",
-       "input_schema": {
-           "type": "object",
-           "properties": {}
-       }
-   }
-   ```
+1. Add `generate_load_cases` method to `VesselMotions` base class:
 
-2. Add tool handlers in `ToolExecutor`:
-   ```python
-   def _execute_add_vessel_motion(self, params: dict) -> dict:
-       motion = self.model.add_vessel_motion_load_case(
-           name=params["name"],
-           heave=params.get("heave", 0.0),
-           pitch=params.get("pitch", 0.0),
-           roll=params.get("roll", 0.0),
-           # ... etc
-       )
-       return {"success": True, "motion_name": motion.name}
+```python
+def generate_load_cases(self, model: "StructuralModel") -> List:
+    """
+    Generate load cases for all motion combinations.
 
-   def _execute_add_gravity(self, params: dict) -> dict:
-       self.model.add_gravity_load_case(
-           name=params.get("name", "Gravity"),
-           acceleration=params.get("acceleration", 9.81)
-       )
-       return {"success": True}
-   ```
+    Creates:
+    1. One gravity load case (Permanent type) with acceleration [0, 0, gravity]
+    2. One Environmental load case per motion combination
+
+    Each environmental load case sets the acceleration field with the
+    motion's translational and rotational accelerations about the
+    center of rotation.
+
+    Args:
+        model: The StructuralModel to add load cases to
+
+    Returns:
+        List of created LoadCase objects (gravity + environmental cases)
+
+    Raises:
+        RuntimeError: If load cases have already been generated
+
+    Example:
+        >>> model = StructuralModel(name="Barge")
+        >>> motions = VesselMotionsFromNobleDenton(...)
+        >>> load_cases = motions.generate_load_cases(model)
+        >>> print(f"Created {len(load_cases)} load cases")
+        Created 9 load cases  # 1 gravity + 8 environmental
+    """
+    if self._generated:
+        raise RuntimeError(
+            f"Load cases for '{self.name}' have already been generated. "
+            "Create a new VesselMotions instance for different load cases."
+        )
+
+    from grillex.core import LoadCaseType
+
+    # Get the C++ model
+    cpp_model = model._model
+
+    self._load_cases = []
+
+    # 1. Create gravity load case (Permanent)
+    gravity_lc = cpp_model.create_load_case(
+        f"{self.name}_Gravity",
+        LoadCaseType.Permanent
+    )
+
+    # Set gravity acceleration field (no rotation)
+    import numpy as np
+    gravity_accel = np.array([0.0, 0.0, self.gravity, 0.0, 0.0, 0.0])
+    ref_point = np.array(self.center_of_rotation)
+    gravity_lc.set_acceleration_field(gravity_accel, ref_point)
+
+    self._gravity_load_case = gravity_lc
+    self._load_cases.append(gravity_lc)
+
+    # 2. Create environmental load cases for each motion combination
+    for motion_case in self.motion_cases:
+        env_lc = cpp_model.create_load_case(
+            motion_case.name,
+            LoadCaseType.Environmental
+        )
+
+        # Build 6-component acceleration vector [ax, ay, az, rx, ry, rz]
+        accel = np.concatenate([
+            motion_case.acceleration.as_array(),
+            motion_case.rotary_acceleration.as_array()
+        ])
+
+        env_lc.set_acceleration_field(accel, ref_point)
+        self._load_cases.append(env_lc)
+
+    self._generated = True
+    return self._load_cases
+
+@property
+def load_cases(self) -> List:
+    """Get the generated load cases (empty if not yet generated)."""
+    return self._load_cases
+
+@property
+def gravity_load_case(self):
+    """Get the gravity load case (None if not yet generated)."""
+    return self._gravity_load_case
+
+@property
+def environmental_load_cases(self) -> List:
+    """Get only the environmental load cases (excluding gravity)."""
+    return self._load_cases[1:] if self._load_cases else []
+```
+
+2. Add tests:
+   - Verify gravity load case has Permanent type
+   - Verify environmental load cases have Environmental type
+   - Verify acceleration fields are set correctly
+   - Verify RuntimeError if called twice
 
 **Acceptance Criteria:**
-- [ ] add_vessel_motion tool exists with full parameter schema
-- [ ] add_gravity tool exists for convenient gravity setup
-- [ ] get_vessel_motions tool returns all defined motions
-- [ ] Tool descriptions are clear for LLM understanding
-- [ ] All parameters have descriptions with units
-- [ ] Handlers correctly call model methods
+- [ ] generate_load_cases creates gravity + environmental load cases
+- [ ] Gravity load case has LoadCaseType.Permanent
+- [ ] Environmental load cases have LoadCaseType.Environmental
+- [ ] Acceleration fields include both translation and rotation
+- [ ] Center of rotation is used as reference point
 
 ---
 
-### Task 20.6: Add Diagnostics for Vessel Motion Errors
+## Task 20.5: Define Load Combination Factors
 
-**Requirements:** R-ERR-001, R-LLM-005
-**Dependencies:** Task 20.5
+**Requirements:** R-VESSEL-003, R-VESSEL-004
+**Dependencies:** Task 20.1
 **Difficulty:** Low
 
 **Description:**
-Add error diagnostics and fix suggestions for vessel motion related issues.
+Define the load combination factors for LRFD (ULS-a, ULS-b) and ASD methods.
 
 **Steps:**
 
-1. Add to `src/grillex/llm/diagnostics.py`:
-   ```python
-   # In get_fix_suggestions()
-   if error.code == ErrorCode.MISSING_ACCELERATION_FIELD:
-       return [
-           FixSuggestion(
-               description="Add gravity to model",
-               tool_name="add_gravity",
-               tool_params={},
-               priority=1,
-               confidence=0.9
-           ),
-           FixSuggestion(
-               description="Add vessel motion load case",
-               tool_name="add_vessel_motion",
-               tool_params={"name": "Vessel Motion", "heave": 2.0},
-               priority=2,
-               confidence=0.7
-           )
-       ]
-   ```
+1. Add load factor definitions to `vessel_motions.py`:
 
-2. Add warning advice for large accelerations:
-   ```python
-   # In get_warning_advice()
-   if warning.code == WarningCode.LARGE_ACCELERATION:
-       return WarningAdvice(
-           explanation="Acceleration values above 5g may indicate input error",
-           actions=["Verify acceleration units are m/s²",
-                   "Check that motion center is correct"]
-       )
-   ```
+```python
+# Load combination factors per design code
+# Reference: DNV-GL, API RP 2A, etc.
+
+@dataclass
+class LoadFactors:
+    """Load factors for a specific design situation.
+
+    Attributes:
+        permanent: Factor for permanent (gravity) loads
+        environmental: Factor for environmental (motion) loads
+        name: Descriptive name for this factor set
+    """
+    permanent: float
+    environmental: float
+    name: str
+
+
+# LRFD Load Factors (based on DNV-GL / offshore standards)
+LRFD_FACTORS = {
+    # ULS-a: Maximum environmental, reduced permanent
+    # Used when environmental load dominates
+    ("regular", "ULS-a"): LoadFactors(
+        permanent=1.0,
+        environmental=1.3,
+        name="ULS-a Regular"
+    ),
+    ("removal", "ULS-a"): LoadFactors(
+        permanent=1.0,
+        environmental=1.15,  # Reduced for removal operations
+        name="ULS-a Removal"
+    ),
+
+    # ULS-b: Maximum permanent, reduced environmental
+    # Used when permanent load dominates
+    ("regular", "ULS-b"): LoadFactors(
+        permanent=1.2,
+        environmental=0.7,
+        name="ULS-b Regular"
+    ),
+    ("removal", "ULS-b"): LoadFactors(
+        permanent=1.2,
+        environmental=0.7,
+        name="ULS-b Removal"
+    ),
+}
+
+# ASD Load Factors (unity factors, safety in allowable stress)
+ASD_FACTORS = {
+    ("regular", "Operating"): LoadFactors(
+        permanent=1.0,
+        environmental=1.0,
+        name="ASD Operating"
+    ),
+    ("removal", "Operating"): LoadFactors(
+        permanent=1.0,
+        environmental=1.0,
+        name="ASD Removal"
+    ),
+}
+
+
+def get_load_factors(
+    design_method: DesignMethod,
+    operation_type: OperationType
+) -> List[LoadFactors]:
+    """
+    Get applicable load factors for a design method and operation type.
+
+    Args:
+        design_method: LRFD or ASD
+        operation_type: Regular or Removal
+
+    Returns:
+        List of LoadFactors for applicable limit states
+    """
+    op_key = operation_type.value
+
+    if design_method == DesignMethod.LRFD:
+        return [
+            LRFD_FACTORS[(op_key, "ULS-a")],
+            LRFD_FACTORS[(op_key, "ULS-b")],
+        ]
+    else:  # ASD
+        return [
+            ASD_FACTORS[(op_key, "Operating")],
+        ]
+```
+
+2. Add tests:
+   - Verify LRFD returns ULS-a and ULS-b factors
+   - Verify ASD returns Operating factors
+   - Verify removal factors differ from regular (for ULS-a)
 
 **Acceptance Criteria:**
-- [ ] Fix suggestions exist for missing acceleration field errors
-- [ ] Warning advice exists for unusually large accelerations
-- [ ] Suggestions are actionable with correct tool calls
+- [ ] LRFD factors defined for ULS-a and ULS-b
+- [ ] ASD factors defined for Operating condition
+- [ ] Regular and Removal operation types have appropriate factors
+- [ ] get_load_factors returns correct factors based on inputs
 
 ---
 
-### Task 20.7: Write Comprehensive Tests
+## Task 20.6: Implement Load Combination Generation
 
-**Requirements:** R-VAL-001
-**Dependencies:** Tasks 20.1-20.4
+**Requirements:** R-VESSEL-003, R-VESSEL-004
+**Dependencies:** Task 20.4, Task 20.5
+**Difficulty:** High
+
+**Description:**
+Add methods to generate load combinations based on design method and operation type.
+
+**Steps:**
+
+1. Add `generate_load_combinations` method to `VesselMotions`:
+
+```python
+def generate_load_combinations(
+    self,
+    model: "StructuralModel",
+    design_method: DesignMethod = DesignMethod.LRFD,
+    operation_type: OperationType = OperationType.REGULAR
+) -> List:
+    """
+    Generate load combinations for vessel motion analysis.
+
+    Creates load combinations based on the design method:
+
+    **LRFD (Load and Resistance Factor Design)**:
+    - ULS-a: γ_G * Gravity + γ_E * Environmental (for each motion case)
+    - ULS-b: γ_G * Gravity + γ_E * Environmental (for each motion case)
+
+    **ASD (Allowable Stress Design)**:
+    - Operating: 1.0 * Gravity + 1.0 * Environmental (for each motion case)
+
+    Each environmental motion case produces separate combinations for each
+    limit state. For 8 motion cases with LRFD:
+    - 8 ULS-a combinations (one per motion case)
+    - 8 ULS-b combinations (one per motion case)
+    - Total: 16 combinations
+
+    Args:
+        model: The StructuralModel to add combinations to
+        design_method: LRFD or ASD, default LRFD
+        operation_type: Regular or Removal, default Regular
+
+    Returns:
+        List of created LoadCombination objects
+
+    Raises:
+        RuntimeError: If load cases have not been generated yet
+
+    Example:
+        >>> model = StructuralModel(name="Barge")
+        >>> motions = VesselMotionsFromNobleDenton(...)
+        >>> motions.generate_load_cases(model)
+        >>> combinations = motions.generate_load_combinations(
+        ...     model,
+        ...     design_method=DesignMethod.LRFD,
+        ...     operation_type=OperationType.REGULAR
+        ... )
+        >>> print(f"Created {len(combinations)} load combinations")
+        Created 16 load combinations  # 8 ULS-a + 8 ULS-b
+    """
+    if not self._generated:
+        raise RuntimeError(
+            "Load cases must be generated before combinations. "
+            "Call generate_load_cases() first."
+        )
+
+    # Get applicable load factors
+    factor_sets = get_load_factors(design_method, operation_type)
+
+    cpp_model = model._model
+    combinations = []
+    combo_id = 1
+
+    # Get the gravity load case
+    gravity_lc = self._gravity_load_case
+
+    # Create combinations for each factor set and each environmental case
+    for factors in factor_sets:
+        for env_lc in self.environmental_load_cases:
+            # Create combination name
+            combo_name = f"{self.name}_{factors.name}_{env_lc.name()}"
+
+            # Create the load combination
+            combo = cpp_model.create_load_combination(combo_id, combo_name)
+            combo_id += 1
+
+            # Add gravity with permanent factor
+            combo.add_load_case(gravity_lc, factors.permanent)
+
+            # Add environmental with environmental factor
+            combo.add_load_case(env_lc, factors.environmental)
+
+            combinations.append(combo)
+
+    return combinations
+
+
+def generate_all(
+    self,
+    model: "StructuralModel",
+    design_method: DesignMethod = DesignMethod.LRFD,
+    operation_type: OperationType = OperationType.REGULAR
+) -> Tuple[List, List]:
+    """
+    Convenience method to generate both load cases and combinations.
+
+    Args:
+        model: The StructuralModel to add load cases and combinations to
+        design_method: LRFD or ASD, default LRFD
+        operation_type: Regular or Removal, default Regular
+
+    Returns:
+        Tuple of (load_cases, load_combinations)
+
+    Example:
+        >>> model = StructuralModel(name="Barge")
+        >>> motions = VesselMotionsFromNobleDenton(...)
+        >>> load_cases, combinations = motions.generate_all(model)
+    """
+    load_cases = self.generate_load_cases(model)
+    combinations = self.generate_load_combinations(
+        model, design_method, operation_type
+    )
+    return load_cases, combinations
+```
+
+2. Add comprehensive tests:
+   - Test LRFD generates 2 * N combinations (N = number of motion cases)
+   - Test ASD generates N combinations
+   - Test combination names include limit state and motion case
+   - Test factors are correctly applied
+   - Test RuntimeError if load cases not generated first
+
+**Acceptance Criteria:**
+- [ ] generate_load_combinations creates correct number of combinations
+- [ ] Each combination includes gravity and one environmental case
+- [ ] Load factors are correctly applied based on design method
+- [ ] Operation type affects factors appropriately
+- [ ] Combination names are descriptive and unique
+- [ ] generate_all convenience method works correctly
+
+---
+
+## Task 20.7: Add DataFrame/Summary Methods
+
+**Requirements:** R-VESSEL-001
+**Dependencies:** Task 20.2, Task 20.3
+**Difficulty:** Low
+
+**Description:**
+Add methods to display acceleration combinations in a readable format.
+
+**Steps:**
+
+1. Add summary methods to `VesselMotions`:
+
+```python
+def get_accelerations_dataframe(self):
+    """
+    Return acceleration combinations as a pandas DataFrame.
+
+    Returns:
+        DataFrame with columns: Surge, Sway, Heave, Roll, Pitch, Yaw
+        and one row per motion case.
+
+    Example:
+        >>> motions = VesselMotionsFromNobleDenton(...)
+        >>> df = motions.get_accelerations_dataframe()
+        >>> print(df)
+              Surge      Sway     Heave      Roll     Pitch  Yaw
+        0  0.000000 -2.680097  1.263263 -0.137806  0.000000  0.0
+        1  0.000000 -4.030338 -2.446494 -0.137806  0.000000  0.0
+        ...
+    """
+    import pandas as pd
+
+    data = self.acceleration_combinations
+    columns = ['Surge', 'Sway', 'Heave', 'Roll', 'Pitch', 'Yaw']
+    return pd.DataFrame(data, columns=columns)
+
+def get_summary(self) -> str:
+    """
+    Return a text summary of the vessel motions configuration.
+
+    Returns:
+        Multi-line string describing the motion configuration.
+    """
+    lines = [
+        f"Vessel Motions: {self.name}",
+        f"  Center of rotation: {self.center_of_rotation}",
+        f"  Gravity: {self.gravity} m/s²",
+        f"  Motion cases: {len(self.motion_cases)}",
+        "",
+        "Motion case summary:",
+    ]
+
+    for i, case in enumerate(self.motion_cases):
+        a = case.acceleration
+        r = case.rotary_acceleration
+        lines.append(
+            f"  {i+1}. {case.name}: "
+            f"a=[{a.ax:.2f}, {a.ay:.2f}, {a.az:.2f}] m/s², "
+            f"r=[{r.rx:.3f}, {r.ry:.3f}, {r.rz:.3f}] rad/s²"
+        )
+
+    return "\n".join(lines)
+
+def __str__(self) -> str:
+    return self.get_summary()
+```
+
+2. Add tests for summary methods
+
+**Acceptance Criteria:**
+- [ ] get_accelerations_dataframe returns properly formatted DataFrame
+- [ ] get_summary returns readable text output
+- [ ] __str__ returns summary for print()
+
+---
+
+## Task 20.8: Integration with StructuralModel
+
+**Requirements:** R-VESSEL-001
+**Dependencies:** Task 20.6
+**Difficulty:** Low
+
+**Description:**
+Add convenience methods to StructuralModel for vessel motion workflows.
+
+**Steps:**
+
+1. Add methods to `model_wrapper.py`:
+
+```python
+def add_vessel_motions(
+    self,
+    vessel_motions: "VesselMotions",
+    design_method: "DesignMethod" = None,
+    operation_type: "OperationType" = None
+) -> Tuple[List, List]:
+    """
+    Add vessel motions and generate load cases/combinations.
+
+    This is a convenience method that:
+    1. Generates load cases from the vessel motions
+    2. Generates load combinations based on design method
+
+    Args:
+        vessel_motions: VesselMotions (or subclass) instance
+        design_method: LRFD or ASD (default: LRFD)
+        operation_type: Regular or Removal (default: Regular)
+
+    Returns:
+        Tuple of (load_cases, load_combinations)
+
+    Example:
+        >>> from grillex.core import (
+        ...     StructuralModel, VesselMotionsFromNobleDenton,
+        ...     DesignMethod, OperationType
+        ... )
+        >>>
+        >>> model = StructuralModel(name="Cargo Barge")
+        >>> # ... add structure, cargo, etc. ...
+        >>>
+        >>> motions = VesselMotionsFromNobleDenton(
+        ...     name="Transport",
+        ...     center_of_rotation=[50.0, 0.0, 5.0]
+        ... )
+        >>>
+        >>> load_cases, combinations = model.add_vessel_motions(
+        ...     motions,
+        ...     design_method=DesignMethod.LRFD,
+        ...     operation_type=OperationType.REGULAR
+        ... )
+    """
+    from grillex.core.vessel_motions import (
+        DesignMethod as DM,
+        OperationType as OT
+    )
+
+    # Apply defaults
+    if design_method is None:
+        design_method = DM.LRFD
+    if operation_type is None:
+        operation_type = OT.REGULAR
+
+    return vessel_motions.generate_all(
+        self,
+        design_method=design_method,
+        operation_type=operation_type
+    )
+```
+
+2. Export VesselMotions classes from core module
+
+3. Add integration tests
+
+**Acceptance Criteria:**
+- [ ] add_vessel_motions is accessible from StructuralModel
+- [ ] Default design method is LRFD, default operation is Regular
+- [ ] Returns tuple of (load_cases, combinations)
+- [ ] Integration with cargo and other model features works
+
+---
+
+## Task 20.9: Comprehensive Tests
+
+**Requirements:** All R-VESSEL requirements
+**Dependencies:** Tasks 20.1-20.8
 **Difficulty:** Medium
 
 **Description:**
-Create comprehensive test suite for vessel motion functionality.
+Create comprehensive test suite for vessel motions functionality.
 
-**Steps:**
+**Test Cases:**
 
-1. Create `tests/python/test_phase20_vessel_motions.py`:
-   ```python
-   class TestVesselMotionClass:
-       """Tests for VesselMotion class."""
+1. **test_vessel_motions_from_amplitudes_basic**:
+   - Create VesselMotionsFromAmplitudes with known amplitudes
+   - Verify 16 combinations are generated
+   - Verify coupling rules are applied
 
-       def test_create_empty_motion(self):
-           """VesselMotion can be created with just a name."""
+2. **test_vessel_motions_from_noble_denton_basic**:
+   - Create VesselMotionsFromNobleDenton with defaults
+   - Verify 8 combinations are generated
+   - Verify roll/pitch separation
 
-       def test_add_heave_component(self):
-           """Heave acceleration is correctly added."""
+3. **test_noble_denton_accelerations**:
+   - Calculate expected accelerations by hand
+   - Verify computed accelerations match within tolerance
 
-       def test_add_pitch_component(self):
-           """Pitch angular acceleration is correctly added."""
+4. **test_load_case_generation**:
+   - Generate load cases for a model
+   - Verify gravity is Permanent, environmental is Environmental
+   - Verify acceleration fields are set
 
-       def test_add_roll_component(self):
-           """Roll angular acceleration is correctly added."""
+5. **test_load_combination_lrfd_regular**:
+   - Generate LRFD combinations for regular operation
+   - Verify 16 combinations (8 ULS-a + 8 ULS-b)
+   - Verify factors match LRFD_FACTORS
 
-       def test_add_all_components(self):
-           """All 6 motion components can be added."""
+6. **test_load_combination_lrfd_removal**:
+   - Generate LRFD combinations for removal operation
+   - Verify ULS-a factors differ from regular
 
-       def test_get_acceleration_field(self):
-           """get_acceleration_field() returns correct 6-component vector."""
+7. **test_load_combination_asd**:
+   - Generate ASD combinations
+   - Verify 8 combinations (one per motion case)
+   - Verify factors are 1.0
 
-       def test_motion_center(self):
-           """Motion center is correctly set and returned."""
+8. **test_integration_with_cargo**:
+   - Create model with cargo and vessel motions
+   - Analyze and verify results make physical sense
 
-       def test_fluent_api(self):
-           """Fluent API returns self for chaining."""
+9. **test_acceleration_at_point**:
+   - Calculate acceleration at various points
+   - Verify rotary contributions are correct
 
-   class TestVesselMotionFactoryMethods:
-       """Tests for factory methods."""
-
-       def test_create_still_water(self):
-           """Still water has zero accelerations."""
-
-       def test_create_heave_only(self):
-           """Heave-only motion is correctly created."""
-
-       def test_create_roll_from_angle_period(self):
-           """Roll condition correctly converts angle/period to acceleration."""
-           # α = (2π/T)² × θ
-
-       def test_create_combined_design_motion(self):
-           """Combined motion has all specified components."""
-
-   class TestVesselMotionIntegration:
-       """Integration tests with full model."""
-
-       def test_vessel_motion_load_case(self):
-           """Vessel motion creates correct load case."""
-
-       def test_heave_deflection(self):
-           """Heave acceleration produces correct inertial loads."""
-
-       def test_roll_at_offset_position(self):
-           """Roll at offset produces correct tangential acceleration."""
-
-       def test_combined_heave_pitch(self):
-           """Combined heave + pitch produces correct reactions."""
-
-       def test_motion_center_effect(self):
-           """Different motion centers produce different results."""
-
-   class TestVesselMotionYAML:
-       """Tests for YAML I/O."""
-
-       def test_load_vessel_motion_from_yaml(self):
-           """Vessel motion is correctly parsed from YAML."""
-
-       def test_load_angle_period_format(self):
-           """Angle/period format is correctly converted."""
-
-       def test_load_case_references_motion(self):
-           """Load case can reference vessel motion by name."""
-   ```
+10. **test_dataframe_output**:
+    - Verify get_accelerations_dataframe format
+    - Verify column names and data types
 
 **Acceptance Criteria:**
-- [ ] Unit tests for VesselMotion class (creation, components, acceleration field)
-- [ ] Factory method tests (still water, heave-only, roll/pitch from angle/period)
-- [ ] Integration tests with full model analysis
-- [ ] YAML parsing tests
-- [ ] All tests pass
+- [ ] All test cases pass
+- [ ] Edge cases are covered (zero amplitudes, extreme values)
+- [ ] Integration with other model features verified
+- [ ] Coverage for all public methods
 
 ---
 
-### Task 20.8: Update Documentation
+## Task 20.10: Documentation and Examples
 
-**Requirements:** R-COORD-008
-**Dependencies:** All previous tasks
+**Requirements:** All R-VESSEL requirements
+**Dependencies:** Tasks 20.1-20.9
 **Difficulty:** Low
 
 **Description:**
-Update documentation with vessel motion usage examples.
+Add documentation and example usage to the module.
 
 **Steps:**
 
-1. Add to `docs/user/loads_and_boundary_conditions.rst`:
-   ```rst
-   Vessel Motions
-   --------------
+1. Add module-level docstring with complete usage example
 
-   For offshore structures on floating vessels, Grillex provides the
-   :class:`VesselMotion` class to define vessel motion accelerations.
+2. Update user documentation in `docs/user/`:
+   - Add `vessel_motions.rst` with:
+     - Coordinate system conventions
+     - Motion coupling explanation
+     - Example workflows for amplitude and Noble Denton inputs
+     - LRFD vs ASD comparison
+     - Regular vs Removal operations
 
-   .. doctest::
+3. Add doctest examples to key methods
 
-       >>> from grillex.core import StructuralModel, VesselMotion
-       >>> model = StructuralModel("Offshore Module")
-       >>> # Add vessel motion load case
-       >>> motion = model.add_vessel_motion_load_case(
-       ...     name="Design Heave + Roll",
-       ...     heave=2.5,       # m/s²
-       ...     roll=0.12,       # rad/s²
-       ...     motion_center=[50.0, 0.0, 5.0]
-       ... )
-
-   Motion Components
-   ~~~~~~~~~~~~~~~~~
-
-   The six vessel motion DOFs are:
-
-   - **Surge** (X): Longitudinal translation, positive forward
-   - **Sway** (Y): Transverse translation, positive to port
-   - **Heave** (Z): Vertical translation, positive upward
-   - **Roll** (RX): Rotation about X, positive is starboard down
-   - **Pitch** (RY): Rotation about Y, positive is bow down
-   - **Yaw** (RZ): Rotation about Z, positive is bow to port
-
-   Motion Center
-   ~~~~~~~~~~~~~
-
-   The motion center is the reference point for rotational motions.
-   For a barge, this is typically at the waterline amidships.
-
-   Structures located away from the motion center experience additional
-   tangential accelerations due to rotation.
-   ```
-
-2. Add example to `docs/user/getting_started.rst`
+4. Update `docs/user/analysis_workflow.rst` to include vessel motions step
 
 **Acceptance Criteria:**
-- [ ] Documentation explains vessel motion concepts
-- [ ] Code examples are doctests that run
-- [ ] Motion components are clearly defined with sign conventions
-- [ ] Motion center concept is explained
+- [ ] Module docstring includes complete usage example
+- [ ] User documentation explains all concepts
+- [ ] Doctest examples pass
+- [ ] Analysis workflow documentation updated
 
 ---
 
-### Summary
+## Summary
 
-| Task | Description | Difficulty | Status |
-|------|-------------|------------|--------|
-| 20.1 | VesselMotion class | Medium | Pending |
-| 20.2 | StructuralModel methods | Medium | Pending |
-| 20.3 | Standard motion profiles | Low | Pending |
-| 20.4 | YAML support | Medium | Pending |
-| 20.5 | LLM tools | Medium | Pending |
-| 20.6 | Diagnostics | Low | Pending |
-| 20.7 | Comprehensive tests | Medium | Pending |
-| 20.8 | Documentation | Low | Pending |
+| Task | Description | Difficulty | Dependencies |
+|------|-------------|------------|--------------|
+| 20.1 | Base class and data structures | Medium | Phase 5, 9 |
+| 20.2 | VesselMotionsFromAmplitudes | Medium | 20.1 |
+| 20.3 | VesselMotionsFromNobleDenton | Medium | 20.1 |
+| 20.4 | Load case generation | Medium | 20.2, 20.3 |
+| 20.5 | Load factor definitions | Low | 20.1 |
+| 20.6 | Load combination generation | High | 20.4, 20.5 |
+| 20.7 | DataFrame/summary methods | Low | 20.2, 20.3 |
+| 20.8 | StructuralModel integration | Low | 20.6 |
+| 20.9 | Comprehensive tests | Medium | 20.1-20.8 |
+| 20.10 | Documentation | Low | 20.1-20.9 |
 
-**Total Acceptance Criteria:** 38 items
-
----
-
-## Execution Notes (Completed 2026-01-03)
-
-### Task 20.1: VesselMotion Class - COMPLETED
-
-**Steps Taken:**
-1. Created `src/grillex/core/vessel_motion.py` with:
-   - `MotionType` enum (SURGE, SWAY, HEAVE, ROLL, PITCH, YAW)
-   - `MotionComponent` dataclass for individual motion components
-   - `VesselMotion` dataclass with fluent API methods
-   - Factory methods for common scenarios (still_water, heave_only, roll_condition, etc.)
-2. Added exports to `src/grillex/core/__init__.py`
-
-**Verification:** All unit tests pass ✓
-
-### Task 20.2: StructuralModel Methods - COMPLETED
-
-**Steps Taken:**
-1. Added `add_vessel_motion_load_case()` method to StructuralModel
-2. Added `add_gravity_load_case()` convenience method
-3. Added `get_vessel_motions()` and `get_vessel_motion()` retrieval methods
-4. Added `_vessel_motions` dictionary for tracking vessel motions
-
-**Verification:** Integration tests pass ✓
-
-### Task 20.3: Standard Motion Profiles - COMPLETED
-
-Factory methods implemented:
-- `create_still_water()`: Zero accelerations for calm conditions
-- `create_heave_only()`: Heave-only motion
-- `create_roll_condition()`: Roll from angle/period (α = (2π/T)² × θ)
-- `create_pitch_condition()`: Pitch from angle/period
-- `create_combined_design_motion()`: Full design condition
-
-### Task 20.4: YAML Support - COMPLETED
-
-**Steps Taken:**
-1. Updated docstring in `yaml_loader.py` with vessel_motions schema
-2. Added `_load_vessel_motions()` function supporting:
-   - Direct acceleration values (heave, pitch, roll, surge, sway, yaw)
-   - Angle/period format (roll_angle, roll_period, etc.)
-   - Gravity shorthand (`gravity: true`)
-   - Motion center specification
-3. Updated `build_model_from_dict()` to call vessel motion loader
-
-**Verification:** YAML loading tests pass ✓
-
-### Task 20.5: LLM Tools - COMPLETED
-
-**Steps Taken:**
-1. Added tool definitions to TOOLS list:
-   - `add_gravity`: Simple gravity load case
-   - `add_vessel_motion`: Full 6-DOF vessel motion
-   - `get_vessel_motions`: Query all vessel motions
-2. Added handler methods in ToolExecutor:
-   - `_tool_add_gravity()`
-   - `_tool_add_vessel_motion()`
-   - `_tool_get_vessel_motions()`
-
-**Verification:** LLM tool tests pass ✓
-
-### Task 20.7: Comprehensive Tests - COMPLETED
-
-Created `tests/python/test_phase20_vessel_motions.py` with 43 tests:
-- `TestVesselMotionClass`: 19 tests for VesselMotion class
-- `TestVesselMotionFactoryMethods`: 7 tests for factory methods
-- `TestVesselMotionIntegration`: 9 tests for model integration
-- `TestVesselMotionYAML`: 3 tests for YAML I/O
-- `TestVesselMotionLLMTools`: 5 tests for LLM tools
-
-**All 43 tests passing ✓**
-
-### Summary
-
-| Task | Status |
-|------|--------|
-| 20.1 VesselMotion class | ✅ Complete |
-| 20.2 StructuralModel methods | ✅ Complete |
-| 20.3 Standard motion profiles | ✅ Complete |
-| 20.4 YAML support | ✅ Complete |
-| 20.5 LLM tools | ✅ Complete |
-| 20.6 Diagnostics | ⏳ Deferred (simple error handling in place) |
-| 20.7 Comprehensive tests | ✅ Complete |
-| 20.8 Documentation | ⏳ Deferred (docstrings complete, RST docs pending) |
-
-**Files Created/Modified:**
-- `src/grillex/core/vessel_motion.py` (NEW)
-- `src/grillex/core/__init__.py` (MODIFIED)
-- `src/grillex/core/model_wrapper.py` (MODIFIED)
-- `src/grillex/io/yaml_loader.py` (MODIFIED)
-- `src/grillex/llm/tools.py` (MODIFIED)
-- `tests/python/test_phase20_vessel_motions.py` (NEW)
-- `implementation_plan/implementation_plan_phase20_vessel_motions.md` (NEW)
+**Total Acceptance Criteria:** 35
