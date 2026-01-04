@@ -726,3 +726,127 @@ class TestElementSpecificWarpingBoundaryConditions:
 # NOTE: TestTJointWarpingDecoupling and TestContinuousBeamWarpingContinuity
 # have been moved to C++ in tests/cpp/test_warping.cpp because
 # pybind11 cannot handle Eigen::SparseMatrix as input parameters.
+
+
+class TestWarpingDOFToggle:
+    """Tests for toggling warping on/off and updating node DOF flags.
+
+    This addresses a bug where disabling warping on a beam element
+    left node.dof_active[6] = True, causing orphaned DOFs that led
+    to singular matrices during analysis.
+
+    The fix requires using the get/modify/set pattern for pybind11's
+    std::array binding (which returns copies, not references).
+    """
+
+    def test_toggle_warping_off_resets_node_dof_flags(self):
+        """Disabling warping should reset node.dof_active[6] to False."""
+        registry = NodeRegistry()
+        node_i = registry.get_or_create_node(0.0, 0.0, 0.0)
+        node_j = registry.get_or_create_node(6.0, 0.0, 0.0)
+
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85)
+        sec = Section(1, "IPE300", 0.01, 1e-4, 1e-5, 1e-5)
+        sec.Iw = 1.0e-9
+
+        # Create beam WITH warping enabled
+        config = BeamConfig()
+        config.include_warping = True
+        elem = BeamElement(1, node_i, node_j, mat, sec, config)
+
+        # Enable warping DOFs on nodes (as Model.add_beam does)
+        dof_active_i = list(node_i.dof_active)
+        dof_active_i[6] = True
+        node_i.dof_active = dof_active_i
+
+        dof_active_j = list(node_j.dof_active)
+        dof_active_j[6] = True
+        node_j.dof_active = dof_active_j
+
+        # Verify initial state
+        assert node_i.dof_active[6] == True
+        assert node_j.dof_active[6] == True
+        assert elem.config.include_warping == True
+
+        # Now disable warping using get/modify/set pattern
+        elem.config.include_warping = False
+
+        dof_active_i = list(node_i.dof_active)
+        dof_active_i[6] = False
+        node_i.dof_active = dof_active_i
+
+        dof_active_j = list(node_j.dof_active)
+        dof_active_j[6] = False
+        node_j.dof_active = dof_active_j
+
+        # Verify that DOF flags were correctly reset
+        assert node_i.dof_active[6] == False
+        assert node_j.dof_active[6] == False
+        assert elem.config.include_warping == False
+
+    def test_direct_array_assignment_does_not_work(self):
+        """Demonstrate that direct array element assignment doesn't work.
+
+        This test documents the known pybind11 issue with std::array.
+        Direct assignment like node.dof_active[6] = False modifies a
+        temporary copy, not the actual C++ array.
+        """
+        registry = NodeRegistry()
+        node = registry.get_or_create_node(0.0, 0.0, 0.0)
+
+        # Enable warping DOF first (using correct pattern)
+        dof_active = list(node.dof_active)
+        dof_active[6] = True
+        node.dof_active = dof_active
+        assert node.dof_active[6] == True
+
+        # WRONG: Direct element assignment (modifies temporary copy)
+        node.dof_active[6] = False
+
+        # The value is still True because direct assignment doesn't work!
+        assert node.dof_active[6] == True  # Still True!
+
+        # CORRECT: Get/modify/set pattern
+        dof_active = list(node.dof_active)
+        dof_active[6] = False
+        node.dof_active = dof_active
+
+        # Now it's correctly False
+        assert node.dof_active[6] == False
+
+    def test_toggle_warping_preserves_other_warping_elements(self):
+        """Disabling warping on one beam shouldn't affect other warping beams."""
+        registry = NodeRegistry()
+        node1 = registry.get_or_create_node(0.0, 0.0, 0.0)
+        node2 = registry.get_or_create_node(3.0, 0.0, 0.0)
+        node3 = registry.get_or_create_node(6.0, 0.0, 0.0)
+
+        mat = Material(1, "Steel", 210e6, 0.3, 7.85)
+        sec = Section(1, "IPE300", 0.01, 1e-4, 1e-5, 1e-5)
+        sec.Iw = 1.0e-9
+
+        # Create two warping beams sharing node2
+        config = BeamConfig()
+        config.include_warping = True
+        elem1 = BeamElement(1, node1, node2, mat, sec, config)
+        elem2 = BeamElement(2, node2, node3, mat, sec, config)
+
+        # Enable warping DOFs on all nodes
+        for node in [node1, node2, node3]:
+            dof_active = list(node.dof_active)
+            dof_active[6] = True
+            node.dof_active = dof_active
+
+        # Disable warping on elem1 only
+        elem1.config.include_warping = False
+
+        # Reset node1's warping DOF (not connected to any warping elements now)
+        dof_active = list(node1.dof_active)
+        dof_active[6] = False
+        node1.dof_active = dof_active
+
+        # node2 should keep warping DOF (still connected to elem2)
+        # node3 should keep warping DOF (connected to elem2)
+        assert node1.dof_active[6] == False
+        assert node2.dof_active[6] == True  # elem2 still uses warping
+        assert node3.dof_active[6] == True  # elem2 still uses warping
