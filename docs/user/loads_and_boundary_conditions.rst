@@ -184,6 +184,143 @@ The self-weight load is automatically computed as:
 
 For steel IPE300: w = 7.85×10⁻³ × 0.00538 × 9.81 ≈ 0.414 kN/m
 
+Vessel Motions
+==============
+
+For offshore structures on floating vessels, Grillex provides vessel motion
+support to apply 6-DOF accelerations from vessel motions.
+
+Adding Gravity Load Case
+------------------------
+
+The simplest use case is adding a gravity load:
+
+.. doctest::
+
+    >>> model = StructuralModel(name="Gravity Example")
+    >>> _ = model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+    >>> beam = model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+    >>> model.fix_node_at([0, 0, 0])
+    >>> model.fix_node_at([6, 0, 0])
+    >>>
+    >>> # Add gravity load case (applies -9.81 m/s² in Z)
+    >>> motion = model.add_gravity_load_case("Self-Weight")
+
+Vessel Motion Load Case
+-----------------------
+
+For offshore structures, apply vessel motion accelerations:
+
+.. doctest::
+
+    >>> model2 = StructuralModel(name="Vessel Motion Example")
+    >>> _ = model2.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model2.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+    >>> beam = model2.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+    >>> model2.fix_node_at([0, 0, 0])
+    >>> model2.fix_node_at([6, 0, 0])
+    >>>
+    >>> # Add vessel motion load case with heave and roll
+    >>> motion = model2.add_vessel_motion_load_case(
+    ...     name="Design Heave + Roll",
+    ...     heave=2.5,       # m/s² vertical acceleration
+    ...     roll=0.12,       # rad/s² roll angular acceleration
+    ...     motion_center=[50.0, 0.0, 5.0]  # Midship, waterline
+    ... )
+
+Motion Components
+~~~~~~~~~~~~~~~~~
+
+The six vessel motion DOFs are:
+
+.. list-table:: Vessel Motion Components
+   :header-rows: 1
+   :widths: 15 20 65
+
+   * - Motion
+     - Units
+     - Description
+   * - Surge
+     - m/s²
+     - Longitudinal translation (X), positive forward
+   * - Sway
+     - m/s²
+     - Transverse translation (Y), positive to port
+   * - Heave
+     - m/s²
+     - Vertical translation (Z), positive upward
+   * - Roll
+     - rad/s²
+     - Rotation about X-axis, positive is starboard down
+   * - Pitch
+     - rad/s²
+     - Rotation about Y-axis, positive is bow down
+   * - Yaw
+     - rad/s²
+     - Rotation about Z-axis, positive is bow to port
+
+Motion Center
+~~~~~~~~~~~~~
+
+The motion center is the reference point for rotational motions. For a barge,
+this is typically at the waterline amidships. Structures located away from
+the motion center experience additional tangential accelerations due to rotation.
+
+For a point at distance r from the motion center, the tangential acceleration
+due to angular acceleration α is:
+
+.. math::
+
+    a_{tangential} = r \cdot \alpha
+
+Using VesselMotion Class
+------------------------
+
+For more control, use the VesselMotion class directly:
+
+.. doctest::
+
+    >>> from grillex.core import VesselMotion, MotionType
+    >>>
+    >>> # Create vessel motion with fluent API
+    >>> motion = VesselMotion("Design Motion")
+    >>> motion.set_motion_center([50.0, 0.0, 5.0])
+    VesselMotion('Design Motion', center=[50.0, 0.0, 5.0], components=[])
+    >>> motion.add_heave(2.5)
+    VesselMotion('Design Motion', center=[50.0, 0.0, 5.0], components=[heave=2.50 m/s²])
+    >>> motion.add_roll(0.12)
+    VesselMotion('Design Motion', center=[50.0, 0.0, 5.0], components=[heave=2.50 m/s², roll=0.1200 rad/s²])
+    >>> motion.add_pitch(0.08)
+    VesselMotion('Design Motion', center=[50.0, 0.0, 5.0], components=[heave=2.50 m/s², roll=0.1200 rad/s², pitch=0.0800 rad/s²])
+
+Factory Methods
+~~~~~~~~~~~~~~~
+
+Convenience factory methods for common scenarios:
+
+.. doctest::
+
+    >>> # Still water (no motions)
+    >>> still = VesselMotion.create_still_water()
+    >>> len(still.components)
+    0
+    >>>
+    >>> # Heave-only condition
+    >>> heave = VesselMotion.create_heave_only(2.5)
+    >>> heave.get_component_by_type(MotionType.HEAVE).amplitude
+    2.5
+    >>>
+    >>> # Roll from angle and period
+    >>> # α = (2π/T)² × θ where θ is in radians
+    >>> roll = VesselMotion.create_roll_condition(
+    ...     roll_angle=15.0,  # degrees
+    ...     roll_period=10.0   # seconds
+    ... )
+    >>> roll_accel = roll.get_component_by_type(MotionType.ROLL).amplitude
+    >>> 0.1 < roll_accel < 0.2  # ~0.103 rad/s²
+    True
+
 Load Cases
 ==========
 

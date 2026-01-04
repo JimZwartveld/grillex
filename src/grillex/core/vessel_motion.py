@@ -293,6 +293,71 @@ class VesselMotion:
         linear = {MotionType.SURGE, MotionType.SWAY, MotionType.HEAVE}
         return any(comp.motion_type in linear for comp in self.components)
 
+    def to_dict(self) -> dict:
+        """Convert vessel motion to YAML-serializable dictionary.
+
+        The output format matches the YAML input format, allowing round-trip
+        serialization.
+
+        Returns:
+            Dictionary suitable for YAML serialization with fields:
+            - name: Motion name
+            - motion_center: [x, y, z] reference point
+            - surge, sway, heave, roll, pitch, yaw: acceleration values
+
+        Example:
+            >>> motion = VesselMotion("Test").add_heave(2.5).add_roll(0.12)
+            >>> d = motion.to_dict()
+            >>> d['heave']
+            2.5
+            >>> d['roll']
+            0.12
+        """
+        result = {
+            'name': self.name,
+        }
+
+        if self.motion_center != [0.0, 0.0, 0.0]:
+            result['motion_center'] = list(self.motion_center)
+
+        # Add each component by type
+        for comp in self.components:
+            key = comp.motion_type.value  # e.g., "heave", "roll"
+            result[key] = comp.amplitude
+
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "VesselMotion":
+        """Create VesselMotion from dictionary.
+
+        Args:
+            data: Dictionary with motion data (as from to_dict())
+
+        Returns:
+            VesselMotion instance
+        """
+        motion = cls(name=data.get('name', 'Unnamed'))
+
+        if 'motion_center' in data:
+            motion.set_motion_center(data['motion_center'])
+
+        # Add components by type
+        component_map = {
+            'surge': MotionType.SURGE,
+            'sway': MotionType.SWAY,
+            'heave': MotionType.HEAVE,
+            'roll': MotionType.ROLL,
+            'pitch': MotionType.PITCH,
+            'yaw': MotionType.YAW,
+        }
+
+        for key, motion_type in component_map.items():
+            if key in data:
+                motion.add_component(motion_type, float(data[key]))
+
+        return motion
+
     # ===== Factory Methods =====
 
     @classmethod

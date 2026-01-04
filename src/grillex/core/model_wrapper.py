@@ -2463,6 +2463,19 @@ class StructuralModel:
             return None
         return self._vessel_motions.get(name)
 
+    def register_vessel_motion(self, motion: "VesselMotion") -> None:
+        """Register a vessel motion without creating a load case.
+
+        Use this when you want to define a vessel motion that will be referenced
+        by load cases, but don't want to auto-create a load case for it.
+
+        Args:
+            motion: VesselMotion object to register
+        """
+        if not hasattr(self, '_vessel_motions'):
+            self._vessel_motions: Dict[str, "VesselMotion"] = {}
+        self._vessel_motions[motion.name] = motion
+
     # ===== Analysis =====
 
     def analyze(self) -> bool:

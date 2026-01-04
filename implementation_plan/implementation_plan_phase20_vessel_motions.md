@@ -436,9 +436,9 @@ Add YAML input/output support for vessel motion definitions.
 - [x] Motion center is parsed correctly
 - [x] Direct acceleration values are supported
 - [x] Angle/period format is supported with correct conversion
-- [ ] Load cases can reference vessel motions by name
-- [ ] Validation errors for invalid vessel motion references
-- [ ] Round-trip (load/save) preserves vessel motion data
+- [x] Load cases can reference vessel motions by name
+- [x] Validation errors for invalid vessel motion references
+- [x] Round-trip (load/save) preserves vessel motion data
 
 ---
 
@@ -607,9 +607,16 @@ Add error diagnostics and fix suggestions for vessel motion related issues.
    ```
 
 **Acceptance Criteria:**
-- [ ] Fix suggestions exist for missing acceleration field errors
-- [ ] Warning advice exists for unusually large accelerations
-- [ ] Suggestions are actionable with correct tool calls
+- [x] Fix suggestions exist for missing acceleration field errors
+      (Added to EMPTY_LOAD_CASE: suggests add_gravity and add_vessel_motion)
+- [x] Warning advice exists for unusually large accelerations
+      (Added advice for ACCELERATION_WITHOUT_MASS and LARGE_LOAD warning codes)
+- [x] Suggestions are actionable with correct tool calls
+
+**Note:** Since specific error codes (MISSING_ACCELERATION_FIELD, LARGE_ACCELERATION)
+are defined in C++ and don't exist yet, diagnostics were added for existing related
+warning codes: ACCELERATION_WITHOUT_MASS, LARGE_LOAD. The EMPTY_LOAD_CASE error now
+also suggests add_gravity and add_vessel_motion as fix options.
 
 ---
 
@@ -765,10 +772,10 @@ Update documentation with vessel motion usage examples.
 2. Add example to `docs/user/getting_started.rst`
 
 **Acceptance Criteria:**
-- [ ] Documentation explains vessel motion concepts
-- [ ] Code examples are doctests that run
-- [ ] Motion components are clearly defined with sign conventions
-- [ ] Motion center concept is explained
+- [x] Documentation explains vessel motion concepts
+- [x] Code examples are doctests that run
+- [x] Motion components are clearly defined with sign conventions
+- [x] Motion center concept is explained
 
 ---
 
