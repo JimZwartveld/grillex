@@ -850,3 +850,155 @@ class TestWarpingDOFToggle:
         assert node1.dof_active[6] == False
         assert node2.dof_active[6] == True  # elem2 still uses warping
         assert node3.dof_active[6] == True  # elem2 still uses warping
+
+
+class TestWarpingBCPreservationDuringResubdivision:
+    """Tests for preserving warping BCs when beams are resubdivided.
+
+    This addresses a bug where adding a point load after adding a warping BC
+    would cause the warping BC to be lost. The issue was that resubdivide_beam
+    recreates elements with new IDs, but the warping BCs still referenced the
+    old element IDs.
+
+    The fix captures warping BCs before removing old elements and re-applies
+    them with the new element IDs after creating new elements.
+    """
+
+    def test_warping_bc_preserved_after_resubdivision(self):
+        """Warping BC should be preserved when beam is resubdivided."""
+        from grillex.core import StructuralModel, DOFIndex
+
+        # Create model with warping beam
+        model = StructuralModel(name="Warping BC Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        sec = model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        sec.Iw = 1.0e-9  # Warping constant
+
+        # Create 10m beam with warping enabled
+        beam = model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel",
+                                        formulation="euler_bernoulli", include_warping=True)
+
+        # Get element ID before resubdivision (should be 1 element)
+        assert len(beam.elements) == 1
+        old_elem_id = beam.elements[0].id
+        start_node = beam.elements[0].node_i
+
+        # Add warping BC at start (fixed warping)
+        bc_handler = model._cpp_model.boundary_conditions
+        bc_handler.add_fixed_warping_dof(old_elem_id, start_node.id, 0.0)
+
+        # Verify BC was added
+        initial_fixed_dofs = list(bc_handler.get_fixed_dofs())
+        warping_bcs_before = [fd for fd in initial_fixed_dofs if fd.local_dof == 6]
+        assert len(warping_bcs_before) == 1
+        assert warping_bcs_before[0].element_id == old_elem_id
+
+        # Now add a node at midspan (simulating adding a point load)
+        model.get_or_create_node(5, 0, 0)
+
+        # Resubdivide the beam - this should preserve the warping BC
+        model.resubdivide_beam(beam)
+
+        # Verify beam now has 2 elements
+        assert len(beam.elements) == 2
+
+        # Get new element ID for start node
+        new_first_elem = beam.elements[0]
+        new_first_elem_id = new_first_elem.id
+        assert new_first_elem_id != old_elem_id  # Should be a new ID
+
+        # Verify warping BC was preserved with new element ID
+        final_fixed_dofs = list(bc_handler.get_fixed_dofs())
+        warping_bcs_after = [fd for fd in final_fixed_dofs if fd.local_dof == 6]
+
+        # There should still be 1 warping BC (the old one is orphaned, new one was added)
+        # Actually we need to filter for valid element IDs
+        current_elem_ids = {elem.id for elem in beam.elements}
+        valid_warping_bcs = [fd for fd in warping_bcs_after
+                            if fd.local_dof == 6 and fd.element_id in current_elem_ids]
+
+        assert len(valid_warping_bcs) == 1, \
+            f"Expected 1 valid warping BC, got {len(valid_warping_bcs)}"
+        assert valid_warping_bcs[0].element_id == new_first_elem_id, \
+            f"Expected warping BC on element {new_first_elem_id}, got {valid_warping_bcs[0].element_id}"
+        assert valid_warping_bcs[0].node_id == start_node.id
+
+    def test_warping_bc_at_end_preserved_after_resubdivision(self):
+        """Warping BC at beam end should be preserved when beam is resubdivided."""
+        from grillex.core import StructuralModel, DOFIndex
+
+        # Create model with warping beam
+        model = StructuralModel(name="Warping BC End Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        sec = model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        sec.Iw = 1.0e-9
+
+        # Create 10m beam with warping enabled
+        beam = model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel",
+                                        formulation="euler_bernoulli", include_warping=True)
+
+        # Get element and nodes
+        assert len(beam.elements) == 1
+        old_elem_id = beam.elements[0].id
+        end_node = beam.elements[0].node_j
+
+        # Add warping BC at END (fixed warping at the right end)
+        bc_handler = model._cpp_model.boundary_conditions
+        bc_handler.add_fixed_warping_dof(old_elem_id, end_node.id, 0.0)
+
+        # Now add a node at midspan
+        model.get_or_create_node(5, 0, 0)
+
+        # Resubdivide the beam
+        model.resubdivide_beam(beam)
+
+        # Verify beam now has 2 elements
+        assert len(beam.elements) == 2
+
+        # The end warping BC should now be on the LAST element
+        new_last_elem = beam.elements[-1]
+        new_last_elem_id = new_last_elem.id
+
+        # Verify warping BC was preserved with new element ID
+        final_fixed_dofs = list(bc_handler.get_fixed_dofs())
+        current_elem_ids = {elem.id for elem in beam.elements}
+        valid_warping_bcs = [fd for fd in final_fixed_dofs
+                            if fd.local_dof == 6 and fd.element_id in current_elem_ids]
+
+        assert len(valid_warping_bcs) == 1
+        assert valid_warping_bcs[0].element_id == new_last_elem_id
+        assert valid_warping_bcs[0].node_id == end_node.id
+
+    def test_resubdivide_all_beams_preserves_warping_bc(self):
+        """Warping BC should be preserved when using resubdivide_all_beams."""
+        from grillex.core import StructuralModel, DOFIndex
+
+        # Create model with warping beam
+        model = StructuralModel(name="Resubdivide All Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        sec = model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        sec.Iw = 1.0e-9
+
+        # Create beam with warping
+        beam = model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel",
+                                        formulation="euler_bernoulli", include_warping=True)
+
+        old_elem_id = beam.elements[0].id
+        start_node = beam.elements[0].node_i
+
+        # Add warping BC
+        bc_handler = model._cpp_model.boundary_conditions
+        bc_handler.add_fixed_warping_dof(old_elem_id, start_node.id, 0.0)
+
+        # Create node at midspan and resubdivide ALL beams
+        model.get_or_create_node(5, 0, 0)
+        model.resubdivide_all_beams()
+
+        # Verify BC was preserved
+        final_fixed_dofs = list(bc_handler.get_fixed_dofs())
+        current_elem_ids = {elem.id for elem in beam.elements}
+        valid_warping_bcs = [fd for fd in final_fixed_dofs
+                            if fd.local_dof == 6 and fd.element_id in current_elem_ids]
+
+        assert len(valid_warping_bcs) == 1
+        assert valid_warping_bcs[0].node_id == start_node.id

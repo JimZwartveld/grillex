@@ -3442,6 +3442,27 @@ class StructuralModel:
             all_nodes.append(node)
         all_nodes.append(end_node)
 
+        # IMPORTANT: Capture warping BCs BEFORE removing old elements
+        # Warping BCs reference (element_id, node_id), so we need to preserve them
+        # and re-apply with new element IDs after creating new elements.
+        # Store as list of (old_element_id, node_id, value) tuples
+        warping_bcs_to_preserve: List[Tuple[int, int, float]] = []
+        if had_warping:
+            bc_handler = self._cpp_model.boundary_conditions
+            old_element_ids = {elem.id for elem in beam.elements}
+            for fixed_dof in bc_handler.get_fixed_dofs():
+                # Check if this is a warping BC (local_dof == 6) for one of our elements
+                if fixed_dof.local_dof == 6 and fixed_dof.element_id in old_element_ids:
+                    warping_bcs_to_preserve.append(
+                        (fixed_dof.element_id, fixed_dof.node_id, fixed_dof.value)
+                    )
+
+        # Build map of old element -> which end node it has the BC on
+        # This helps us figure out which new element should get the BC
+        old_elem_node_map: Dict[int, Tuple[int, int]] = {}  # old_elem_id -> (node_i_id, node_j_id)
+        for elem in beam.elements:
+            old_elem_node_map[elem.id] = (elem.node_i.id, elem.node_j.id)
+
         # Remove old elements from C++ model
         for old_element in beam.elements:
             self._remove_element_from_cpp_model(old_element)
@@ -3463,6 +3484,30 @@ class StructuralModel:
 
             # Add to this beam's elements
             beam.add_element(cpp_element)
+
+        # Re-apply warping BCs with new element IDs
+        # For each preserved BC, find the new element that connects to that node
+        if warping_bcs_to_preserve:
+            bc_handler = self._cpp_model.boundary_conditions
+            for old_elem_id, node_id, value in warping_bcs_to_preserve:
+                # Find which new element is connected to this node
+                # The new element should have the node as either node_i or node_j
+                new_elem = None
+                for elem in beam.elements:
+                    if elem.node_i.id == node_id or elem.node_j.id == node_id:
+                        # For beam endpoints (start and end), there's only one element
+                        # For internal nodes, we pick the first matching element
+                        # (warping BCs are typically only at beam endpoints anyway)
+                        new_elem = elem
+                        # Prefer the element where this is an endpoint (node_i for start, node_j for end)
+                        if node_id == start_node.id and elem.node_i.id == node_id:
+                            break  # This is the first element - good match
+                        if node_id == end_node.id and elem.node_j.id == node_id:
+                            break  # This is the last element - good match
+
+                if new_elem is not None:
+                    # Re-add the warping BC with the new element ID
+                    bc_handler.add_fixed_warping_dof(new_elem.id, node_id, value)
 
         return len(beam.elements)
 
