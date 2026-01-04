@@ -167,13 +167,13 @@ Create a Python-level `VesselMotion` class that encapsulates vessel motion param
    ```
 
 **Acceptance Criteria:**
-- [ ] VesselMotion class exists with fluent API
-- [ ] MotionType enum covers all 6 DOFs
-- [ ] Motion components can be added individually
-- [ ] Convenience methods exist for all motion types (add_heave, add_pitch, etc.)
-- [ ] get_acceleration_field() returns correct 6-component acceleration
-- [ ] apply_to_load_case() correctly sets acceleration on LoadCase
-- [ ] Type hints and docstrings are complete
+- [x] VesselMotion class exists with fluent API
+- [x] MotionType enum covers all 6 DOFs
+- [x] Motion components can be added individually
+- [x] Convenience methods exist for all motion types (add_heave, add_pitch, etc.)
+- [x] get_acceleration_field() returns correct 6-component acceleration
+- [x] apply_to_load_case() correctly sets acceleration on LoadCase
+- [x] Type hints and docstrings are complete
 
 ---
 
@@ -260,12 +260,12 @@ Add high-level methods to `StructuralModel` for creating vessel motion load case
    ```
 
 **Acceptance Criteria:**
-- [ ] add_vessel_motion_load_case() creates load case with correct acceleration field
-- [ ] add_gravity_load_case() provides convenient gravity setup
-- [ ] Motion center is correctly passed to acceleration field
-- [ ] Default motion center is origin [0, 0, 0]
-- [ ] Vessel motions are tracked and retrievable
-- [ ] Type hints and docstrings are complete
+- [x] add_vessel_motion_load_case() creates load case with correct acceleration field
+- [x] add_gravity_load_case() provides convenient gravity setup
+- [x] Motion center is correctly passed to acceleration field
+- [x] Default motion center is origin [0, 0, 0]
+- [x] Vessel motions are tracked and retrievable
+- [x] Type hints and docstrings are complete
 
 ---
 
@@ -355,12 +355,12 @@ Add factory methods for common vessel motion scenarios based on offshore industr
    ```
 
 **Acceptance Criteria:**
-- [ ] create_still_water() returns zero-acceleration motion
-- [ ] create_heave_only() correctly sets heave acceleration
-- [ ] create_roll_condition() converts angle/period to angular acceleration
-- [ ] create_pitch_condition() converts angle/period to angular acceleration
-- [ ] create_combined_design_motion() combines multiple components
-- [ ] All factory methods return properly configured VesselMotion objects
+- [x] create_still_water() returns zero-acceleration motion
+- [x] create_heave_only() correctly sets heave acceleration
+- [x] create_roll_condition() converts angle/period to angular acceleration
+- [x] create_pitch_condition() converts angle/period to angular acceleration
+- [x] create_combined_design_motion() combines multiple components
+- [x] All factory methods return properly configured VesselMotion objects
 
 ---
 
@@ -432,10 +432,10 @@ Add YAML input/output support for vessel motion definitions.
    ```
 
 **Acceptance Criteria:**
-- [ ] Vessel motions can be defined in YAML
-- [ ] Motion center is parsed correctly
-- [ ] Direct acceleration values are supported
-- [ ] Angle/period format is supported with correct conversion
+- [x] Vessel motions can be defined in YAML
+- [x] Motion center is parsed correctly
+- [x] Direct acceleration values are supported
+- [x] Angle/period format is supported with correct conversion
 - [ ] Load cases can reference vessel motions by name
 - [ ] Validation errors for invalid vessel motion references
 - [ ] Round-trip (load/save) preserves vessel motion data
@@ -553,12 +553,12 @@ Add LLM tools for vessel motion setup and querying.
    ```
 
 **Acceptance Criteria:**
-- [ ] add_vessel_motion tool exists with full parameter schema
-- [ ] add_gravity tool exists for convenient gravity setup
-- [ ] get_vessel_motions tool returns all defined motions
-- [ ] Tool descriptions are clear for LLM understanding
-- [ ] All parameters have descriptions with units
-- [ ] Handlers correctly call model methods
+- [x] add_vessel_motion tool exists with full parameter schema
+- [x] add_gravity tool exists for convenient gravity setup
+- [x] get_vessel_motions tool returns all defined motions
+- [x] Tool descriptions are clear for LLM understanding
+- [x] All parameters have descriptions with units
+- [x] Handlers correctly call model methods
 
 ---
 
@@ -701,11 +701,11 @@ Create comprehensive test suite for vessel motion functionality.
    ```
 
 **Acceptance Criteria:**
-- [ ] Unit tests for VesselMotion class (creation, components, acceleration field)
-- [ ] Factory method tests (still water, heave-only, roll/pitch from angle/period)
-- [ ] Integration tests with full model analysis
-- [ ] YAML parsing tests
-- [ ] All tests pass
+- [x] Unit tests for VesselMotion class (creation, components, acceleration field)
+- [x] Factory method tests (still water, heave-only, roll/pitch from angle/period)
+- [x] Integration tests with full model analysis
+- [x] YAML parsing tests
+- [x] All tests pass
 
 ---
 
