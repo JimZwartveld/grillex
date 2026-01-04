@@ -3297,12 +3297,50 @@ class ToolExecutor:
         # Update warping if provided
         if "warping_enabled" in params and params["warping_enabled"] is not None:
             warping = params["warping_enabled"]
+
+            # Collect nodes affected by this beam
+            affected_nodes = set()
+            for elem in beam.elements:
+                affected_nodes.add(elem.node_i)
+                affected_nodes.add(elem.node_j)
+
             for elem in beam.elements:
                 elem.config.include_warping = warping
                 # When warping is enabled, release warping DOFs by default
                 if warping:
                     elem.releases.release_warp_i = True
                     elem.releases.release_warp_j = True
+
+            # Update node DOF active flags
+            # NOTE: pybind11 returns a COPY of std::array, so we must get/modify/set
+            if warping:
+                # Enable warping DOF on nodes
+                for node in affected_nodes:
+                    dof_active = list(node.dof_active)  # Get copy as list
+                    dof_active[6] = True
+                    node.dof_active = dof_active  # Assign back
+            else:
+                # Disable warping DOF on nodes, but only if no other warping element uses them
+                # Check all elements in the model (not just this beam)
+                for node in affected_nodes:
+                    # Check if any OTHER element still has warping at this node
+                    has_other_warping = False
+                    for other_beam in self.model.beams:
+                        if other_beam.beam_id == beam.beam_id:
+                            continue  # Skip the current beam
+                        for other_elem in other_beam.elements:
+                            if other_elem.config.include_warping:
+                                if other_elem.node_i.id == node.id or other_elem.node_j.id == node.id:
+                                    has_other_warping = True
+                                    break
+                        if has_other_warping:
+                            break
+
+                    if not has_other_warping:
+                        dof_active = list(node.dof_active)  # Get copy as list
+                        dof_active[6] = False
+                        node.dof_active = dof_active  # Assign back
+
             changes.append(f"warping_enabled -> {warping}")
 
         # Update offsets if provided
