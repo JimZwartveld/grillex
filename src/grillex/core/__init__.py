@@ -69,6 +69,7 @@ from .vessel_motion import (
     VesselMotion,
     MotionType,
     MotionComponent,
+    LinkedLoadCase,
 )
 
 __all__ = [
@@ -113,5 +114,5 @@ __all__ = [
     'create_plate_element', 'is_quad_element', 'is_triangle_element',
     'supports_shear_deformation',
     # Phase 20: Vessel Motions
-    'VesselMotion', 'MotionType', 'MotionComponent',
+    'VesselMotion', 'MotionType', 'MotionComponent', 'LinkedLoadCase',
 ]

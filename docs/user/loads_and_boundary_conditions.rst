@@ -321,6 +321,63 @@ Convenience factory methods for common scenarios:
     >>> 0.1 < roll_accel < 0.2  # ~0.103 rad/s²
     True
 
+Linked Load Cases and Auto-Update
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Load cases created via ``add_vessel_motion_load_case()`` are automatically linked
+to the VesselMotion object. When the vessel motion is modified, all linked load
+cases are automatically updated:
+
+.. doctest::
+
+    >>> model3 = StructuralModel(name="Linked LC Example")
+    >>> _ = model3.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model3.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+    >>> _ = model3.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+    >>> model3.fix_node_at([0, 0, 0])
+    >>>
+    >>> # Create a vessel motion load case
+    >>> motion = model3.add_vessel_motion_load_case("Heave", heave=2.5)
+    >>>
+    >>> # Get the linked load case
+    >>> lc = model3._cpp_model.get_load_cases()[0]
+    >>> model3.is_load_case_linked_to_vessel_motion(lc)
+    True
+    >>>
+    >>> # Modify the vessel motion - linked load case updates automatically
+    >>> _ = motion.add_roll(0.12)
+    >>> lc.get_acceleration()[3]  # Roll component now present
+    0.12
+
+Signed Motion Pairs
+~~~~~~~~~~~~~~~~~~~
+
+For design scenarios that require both positive and negative motion directions,
+use ``create_signed_pairs=True`` to automatically create two load cases:
+
+.. doctest::
+
+    >>> model4 = StructuralModel(name="Signed Pairs Example")
+    >>> _ = model4.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model4.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+    >>> _ = model4.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+    >>> model4.fix_node_at([0, 0, 0])
+    >>>
+    >>> # Create vessel motion with signed pairs
+    >>> motion = model4.add_vessel_motion_load_case(
+    ...     "Roll",
+    ...     roll=0.12,
+    ...     create_signed_pairs=True  # Creates "Roll +" and "Roll -"
+    ... )
+    >>>
+    >>> # Two linked load cases are created
+    >>> len(motion.get_linked_load_cases())
+    2
+
+This creates load cases named "Roll +" and "Roll -" with opposite acceleration
+signs. Both load cases are linked and automatically update when the VesselMotion
+is modified.
+
 Load Cases
 ==========
 

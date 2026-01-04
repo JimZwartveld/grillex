@@ -24,7 +24,7 @@ Example:
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, TYPE_CHECKING
+from typing import Any, List, Optional, TYPE_CHECKING
 from enum import Enum
 import math
 
@@ -68,6 +68,20 @@ class MotionComponent:
 
 
 @dataclass
+class LinkedLoadCase:
+    """Reference to a load case linked to a VesselMotion.
+
+    Attributes:
+        load_case: The C++ LoadCase object
+        sign_multiplier: Sign multiplier for this load case (+1 or -1)
+        suffix: Suffix added to name (e.g., " +" or " -")
+    """
+    load_case: Any  # LoadCase from C++
+    sign_multiplier: float = 1.0
+    suffix: str = ""
+
+
+@dataclass
 class VesselMotion:
     """
     Vessel motion definition for offshore structural analysis.
@@ -77,8 +91,9 @@ class VesselMotion:
     is the reference point for rotational motions (typically vessel CoG or
     waterline amidships).
 
-    Structures located away from the motion center experience additional
-    tangential accelerations due to rotational motions.
+    Linked load cases are automatically updated when the vessel motion is
+    modified. Load cases linked to a VesselMotion are immutable - their
+    acceleration field cannot be modified directly.
 
     Attributes:
         name: Descriptive name for this motion condition
@@ -98,6 +113,88 @@ class VesselMotion:
     components: List[MotionComponent] = field(default_factory=list)
     description: str = ""
 
+    # Linked load cases (not serialized, managed internally)
+    _linked_load_cases: List[LinkedLoadCase] = field(
+        default_factory=list, repr=False, compare=False
+    )
+
+    def __post_init__(self):
+        """Initialize internal state after dataclass creation."""
+        # Ensure _linked_load_cases is a list (in case it wasn't set)
+        if not hasattr(self, '_linked_load_cases') or self._linked_load_cases is None:
+            object.__setattr__(self, '_linked_load_cases', [])
+
+    def _update_linked_load_cases(self) -> None:
+        """Update all linked load cases with current acceleration field.
+
+        This is called automatically when the vessel motion is modified.
+        """
+        for linked in self._linked_load_cases:
+            accel_6d, motion_center = self.get_acceleration_field(
+                sign_multiplier=linked.sign_multiplier
+            )
+            linked.load_case.set_acceleration_field(
+                np.array(accel_6d),
+                np.array(motion_center)
+            )
+
+    def link_load_case(
+        self,
+        load_case: Any,
+        sign_multiplier: float = 1.0,
+        suffix: str = ""
+    ) -> None:
+        """Link a load case to this vessel motion.
+
+        The load case's acceleration field will be updated whenever this
+        vessel motion is modified. Linked load cases are marked as immutable.
+
+        Args:
+            load_case: LoadCase object to link
+            sign_multiplier: Sign multiplier (+1 or -1) for this load case
+            suffix: Suffix added to distinguish this variant (e.g., " +")
+        """
+        linked = LinkedLoadCase(load_case, sign_multiplier, suffix)
+        self._linked_load_cases.append(linked)
+
+        # Mark the load case as linked to a vessel motion (immutable)
+        if hasattr(load_case, '_vessel_motion_linked'):
+            load_case._vessel_motion_linked = True
+
+        # Apply current acceleration
+        accel_6d, motion_center = self.get_acceleration_field(
+            sign_multiplier=sign_multiplier
+        )
+        load_case.set_acceleration_field(
+            np.array(accel_6d),
+            np.array(motion_center)
+        )
+
+    def unlink_load_case(self, load_case: Any) -> bool:
+        """Unlink a load case from this vessel motion.
+
+        Args:
+            load_case: LoadCase object to unlink
+
+        Returns:
+            True if load case was found and unlinked, False otherwise
+        """
+        for i, linked in enumerate(self._linked_load_cases):
+            if linked.load_case is load_case:
+                self._linked_load_cases.pop(i)
+                if hasattr(load_case, '_vessel_motion_linked'):
+                    load_case._vessel_motion_linked = False
+                return True
+        return False
+
+    def get_linked_load_cases(self) -> List[Any]:
+        """Get all load cases linked to this vessel motion.
+
+        Returns:
+            List of LoadCase objects
+        """
+        return [linked.load_case for linked in self._linked_load_cases]
+
     def set_motion_center(self, position: List[float]) -> "VesselMotion":
         """Set the motion center (pivot point for rotational motions).
 
@@ -110,6 +207,7 @@ class VesselMotion:
         if len(position) != 3:
             raise ValueError("Motion center must be a 3-element list [x, y, z]")
         self.motion_center = list(position)
+        self._update_linked_load_cases()
         return self
 
     def add_component(
@@ -129,6 +227,7 @@ class VesselMotion:
             Self for method chaining
         """
         self.components.append(MotionComponent(motion_type, amplitude, phase))
+        self._update_linked_load_cases()
         return self
 
     def add_surge(self, amplitude: float, phase: float = 0.0) -> "VesselMotion":
@@ -210,15 +309,20 @@ class VesselMotion:
             Self for method chaining
         """
         self.components.clear()
+        self._update_linked_load_cases()
         return self
 
-    def get_acceleration_field(self) -> tuple:
+    def get_acceleration_field(self, sign_multiplier: float = 1.0) -> tuple:
         """
         Compute the 6-component acceleration field from motion components.
 
         The acceleration field is returned as [ax, ay, az, αx, αy, αz] where:
         - ax, ay, az: Linear accelerations in m/s²
         - αx, αy, αz: Angular accelerations in rad/s²
+
+        Args:
+            sign_multiplier: Multiplier applied to all accelerations (default: 1.0).
+                Use -1.0 to get the negative (opposite direction) motion.
 
         Returns:
             Tuple of (acceleration_6d, motion_center) where:
@@ -245,6 +349,9 @@ class VesselMotion:
                 accel[4] += comp.amplitude
             elif comp.motion_type == MotionType.YAW:
                 accel[5] += comp.amplitude
+
+        # Apply sign multiplier
+        accel *= sign_multiplier
 
         return (accel.tolist(), list(self.motion_center))
 

@@ -922,3 +922,294 @@ class TestVesselMotionRoundTrip:
         assert exported['heave'] == 2.5
         assert exported['roll'] == pytest.approx(0.12)
         assert exported['pitch'] == pytest.approx(0.08)
+
+
+class TestVesselMotionLinkedLoadCases:
+    """Test linked load case functionality (auto-update, signed pairs, immutability)."""
+
+    def test_load_case_is_linked(self):
+        """Load cases created via add_vessel_motion_load_case are tracked as linked."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Create vessel motion load case
+        motion = model.add_vessel_motion_load_case("Roll", roll=0.12)
+
+        # Get the load case
+        load_cases = model._cpp_model.get_load_cases()
+        roll_lc = next(lc for lc in load_cases if lc.name == 'Roll')
+
+        # Should be marked as linked
+        assert model.is_load_case_linked_to_vessel_motion(roll_lc)
+
+    def test_unlinked_load_case_not_linked(self):
+        """Regular load cases are not marked as linked."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Create regular load case (not from vessel motion)
+        lc = model.create_load_case("Manual Load", LoadCaseType.Permanent)
+
+        # Should NOT be marked as linked
+        assert not model.is_load_case_linked_to_vessel_motion(lc)
+
+    def test_get_vessel_motion_for_linked_load_case(self):
+        """get_vessel_motion_for_load_case returns the correct VesselMotion."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Create vessel motion load case
+        motion = model.add_vessel_motion_load_case("Test Motion", heave=2.5)
+
+        # Get the load case
+        load_cases = model._cpp_model.get_load_cases()
+        test_lc = next(lc for lc in load_cases if lc.name == 'Test Motion')
+
+        # Get vessel motion for load case
+        found_motion = model.get_vessel_motion_for_load_case(test_lc)
+        assert found_motion is motion
+        assert found_motion.name == "Test Motion"
+
+    def test_get_vessel_motion_for_unlinked_returns_none(self):
+        """get_vessel_motion_for_load_case returns None for unlinked load cases."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Create regular load case
+        lc = model.create_load_case("Manual Load", LoadCaseType.Permanent)
+
+        # Should return None
+        assert model.get_vessel_motion_for_load_case(lc) is None
+
+    def test_auto_update_on_motion_center_change(self):
+        """Changing motion center updates linked load cases."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Create vessel motion load case
+        motion = model.add_vessel_motion_load_case("Heave", heave=2.5)
+
+        # Get the load case
+        load_cases = model._cpp_model.get_load_cases()
+        heave_lc = next(lc for lc in load_cases if lc.name == 'Heave')
+
+        # Check initial ref point
+        initial_ref = heave_lc.get_acceleration_ref_point()
+        assert list(initial_ref) == [0.0, 0.0, 0.0]
+
+        # Change motion center
+        motion.set_motion_center([50.0, 0.0, 5.0])
+
+        # Load case should be updated
+        updated_ref = heave_lc.get_acceleration_ref_point()
+        assert list(updated_ref) == [50.0, 0.0, 5.0]
+
+    def test_auto_update_on_component_add(self):
+        """Adding a motion component updates linked load cases."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Create vessel motion load case with heave only
+        motion = model.add_vessel_motion_load_case("Motion", heave=2.5)
+
+        # Get the load case
+        load_cases = model._cpp_model.get_load_cases()
+        motion_lc = next(lc for lc in load_cases if lc.name == 'Motion')
+
+        # Check initial acceleration (only heave)
+        initial_accel = motion_lc.get_acceleration()
+        assert initial_accel[2] == 2.5  # heave
+        assert initial_accel[3] == 0.0  # no roll
+
+        # Add roll component
+        motion.add_roll(0.12)
+
+        # Load case should be updated with roll
+        updated_accel = motion_lc.get_acceleration()
+        assert updated_accel[2] == 2.5  # heave still there
+        assert updated_accel[3] == pytest.approx(0.12)  # roll added
+
+    def test_auto_update_on_clear_components(self):
+        """Clearing components updates linked load cases."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Create vessel motion load case with heave
+        motion = model.add_vessel_motion_load_case("Motion", heave=2.5)
+
+        # Get the load case
+        load_cases = model._cpp_model.get_load_cases()
+        motion_lc = next(lc for lc in load_cases if lc.name == 'Motion')
+
+        # Verify heave is set
+        assert motion_lc.get_acceleration()[2] == 2.5
+
+        # Clear components
+        motion.clear_components()
+
+        # Load case should have zero acceleration
+        cleared_accel = motion_lc.get_acceleration()
+        assert all(a == 0.0 for a in cleared_accel)
+
+    def test_signed_pairs_creates_two_load_cases(self):
+        """create_signed_pairs=True creates two load cases with opposite signs."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Create vessel motion with signed pairs
+        motion = model.add_vessel_motion_load_case(
+            "Roll",
+            roll=0.12,
+            create_signed_pairs=True
+        )
+
+        # Should have 2 linked load cases
+        linked = motion.get_linked_load_cases()
+        assert len(linked) == 2
+
+        # Find positive and negative load cases
+        load_cases = model._cpp_model.get_load_cases()
+        roll_pos = next(lc for lc in load_cases if lc.name == 'Roll +')
+        roll_neg = next(lc for lc in load_cases if lc.name == 'Roll -')
+
+        # Check accelerations are opposite
+        pos_accel = roll_pos.get_acceleration()
+        neg_accel = roll_neg.get_acceleration()
+
+        assert pos_accel[3] == pytest.approx(0.12)   # roll positive
+        assert neg_accel[3] == pytest.approx(-0.12)  # roll negative
+
+    def test_signed_pairs_both_are_linked(self):
+        """Both signed pair load cases are tracked as linked."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Create vessel motion with signed pairs
+        model.add_vessel_motion_load_case(
+            "Roll",
+            roll=0.12,
+            create_signed_pairs=True
+        )
+
+        # Get both load cases
+        load_cases = model._cpp_model.get_load_cases()
+        roll_pos = next(lc for lc in load_cases if lc.name == 'Roll +')
+        roll_neg = next(lc for lc in load_cases if lc.name == 'Roll -')
+
+        # Both should be marked as linked
+        assert model.is_load_case_linked_to_vessel_motion(roll_pos)
+        assert model.is_load_case_linked_to_vessel_motion(roll_neg)
+
+    def test_signed_pairs_auto_update(self):
+        """Both signed pair load cases are updated when motion changes."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Create vessel motion with signed pairs
+        motion = model.add_vessel_motion_load_case(
+            "Roll",
+            roll=0.12,
+            create_signed_pairs=True
+        )
+
+        # Get load cases
+        load_cases = model._cpp_model.get_load_cases()
+        roll_pos = next(lc for lc in load_cases if lc.name == 'Roll +')
+        roll_neg = next(lc for lc in load_cases if lc.name == 'Roll -')
+
+        # Add heave component
+        motion.add_heave(2.5)
+
+        # Both should be updated with heave
+        pos_accel = roll_pos.get_acceleration()
+        neg_accel = roll_neg.get_acceleration()
+
+        assert pos_accel[2] == 2.5   # heave positive
+        assert pos_accel[3] == pytest.approx(0.12)   # roll positive
+        assert neg_accel[2] == -2.5  # heave negative (sign applied to all)
+        assert neg_accel[3] == pytest.approx(-0.12)  # roll negative
+
+    def test_vessel_motion_get_acceleration_with_sign_multiplier(self):
+        """get_acceleration_field accepts sign_multiplier parameter."""
+        motion = VesselMotion("Test")
+        motion.add_heave(2.5)
+        motion.add_roll(0.12)
+
+        # Positive multiplier
+        pos_accel, _ = motion.get_acceleration_field(sign_multiplier=1.0)
+        assert pos_accel[2] == 2.5
+        assert pos_accel[3] == pytest.approx(0.12)
+
+        # Negative multiplier
+        neg_accel, _ = motion.get_acceleration_field(sign_multiplier=-1.0)
+        assert neg_accel[2] == -2.5
+        assert neg_accel[3] == pytest.approx(-0.12)
+
+    def test_link_load_case_method(self):
+        """VesselMotion.link_load_case() links a load case."""
+        model = StructuralModel("Test")
+        motion = VesselMotion("Test Motion")
+        motion.add_heave(2.5)
+
+        # Create a load case manually
+        lc = model.create_load_case("Manual LC", LoadCaseType.Environmental)
+
+        # Link it to the motion
+        motion.link_load_case(lc)
+
+        # Should be in linked list
+        assert lc in motion.get_linked_load_cases()
+
+        # Acceleration should be applied
+        accel = lc.get_acceleration()
+        assert accel[2] == 2.5
+
+    def test_unlink_load_case_method(self):
+        """VesselMotion.unlink_load_case() removes the link."""
+        model = StructuralModel("Test")
+        motion = VesselMotion("Test Motion")
+        motion.add_heave(2.5)
+
+        # Create and link a load case
+        lc = model.create_load_case("Manual LC", LoadCaseType.Environmental)
+        motion.link_load_case(lc)
+        assert lc in motion.get_linked_load_cases()
+
+        # Unlink it
+        result = motion.unlink_load_case(lc)
+        assert result is True
+        assert lc not in motion.get_linked_load_cases()
+
+        # Second unlink should return False
+        result = motion.unlink_load_case(lc)
+        assert result is False
