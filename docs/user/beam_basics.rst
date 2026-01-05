@@ -77,12 +77,7 @@ Create beams using coordinate points:
     >>> _ = model.add_section("HEA200", A=0.00538, Iy=3.69e-5, Iz=1.34e-5, J=2.1e-7)
     >>>
     >>> # Create a horizontal beam
-    >>> beam1 = model.add_beam_by_coords(
-    ...     start=[0, 0, 0],
-    ...     end=[5, 0, 0],
-    ...     section="HEA200",
-    ...     material="Steel"
-    ... )
+    >>> beam1 = model.add_beam_by_coords([0, 0, 0], [5, 0, 0], "HEA200", "Steel")
     >>>
     >>> # Check beam properties
     >>> beam1.length  # doctest: +ELLIPSIS
@@ -97,10 +92,7 @@ The roll angle rotates the beam's local y and z axes about the local x-axis:
 
     >>> import math
     >>> beam2 = model.add_beam_by_coords(
-    ...     start=[0, 0, 0],
-    ...     end=[0, 5, 0],
-    ...     section="HEA200",
-    ...     material="Steel",
+    ...     [0, 0, 0], [0, 5, 0], "HEA200", "Steel",
     ...     roll_angle=math.pi/4  # 45 degrees
     ... )
 
@@ -112,11 +104,8 @@ For more accurate results, beams can be subdivided into multiple elements:
 .. doctest::
 
     >>> beam3 = model.add_beam_by_coords(
-    ...     start=[0, 0, 0],
-    ...     end=[10, 0, 0],
-    ...     section="HEA200",
-    ...     material="Steel",
-    ...     num_elements=4  # Creates 4 elements with 3 internal nodes
+    ...     [0, 0, 0], [10, 0, 0], "HEA200", "Steel",
+    ...     subdivisions=4  # Creates 4 elements with 3 internal nodes
     ... )
 
 Materials and Sections

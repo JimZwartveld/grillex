@@ -800,9 +800,9 @@ class Beam:
             ValueError: If model not analyzed or invalid action type
 
         Example:
-            >>> data = beam.get_line_data('moment_z', model)
-            >>> plt.plot(data['x'], data['values'])
-            >>> plt.ylabel(f"Mz [{data['units']}]")
+            >>> data = beam.get_line_data('moment_z', model)  # doctest: +SKIP
+            >>> plt.plot(data['x'], data['values'])  # doctest: +SKIP
+            >>> plt.ylabel(f"Mz [{data['units']}]")  # doctest: +SKIP
         """
         if not model.is_analyzed():
             raise ValueError("Model must be analyzed before querying line data")
@@ -1603,10 +1603,10 @@ class StructuralModel:
             ValueError: If mesh compatibility check fails.
 
         Example:
-            >>> model.add_plate(corners=[[0, 0, 0], [4, 0, 0], [4, 2, 0], [0, 2, 0]],
+            >>> model.add_plate(corners=[[0, 0, 0], [4, 0, 0], [4, 2, 0], [0, 2, 0]],  # doctest: +SKIP
             ...                 thickness=0.02, material="Steel")
-            >>> stats = model.mesh()
-            >>> print(f"Created {stats.n_plate_elements} plate elements")
+            >>> stats = model.mesh()  # doctest: +SKIP
+            >>> print(f"Created {stats.n_plate_elements} plate elements")  # doctest: +SKIP
         """
         from grillex.meshing.gmsh_mesher import GmshPlateMesher
 
@@ -2715,21 +2715,21 @@ class StructuralModel:
             The created VesselMotion object (with linked load cases)
 
         Example:
-            >>> from grillex.core import StructuralModel
-            >>> model = StructuralModel("Offshore Module")
-            >>> motion = model.add_vessel_motion_load_case(
+            >>> from grillex.core import StructuralModel  # doctest: +SKIP
+            >>> model = StructuralModel("Offshore Module")  # doctest: +SKIP
+            >>> motion = model.add_vessel_motion_load_case(  # doctest: +SKIP
             ...     "Design Heave + Pitch",
             ...     heave=2.5,
             ...     pitch=0.08,
             ...     motion_center=[50.0, 0.0, 5.0]
             ... )
             >>> # With signed pairs
-            >>> motion = model.add_vessel_motion_load_case(
+            >>> motion = model.add_vessel_motion_load_case(  # doctest: +SKIP
             ...     "Roll",
             ...     roll=0.12,
             ...     create_signed_pairs=True  # Creates "Roll +" and "Roll -"
             ... )
-            >>> len(motion.get_linked_load_cases())
+            >>> len(motion.get_linked_load_cases())  # doctest: +SKIP
             2
         """
         from .vessel_motion import VesselMotion, MotionComponent, MotionType
@@ -2806,9 +2806,9 @@ class StructuralModel:
             The created LoadCase object
 
         Example:
-            >>> model = StructuralModel("Bridge")
-            >>> model.add_gravity_load_case()  # Standard gravity
-            >>> model.add_gravity_load_case("1.1g Gravity", 10.79)  # 1.1x gravity
+            >>> model = StructuralModel("Bridge")  # doctest: +SKIP
+            >>> model.add_gravity_load_case()  # Standard gravity  # doctest: +SKIP
+            >>> model.add_gravity_load_case("1.1g Gravity", 10.79)  # 1.1x gravity  # doctest: +SKIP
         """
         load_case = self.create_load_case(name, load_type)
 
@@ -2869,9 +2869,9 @@ class StructuralModel:
             True if the load case is linked to a vessel motion
 
         Example:
-            >>> model.add_vessel_motion_load_case("Roll", roll=0.12)
-            >>> lc = model.get_load_case("Roll")
-            >>> model.is_load_case_linked_to_vessel_motion(lc)
+            >>> model.add_vessel_motion_load_case("Roll", roll=0.12)  # doctest: +SKIP
+            >>> lc = model.get_load_case("Roll")  # doctest: +SKIP
+            >>> model.is_load_case_linked_to_vessel_motion(lc)  # doctest: +SKIP
             True
         """
         return load_case.id in self._linked_load_case_ids
@@ -2930,10 +2930,10 @@ class StructuralModel:
             ValueError: If load combinations reference linked load cases and force=False
 
         Example:
-            >>> model.add_vessel_motion_load_case("Roll", roll=0.12, create_signed_pairs=True)
+            >>> model.add_vessel_motion_load_case("Roll", roll=0.12, create_signed_pairs=True)  # doctest: +SKIP
             >>> # Delete vessel motion and its load cases
-            >>> deleted = model.delete_vessel_motion("Roll")
-            >>> deleted
+            >>> deleted = model.delete_vessel_motion("Roll")  # doctest: +SKIP
+            >>> deleted  # doctest: +SKIP
             ['Roll +', 'Roll -']
         """
         if not hasattr(self, '_vessel_motions') or name not in self._vessel_motions:

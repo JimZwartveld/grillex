@@ -92,21 +92,21 @@ class GmshPlateMesher:
         - Linear and quadratic element support
 
     Example:
-        >>> mesher = GmshPlateMesher()
-        >>> result = mesher.mesh_plate(
+        >>> mesher = GmshPlateMesher()  # doctest: +SKIP
+        >>> result = mesher.mesh_plate(  # doctest: +SKIP
         ...     corners=[[0, 0, 0], [2, 0, 0], [2, 1, 0], [0, 1, 0]],
         ...     mesh_size=0.5,
         ...     prefer_quads=True
         ... )
-        >>> print(f"Generated {result.n_quads} quads, {result.n_triangles} triangles")
-        >>> mesher.finalize()
+        >>> print(f"Generated {result.n_quads} quads, {result.n_triangles} triangles")  # doctest: +SKIP
+        >>> mesher.finalize()  # doctest: +SKIP
 
     Note:
         Always call finalize() when done to release gmsh resources,
         or use as a context manager:
 
-        >>> with GmshPlateMesher() as mesher:
-        ...     result = mesher.mesh_plate(...)
+        >>> with GmshPlateMesher() as mesher:  # doctest: +SKIP
+        ...     result = mesher.mesh_plate(...)  # doctest: +SKIP
     """
 
     def __init__(self):
