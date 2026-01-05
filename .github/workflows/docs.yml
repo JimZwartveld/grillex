@@ -54,8 +54,8 @@ jobs:
 
       - name: Install package and docs dependencies
         run: |
-          pip install -e .[testing]
-          pip install sphinx sphinx-rtd-theme sphinx-autodoc-typehints
+          python3 -m pip install -e .[testing]
+          python3 -m pip install sphinx sphinx-rtd-theme sphinx-autodoc-typehints
 
       - name: Run doctests
         run: |
