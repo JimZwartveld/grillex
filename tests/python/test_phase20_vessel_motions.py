@@ -1213,3 +1213,158 @@ class TestVesselMotionLinkedLoadCases:
         # Second unlink should return False
         result = motion.unlink_load_case(lc)
         assert result is False
+
+
+class TestVesselMotionDeletion:
+    """Test deletion of vessel motions and cleanup of linked load cases."""
+
+    def test_delete_vessel_motion_removes_from_registry(self):
+        """delete_vessel_motion removes the vessel motion from the model."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        model.add_vessel_motion_load_case("Roll", roll=0.12)
+        assert model.get_vessel_motion("Roll") is not None
+
+        model.delete_vessel_motion("Roll")
+        assert model.get_vessel_motion("Roll") is None
+
+    def test_delete_vessel_motion_returns_affected_load_cases(self):
+        """delete_vessel_motion returns list of affected load case names."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        model.add_vessel_motion_load_case("Roll", roll=0.12, create_signed_pairs=True)
+        deleted = model.delete_vessel_motion("Roll")
+
+        assert "Roll +" in deleted
+        assert "Roll -" in deleted
+
+    def test_delete_vessel_motion_clears_acceleration(self):
+        """delete_vessel_motion clears acceleration field of linked load cases."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        model.add_vessel_motion_load_case("Roll", roll=0.12)
+
+        # Get load case before deletion
+        load_cases = model._cpp_model.get_load_cases()
+        roll_lc = next(lc for lc in load_cases if lc.name == 'Roll')
+        assert roll_lc.get_acceleration()[3] == pytest.approx(0.12)
+
+        model.delete_vessel_motion("Roll")
+
+        # Acceleration should be cleared
+        assert all(a == 0.0 for a in roll_lc.get_acceleration())
+
+    def test_delete_vessel_motion_removes_from_linked_tracking(self):
+        """delete_vessel_motion removes load case IDs from linked tracking."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        model.add_vessel_motion_load_case("Roll", roll=0.12)
+
+        # Get load case
+        load_cases = model._cpp_model.get_load_cases()
+        roll_lc = next(lc for lc in load_cases if lc.name == 'Roll')
+        assert model.is_load_case_linked_to_vessel_motion(roll_lc)
+
+        model.delete_vessel_motion("Roll")
+
+        # Should no longer be tracked as linked
+        assert not model.is_load_case_linked_to_vessel_motion(roll_lc)
+
+    def test_delete_vessel_motion_not_found_raises(self):
+        """delete_vessel_motion raises ValueError if motion not found."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        with pytest.raises(ValueError, match="not found"):
+            model.delete_vessel_motion("NonExistent")
+
+    def test_delete_vessel_motion_keep_load_cases(self):
+        """delete_linked_load_cases=False keeps load cases with acceleration."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        model.add_vessel_motion_load_case("Roll", roll=0.12)
+
+        # Get load case
+        load_cases = model._cpp_model.get_load_cases()
+        roll_lc = next(lc for lc in load_cases if lc.name == 'Roll')
+
+        model.delete_vessel_motion("Roll", delete_linked_load_cases=False)
+
+        # Acceleration should be preserved
+        assert roll_lc.get_acceleration()[3] == pytest.approx(0.12)
+        # But no longer tracked as linked
+        assert not model.is_load_case_linked_to_vessel_motion(roll_lc)
+
+    def test_delete_vessel_motion_with_combination_raises(self):
+        """delete_vessel_motion raises if load combinations reference load cases."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        motion = model.add_vessel_motion_load_case("Roll", roll=0.12)
+
+        # Get load case and create combination
+        load_cases = model._cpp_model.get_load_cases()
+        roll_lc = next(lc for lc in load_cases if lc.name == 'Roll')
+
+        # Create combination and add the load case to it
+        combo = model.create_load_combination("ULS")
+        model.add_load_case_to_combination(combo["id"], roll_lc.id)
+
+        # Should raise without force
+        with pytest.raises(ValueError, match="load combinations"):
+            model.delete_vessel_motion("Roll")
+
+    def test_delete_vessel_motion_with_combination_force(self):
+        """delete_vessel_motion with force=True removes from combinations."""
+        model = StructuralModel("Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
+        model.add_beam_by_coords([0, 0, 0], [10, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        motion = model.add_vessel_motion_load_case("Roll", roll=0.12)
+
+        # Get load case and create combination
+        load_cases = model._cpp_model.get_load_cases()
+        roll_lc = next(lc for lc in load_cases if lc.name == 'Roll')
+
+        # Create combination and add the load case to it
+        combo = model.create_load_combination("ULS")
+        model.add_load_case_to_combination(combo["id"], roll_lc.id)
+
+        # Should succeed with force
+        deleted = model.delete_vessel_motion("Roll", force=True)
+        assert "Roll" in deleted
+
+        # Vessel motion should be gone
+        assert model.get_vessel_motion("Roll") is None
+
+        # Load case should be removed from combination
+        updated_combo = next(c for c in model.get_load_combinations() if c["id"] == combo["id"])
+        assert len(updated_combo["load_cases"]) == 0

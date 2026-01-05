@@ -2559,6 +2559,91 @@ class StructuralModel:
 
         return None
 
+    def delete_vessel_motion(
+        self,
+        name: str,
+        delete_linked_load_cases: bool = True,
+        force: bool = False
+    ) -> List[str]:
+        """Delete a vessel motion and optionally its linked load cases.
+
+        When a vessel motion is deleted:
+        - The VesselMotion object is removed from the model
+        - Linked load cases can be deleted or unlinked (kept but no longer auto-updated)
+        - Load combinations referencing deleted load cases are updated
+
+        Args:
+            name: Name of the vessel motion to delete
+            delete_linked_load_cases: If True (default), also delete linked load cases.
+                If False, load cases are unlinked but kept (acceleration field preserved).
+            force: If True, delete even if load combinations reference the load cases.
+                If False (default), raises error if load combinations would be affected.
+
+        Returns:
+            List of deleted or affected load case names
+
+        Raises:
+            ValueError: If vessel motion not found
+            ValueError: If load combinations reference linked load cases and force=False
+
+        Example:
+            >>> model.add_vessel_motion_load_case("Roll", roll=0.12, create_signed_pairs=True)
+            >>> # Delete vessel motion and its load cases
+            >>> deleted = model.delete_vessel_motion("Roll")
+            >>> deleted
+            ['Roll +', 'Roll -']
+        """
+        if not hasattr(self, '_vessel_motions') or name not in self._vessel_motions:
+            raise ValueError(f"Vessel motion '{name}' not found")
+
+        motion = self._vessel_motions[name]
+        linked_load_cases = motion.get_linked_load_cases()
+        affected_names = [lc.name for lc in linked_load_cases]
+
+        if delete_linked_load_cases:
+            # Check if any load combinations reference these load cases
+            linked_ids = {lc.id for lc in linked_load_cases}
+            affected_combinations = []
+
+            for combo in self._load_combinations:
+                combo_lc_ids = {lc["load_case_id"] for lc in combo.get("load_cases", [])}
+                if linked_ids & combo_lc_ids:  # Intersection
+                    affected_combinations.append(combo["name"])
+
+            if affected_combinations and not force:
+                raise ValueError(
+                    f"Cannot delete vessel motion '{name}': load combinations "
+                    f"{affected_combinations} reference its load cases. "
+                    f"Use force=True to delete anyway, or update combinations first."
+                )
+
+            # Remove load cases from combinations if force=True
+            if affected_combinations and force:
+                for combo in self._load_combinations:
+                    combo["load_cases"] = [
+                        lc for lc in combo.get("load_cases", [])
+                        if lc["load_case_id"] not in linked_ids
+                    ]
+
+            # Clear acceleration fields and remove from tracking
+            for lc in linked_load_cases:
+                # Clear acceleration field (set to zero)
+                lc.set_acceleration_field([0, 0, 0, 0, 0, 0], [0, 0, 0])
+                # Remove from linked tracking
+                self._linked_load_case_ids.discard(lc.id)
+
+            # Note: We can't actually delete LoadCase objects from C++ Model,
+            # but they're now inactive (zero acceleration) and untracked
+        else:
+            # Just unlink - keep load cases with their current acceleration
+            for lc in linked_load_cases:
+                self._linked_load_case_ids.discard(lc.id)
+
+        # Remove vessel motion from registry
+        del self._vessel_motions[name]
+
+        return affected_names
+
     # ===== Analysis =====
 
     def analyze(self) -> bool:
