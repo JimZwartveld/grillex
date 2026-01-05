@@ -276,6 +276,63 @@ TOOLS: List[Dict[str, Any]] = [
             "required": ["position", "dof"]
         }
     },
+    {
+        "name": "get_boundary_conditions",
+        "description": "Get all boundary conditions (fixed DOFs) in the model.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "update_boundary_condition",
+        "description": "Update a boundary condition's prescribed value.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Node position [x, y, z] in meters"
+                },
+                "dof": {
+                    "type": "string",
+                    "enum": ["UX", "UY", "UZ", "RX", "RY", "RZ"],
+                    "description": "Degree of freedom to update"
+                },
+                "value": {
+                    "type": "number",
+                    "description": "New prescribed value"
+                }
+            },
+            "required": ["position", "dof", "value"]
+        }
+    },
+    {
+        "name": "remove_boundary_condition",
+        "description": "Remove boundary condition(s) at a position.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "Node position [x, y, z] in meters"
+                },
+                "dof": {
+                    "type": "string",
+                    "enum": ["UX", "UY", "UZ", "RX", "RY", "RZ"],
+                    "description": "Specific DOF to remove. If not specified, removes all BCs at the node."
+                }
+            },
+            "required": ["position"]
+        }
+    },
 
     # =========================================================================
     # Loads
@@ -309,6 +366,70 @@ TOOLS: List[Dict[str, Any]] = [
                 }
             },
             "required": ["position"]
+        }
+    },
+    {
+        "name": "get_point_loads",
+        "description": "Get all point loads for a load case.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "load_case_name": {
+                    "type": "string",
+                    "description": "Name of load case. If not specified, uses the default load case."
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "update_point_load",
+        "description": "Update a point load's force and/or moment.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "integer",
+                    "description": "Index of the point load (0-based)"
+                },
+                "force": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New force vector [Fx, Fy, Fz] in kN"
+                },
+                "moment": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New moment vector [Mx, My, Mz] in kNm"
+                },
+                "load_case_name": {
+                    "type": "string",
+                    "description": "Name of load case. If not specified, uses the default load case."
+                }
+            },
+            "required": ["index"]
+        }
+    },
+    {
+        "name": "delete_point_load",
+        "description": "Delete a point load by index.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "integer",
+                    "description": "Index of the point load (0-based)"
+                },
+                "load_case_name": {
+                    "type": "string",
+                    "description": "Name of load case. If not specified, uses the default load case."
+                }
+            },
+            "required": ["index"]
         }
     },
     {
@@ -354,6 +475,70 @@ TOOLS: List[Dict[str, Any]] = [
         }
     },
     {
+        "name": "get_line_loads",
+        "description": "Get all line loads for a load case.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "load_case_name": {
+                    "type": "string",
+                    "description": "Name of load case. If not specified, returns all line loads."
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "update_line_load",
+        "description": "Update a line load's intensity.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "integer",
+                    "description": "Index of the line load (0-based)"
+                },
+                "load_start": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New load intensity at start [wx, wy, wz] in kN/m"
+                },
+                "load_end": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "New load intensity at end [wx, wy, wz] in kN/m"
+                },
+                "load_case_name": {
+                    "type": "string",
+                    "description": "Name of load case to filter by. If not specified, uses all."
+                }
+            },
+            "required": ["index"]
+        }
+    },
+    {
+        "name": "delete_line_load",
+        "description": "Delete a line load by index.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "integer",
+                    "description": "Index of the line load (0-based)"
+                },
+                "load_case_name": {
+                    "type": "string",
+                    "description": "Name of load case to filter by. If not specified, uses all."
+                }
+            },
+            "required": ["index"]
+        }
+    },
+    {
         "name": "add_load_case",
         "description": "Create a new load case to organize loads. Load cases can be combined according to design codes for ultimate and serviceability limit states.",
         "input_schema": {
@@ -368,6 +553,20 @@ TOOLS: List[Dict[str, Any]] = [
                     "enum": ["permanent", "variable", "environmental", "accidental"],
                     "description": "Type of load case for combination factors: permanent (dead loads), variable (live loads), environmental (wind/wave), accidental. Default 'variable'.",
                     "default": "variable"
+                }
+            },
+            "required": ["name"]
+        }
+    },
+    {
+        "name": "delete_load_case",
+        "description": "Delete a load case from the model. Cannot delete load cases linked to vessel motions - use delete_vessel_motion for those.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the load case to delete"
                 }
             },
             "required": ["name"]
@@ -1358,6 +1557,20 @@ TOOLS: List[Dict[str, Any]] = [
         }
     },
     {
+        "name": "delete_plate",
+        "description": "Delete a plate from the model. Should be called before meshing. If meshing has already been done, the plate elements remain in the C++ model.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the plate to delete"
+                }
+            },
+            "required": ["name"]
+        }
+    },
+    {
         "name": "set_edge_divisions",
         "description": "Set number of elements along a plate edge for structured meshing. Takes precedence over mesh_size.",
         "input_schema": {
@@ -1871,6 +2084,73 @@ class ToolExecutor:
             }
         )
 
+    def _tool_get_boundary_conditions(self, params: Dict[str, Any]) -> ToolResult:
+        """Get all boundary conditions."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        bcs = self.model.get_boundary_conditions()
+        return ToolResult(
+            success=True,
+            result={
+                "boundary_conditions": bcs,
+                "count": len(bcs)
+            }
+        )
+
+    def _tool_update_boundary_condition(self, params: Dict[str, Any]) -> ToolResult:
+        """Update a boundary condition's prescribed value."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        dof = _parse_dof(params["dof"])
+        result = self.model.update_boundary_condition(params["position"], dof, params["value"])
+        if result:
+            return ToolResult(
+                success=True,
+                result={
+                    "position": params["position"],
+                    "dof": params["dof"],
+                    "value": params["value"],
+                    "message": f"Boundary condition updated: {params['dof']} = {params['value']}"
+                }
+            )
+        else:
+            return ToolResult(
+                success=False,
+                error=f"Boundary condition not found at position {params['position']} for DOF {params['dof']}"
+            )
+
+    def _tool_remove_boundary_condition(self, params: Dict[str, Any]) -> ToolResult:
+        """Remove boundary condition(s) at a position."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        dof = None
+        if "dof" in params and params["dof"]:
+            dof = _parse_dof(params["dof"])
+
+        count = self.model.remove_boundary_condition(params["position"], dof)
+        if count > 0:
+            if dof is not None:
+                message = f"Removed {params['dof']} constraint at position {params['position']}"
+            else:
+                message = f"Removed {count} boundary condition(s) at position {params['position']}"
+            return ToolResult(
+                success=True,
+                result={
+                    "position": params["position"],
+                    "dof": params.get("dof"),
+                    "count": count,
+                    "message": message
+                }
+            )
+        else:
+            return ToolResult(
+                success=False,
+                error=f"No boundary conditions found at position {params['position']}"
+            )
+
     def _tool_add_point_load(self, params: Dict[str, Any]) -> ToolResult:
         """Add a point load."""
         if self.model is None:
@@ -1903,6 +2183,114 @@ class ToolExecutor:
                 "message": f"Point load applied: {', '.join(parts)}"
             }
         )
+
+    def _tool_get_point_loads(self, params: Dict[str, Any]) -> ToolResult:
+        """Get all point loads for a load case."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        load_case_name = params.get("load_case_name")
+        load_case = None
+        if load_case_name:
+            load_case = self.model.get_load_case(load_case_name)
+            if load_case is None:
+                available = [lc.name for lc in self.model.get_load_cases()]
+                return ToolResult(
+                    success=False,
+                    error=f"Load case '{load_case_name}' not found",
+                    suggestion=f"Available load cases: {available}"
+                )
+
+        loads = self.model.get_point_loads(load_case)
+        return ToolResult(
+            success=True,
+            result={
+                "load_case": load_case_name or "Default",
+                "point_loads": loads,
+                "count": len(loads)
+            }
+        )
+
+    def _tool_update_point_load(self, params: Dict[str, Any]) -> ToolResult:
+        """Update a point load's force and/or moment."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        index = params["index"]
+        force = params.get("force")
+        moment = params.get("moment")
+
+        if force is None and moment is None:
+            return ToolResult(
+                success=False,
+                error="At least one of 'force' or 'moment' must be provided"
+            )
+
+        load_case_name = params.get("load_case_name")
+        load_case = None
+        if load_case_name:
+            load_case = self.model.get_load_case(load_case_name)
+            if load_case is None:
+                available = [lc.name for lc in self.model.get_load_cases()]
+                return ToolResult(
+                    success=False,
+                    error=f"Load case '{load_case_name}' not found",
+                    suggestion=f"Available load cases: {available}"
+                )
+
+        result = self.model.update_point_load(index, force=force, moment=moment, load_case=load_case)
+        if result:
+            changes = []
+            if force is not None:
+                changes.append(f"force -> {force}")
+            if moment is not None:
+                changes.append(f"moment -> {moment}")
+            return ToolResult(
+                success=True,
+                result={
+                    "index": index,
+                    "changes": changes,
+                    "message": f"Point load {index} updated: {', '.join(changes)}"
+                }
+            )
+        else:
+            return ToolResult(
+                success=False,
+                error=f"Point load at index {index} not found"
+            )
+
+    def _tool_delete_point_load(self, params: Dict[str, Any]) -> ToolResult:
+        """Delete a point load by index."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        index = params["index"]
+        load_case_name = params.get("load_case_name")
+        load_case = None
+        if load_case_name:
+            load_case = self.model.get_load_case(load_case_name)
+            if load_case is None:
+                available = [lc.name for lc in self.model.get_load_cases()]
+                return ToolResult(
+                    success=False,
+                    error=f"Load case '{load_case_name}' not found",
+                    suggestion=f"Available load cases: {available}"
+                )
+
+        result = self.model.delete_point_load(index, load_case)
+        if result:
+            return ToolResult(
+                success=True,
+                result={
+                    "index": index,
+                    "message": f"Point load at index {index} deleted"
+                }
+            )
+        else:
+            return ToolResult(
+                success=False,
+                error=f"Point load at index {index} not found"
+            )
 
     def _tool_add_line_load(self, params: Dict[str, Any]) -> ToolResult:
         """Add a line load."""
@@ -1949,6 +2337,124 @@ class ToolExecutor:
             }
         )
 
+    def _tool_get_line_loads(self, params: Dict[str, Any]) -> ToolResult:
+        """Get all line loads for a load case."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        load_case_name = params.get("load_case_name")
+        load_case = None
+        if load_case_name:
+            load_case = self.model.get_load_case(load_case_name)
+            if load_case is None:
+                available = [lc.name for lc in self.model.get_load_cases()]
+                return ToolResult(
+                    success=False,
+                    error=f"Load case '{load_case_name}' not found",
+                    suggestion=f"Available load cases: {available}"
+                )
+
+        loads = self.model.get_beam_line_loads(load_case)
+        load_dicts = []
+        for i, ll in enumerate(loads):
+            load_dicts.append({
+                "index": i,
+                "beam_id": ll.beam_id,
+                "w_start": ll.w_start,
+                "w_end": ll.w_end,
+                "load_case_id": ll.load_case_id
+            })
+
+        return ToolResult(
+            success=True,
+            result={
+                "load_case": load_case_name or "All",
+                "line_loads": load_dicts,
+                "count": len(load_dicts)
+            }
+        )
+
+    def _tool_update_line_load(self, params: Dict[str, Any]) -> ToolResult:
+        """Update a line load's intensity."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        index = params["index"]
+        w_start = params.get("load_start")
+        w_end = params.get("load_end")
+
+        if w_start is None and w_end is None:
+            return ToolResult(
+                success=False,
+                error="At least one of 'load_start' or 'load_end' must be provided"
+            )
+
+        load_case_name = params.get("load_case_name")
+        load_case = None
+        if load_case_name:
+            load_case = self.model.get_load_case(load_case_name)
+            if load_case is None:
+                available = [lc.name for lc in self.model.get_load_cases()]
+                return ToolResult(
+                    success=False,
+                    error=f"Load case '{load_case_name}' not found",
+                    suggestion=f"Available load cases: {available}"
+                )
+
+        result = self.model.update_line_load(index, w_start=w_start, w_end=w_end, load_case=load_case)
+        if result:
+            changes = []
+            if w_start is not None:
+                changes.append(f"w_start -> {w_start}")
+            if w_end is not None:
+                changes.append(f"w_end -> {w_end}")
+            return ToolResult(
+                success=True,
+                result={
+                    "index": index,
+                    "changes": changes,
+                    "message": f"Line load {index} updated: {', '.join(changes)}"
+                }
+            )
+        else:
+            return ToolResult(
+                success=False,
+                error=f"Line load at index {index} not found"
+            )
+
+    def _tool_delete_line_load(self, params: Dict[str, Any]) -> ToolResult:
+        """Delete a line load by index."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        index = params["index"]
+        load_case_name = params.get("load_case_name")
+        load_case = None
+        if load_case_name:
+            load_case = self.model.get_load_case(load_case_name)
+            if load_case is None:
+                available = [lc.name for lc in self.model.get_load_cases()]
+                return ToolResult(
+                    success=False,
+                    error=f"Load case '{load_case_name}' not found",
+                    suggestion=f"Available load cases: {available}"
+                )
+
+        result = self.model.delete_line_load(index, load_case)
+        if result:
+            return ToolResult(
+                success=True,
+                result={
+                    "index": index,
+                    "message": f"Line load at index {index} deleted"
+                }
+            )
+        else:
+            return ToolResult(
+                success=False,
+                error=f"Line load at index {index} not found"
+            )
+
     def _tool_add_load_case(self, params: Dict[str, Any]) -> ToolResult:
         """Create a new load case."""
         if self.model is None:
@@ -1976,6 +2482,39 @@ class ToolExecutor:
                 "message": f"Load case '{name}' created with type '{load_type_str}'"
             }
         )
+
+    def _tool_delete_load_case(self, params: Dict[str, Any]) -> ToolResult:
+        """Delete a load case from the model."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        name = params["name"]
+        load_case = self.model.get_load_case(name)
+        if load_case is None:
+            available = [lc.name for lc in self.model.get_load_cases()]
+            return ToolResult(
+                success=False,
+                error=f"Load case '{name}' not found",
+                suggestion=f"Available load cases: {available}"
+            )
+
+        try:
+            result = self.model.delete_load_case(load_case)
+            if result:
+                return ToolResult(
+                    success=True,
+                    result={
+                        "name": name,
+                        "message": f"Load case '{name}' deleted"
+                    }
+                )
+            else:
+                return ToolResult(
+                    success=False,
+                    error=f"Failed to delete load case '{name}'"
+                )
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e))
 
     def _tool_add_load_combination(self, params: Dict[str, Any]) -> ToolResult:
         """Create a load combination with type-based factors."""
@@ -3897,6 +4436,36 @@ class ToolExecutor:
                 "message": f"Plate '{plate.name}' created with {len(plate.corners)} corners"
             }
         )
+
+    def _tool_delete_plate(self, params: Dict[str, Any]) -> ToolResult:
+        """Delete a plate from the model."""
+        if self.model is None:
+            return ToolResult(success=False, error="No model created. Call create_model first.")
+
+        name = params["name"]
+        plate = self.model.get_plate(name)
+        if plate is None:
+            available = [p.name for p in self.model.get_plates()]
+            return ToolResult(
+                success=False,
+                error=f"Plate '{name}' not found",
+                suggestion=f"Available plates: {available}"
+            )
+
+        result = self.model.delete_plate(plate)
+        if result:
+            return ToolResult(
+                success=True,
+                result={
+                    "name": name,
+                    "message": f"Plate '{name}' deleted"
+                }
+            )
+        else:
+            return ToolResult(
+                success=False,
+                error=f"Failed to delete plate '{name}'"
+            )
 
     def _tool_set_edge_divisions(self, params: Dict[str, Any]) -> ToolResult:
         """Set edge divisions for structured meshing."""

@@ -461,6 +461,131 @@ Simply Supported with UDL
     >>> mid_disp < 0
     True
 
+Managing Loads and Boundary Conditions
+======================================
+
+Grillex provides full CRUD (Create, Read, Update, Delete) operations for loads
+and boundary conditions.
+
+Querying Boundary Conditions
+----------------------------
+
+Get all boundary conditions in the model:
+
+.. doctest::
+
+    >>> model = StructuralModel(name="Query Example")
+    >>> _ = model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model.add_section("IPE200", A=0.00285, Iy=1.94e-5, Iz=1.42e-6, J=6.9e-8)
+    >>> _ = model.add_beam_by_coords([0, 0, 0], [5, 0, 0], "IPE200", "Steel")
+    >>> model.fix_node_at([0, 0, 0])
+    >>>
+    >>> bcs = model.get_boundary_conditions()
+    >>> len(bcs)  # 6 DOFs fixed
+    6
+
+Updating Boundary Conditions
+----------------------------
+
+Update the prescribed value of an existing boundary condition:
+
+.. doctest::
+
+    >>> model.fix_dof_at([5, 0, 0], DOFIndex.UZ, 0.0)
+    >>> # Later, apply a settlement
+    >>> _ = model.update_boundary_condition([5, 0, 0], DOFIndex.UZ, -0.005)
+
+Removing Boundary Conditions
+----------------------------
+
+Remove specific or all boundary conditions at a node:
+
+.. doctest::
+
+    >>> # Remove a specific DOF constraint
+    >>> _ = model.remove_boundary_condition([0, 0, 0], DOFIndex.RZ)
+    >>>
+    >>> # Remove all constraints at a node
+    >>> _ = model.remove_boundary_condition([0, 0, 0])
+
+Managing Point Loads
+--------------------
+
+Query, update, and delete point loads:
+
+.. doctest::
+
+    >>> model2 = StructuralModel(name="Point Load Mgmt")
+    >>> _ = model2.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model2.add_section("IPE200", A=0.00285, Iy=1.94e-5, Iz=1.42e-6, J=6.9e-8)
+    >>> _ = model2.add_beam_by_coords([0, 0, 0], [5, 0, 0], "IPE200", "Steel")
+    >>> model2.fix_node_at([0, 0, 0])
+    >>>
+    >>> # Add point loads
+    >>> model2.add_point_load([5, 0, 0], force=[0, 0, -10])
+    >>> model2.add_point_load([2.5, 0, 0], force=[0, 0, -5])
+    >>>
+    >>> # Query point loads
+    >>> loads = model2.get_point_loads()
+    >>> len(loads)
+    2
+    >>>
+    >>> # Update a point load
+    >>> _ = model2.update_point_load(0, force=[0, 0, -15])
+    >>>
+    >>> # Delete a point load
+    >>> _ = model2.delete_point_load(1)
+
+Managing Line Loads
+-------------------
+
+Query, update, and delete line loads:
+
+.. doctest::
+
+    >>> model3 = StructuralModel(name="Line Load Mgmt")
+    >>> _ = model3.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model3.add_section("IPE200", A=0.00285, Iy=1.94e-5, Iz=1.42e-6, J=6.9e-8)
+    >>> beam = model3.add_beam_by_coords([0, 0, 0], [5, 0, 0], "IPE200", "Steel")
+    >>> model3.fix_node_at([0, 0, 0])
+    >>>
+    >>> # Add line load
+    >>> model3.add_line_load(beam, [0, 0, -5])
+    >>>
+    >>> # Query line loads
+    >>> loads = model3.get_beam_line_loads()
+    >>> len(loads)
+    1
+    >>>
+    >>> # Update line load intensity
+    >>> _ = model3.update_line_load(0, w_start=[0, 0, -10])
+    >>>
+    >>> # Delete line load
+    >>> _ = model3.delete_line_load(0)
+
+Managing Load Cases
+-------------------
+
+Create, query, and delete load cases:
+
+.. doctest::
+
+    >>> model4 = StructuralModel(name="Load Case Mgmt")
+    >>> _ = model4.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model4.add_section("IPE200", A=0.00285, Iy=1.94e-5, Iz=1.42e-6, J=6.9e-8)
+    >>> _ = model4.add_beam_by_coords([0, 0, 0], [5, 0, 0], "IPE200", "Steel")
+    >>>
+    >>> # Create load cases
+    >>> lc1 = model4.create_load_case("Dead Load", LoadCaseType.Permanent)
+    >>> lc2 = model4.create_load_case("Live Load", LoadCaseType.Variable)
+    >>>
+    >>> # Query load cases
+    >>> all_lcs = model4.get_load_cases()
+    >>> lc = model4.get_load_case("Dead Load")
+    >>>
+    >>> # Delete a load case
+    >>> _ = model4.delete_load_case(lc2)
+
 See Also
 ========
 

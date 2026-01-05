@@ -1433,6 +1433,43 @@ class StructuralModel:
         """
         return list(self._plates)
 
+    def get_plate(self, name: str) -> Optional[Plate]:
+        """Get a plate by name.
+
+        Args:
+            name: Plate name to find
+
+        Returns:
+            Plate object if found, None otherwise
+        """
+        for plate in self._plates:
+            if plate.name == name:
+                return plate
+        return None
+
+    def delete_plate(self, plate: Plate) -> bool:
+        """Delete a plate from the model.
+
+        Removes the plate definition from the model. Should be called before meshing.
+        If meshing has already been done, the plate elements remain in the C++ model.
+
+        Args:
+            plate: Plate object to delete
+
+        Returns:
+            True if plate was found and deleted, False otherwise
+
+        Note:
+            This removes the plate from the Python-level tracking. If mesh() has
+            already been called, the generated plate elements remain in the C++ model.
+            To fully remove plate elements after meshing, you would need to rebuild
+            the model.
+        """
+        if plate in self._plates:
+            self._plates.remove(plate)
+            return True
+        return False
+
     def couple_plate_to_beam(
         self,
         plate: Plate,
@@ -1956,6 +1993,62 @@ class StructuralModel:
         """Get or create the default load case (for simple models)."""
         return self._cpp_model.get_default_load_case()
 
+    def get_load_cases(self) -> List[_CppLoadCase]:
+        """Get all load cases in the model.
+
+        Returns:
+            List of LoadCase objects
+        """
+        return self._cpp_model.get_load_cases()
+
+    def get_load_case(self, name: str) -> Optional[_CppLoadCase]:
+        """Get a load case by name.
+
+        Args:
+            name: Load case name to find
+
+        Returns:
+            LoadCase object if found, None otherwise
+        """
+        for lc in self._cpp_model.get_load_cases():
+            if lc.name == name:
+                return lc
+        return None
+
+    def delete_load_case(self, load_case: _CppLoadCase) -> bool:
+        """Delete a load case from the model.
+
+        Args:
+            load_case: LoadCase object to delete
+
+        Returns:
+            True if load case was found and deleted, False otherwise
+
+        Raises:
+            ValueError: If load case is linked to a vessel motion (use delete_vessel_motion instead)
+
+        Note:
+            - Also removes the load case from any load combinations it's part of
+            - Invalidates any existing references to the deleted load case
+            - Results for this load case are also removed
+        """
+        # Check if load case is linked to a vessel motion
+        if load_case.id in self._linked_load_case_ids:
+            raise ValueError(
+                f"Cannot delete load case '{load_case.name}': it is linked to a vessel motion. "
+                "Use delete_vessel_motion() to remove vessel motions and their linked load cases."
+            )
+
+        # Remove from any load combinations
+        for combo in self._load_combinations:
+            combo["load_cases"] = [
+                lc for lc in combo["load_cases"]
+                if lc["load_case_id"] != load_case.id
+            ]
+
+        # Delete from C++ model
+        return self._cpp_model.delete_load_case(load_case)
+
     def create_load_combination(
         self,
         name: str,
@@ -2175,6 +2268,82 @@ class StructuralModel:
 
         load_case.add_nodal_load(position_vec, force_vec, moment_vec)
 
+    def get_point_loads(
+        self,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> List[dict]:
+        """Get all point loads for a load case.
+
+        Args:
+            load_case: LoadCase to get loads from (uses default if None)
+
+        Returns:
+            List of dictionaries with position, force, moment, and index
+        """
+        if load_case is None:
+            load_case = self.get_default_load_case()
+
+        loads = []
+        for i, nl in enumerate(load_case.get_nodal_loads()):
+            loads.append({
+                "index": i,
+                "position": [nl.position[0], nl.position[1], nl.position[2]],
+                "force": [nl.force[0], nl.force[1], nl.force[2]],
+                "moment": [nl.moment[0], nl.moment[1], nl.moment[2]],
+            })
+        return loads
+
+    def update_point_load(
+        self,
+        index: int,
+        force: Optional[List[float]] = None,
+        moment: Optional[List[float]] = None,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> bool:
+        """Update a point load's force and/or moment.
+
+        Args:
+            index: Index of the point load (0-based)
+            force: New [Fx, Fy, Fz] force vector in kN (unchanged if None)
+            moment: New [Mx, My, Mz] moment vector in kNm (unchanged if None)
+            load_case: LoadCase containing the load (uses default if None)
+
+        Returns:
+            True if load was found and updated, False otherwise
+        """
+        if load_case is None:
+            load_case = self.get_default_load_case()
+
+        nodal_loads = load_case.get_nodal_loads()
+        if index < 0 or index >= len(nodal_loads):
+            return False
+
+        nl = nodal_loads[index]
+        if force is not None:
+            nl.force = np.array(force, dtype=float)
+        if moment is not None:
+            nl.moment = np.array(moment, dtype=float)
+        return True
+
+    def delete_point_load(
+        self,
+        index: int,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> bool:
+        """Delete a point load by index.
+
+        Args:
+            index: Index of the point load (0-based)
+            load_case: LoadCase containing the load (uses default if None)
+
+        Returns:
+            True if load was found and deleted, False otherwise
+        """
+        if load_case is None:
+            load_case = self.get_default_load_case()
+
+        return load_case.remove_nodal_load(index)
+
     def add_line_load(
         self,
         beam: "Beam",
@@ -2336,6 +2505,167 @@ class StructuralModel:
                 ll for ll in self._beam_line_loads
                 if ll.load_case_id == load_case.id
             ]
+
+    def update_line_load(
+        self,
+        index: int,
+        w_start: Optional[List[float]] = None,
+        w_end: Optional[List[float]] = None,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> bool:
+        """Update a line load's intensity.
+
+        Updates both the beam-level tracking and the underlying element-level loads.
+
+        Args:
+            index: Index of the line load in the filtered list (0-based)
+            w_start: New load intensity at start [kN/m] as [wx, wy, wz] (unchanged if None)
+            w_end: New load intensity at end [kN/m] as [wx, wy, wz] (unchanged if None)
+            load_case: LoadCase to filter by (uses all if None)
+
+        Returns:
+            True if load was found and updated, False otherwise
+        """
+        if w_start is None and w_end is None:
+            return False
+
+        # Get the relevant line loads
+        if load_case is None:
+            relevant_loads = list(self._beam_line_loads)
+        else:
+            relevant_loads = [
+                ll for ll in self._beam_line_loads
+                if ll.load_case_id == load_case.id
+            ]
+
+        if index < 0 or index >= len(relevant_loads):
+            return False
+
+        beam_line_load = relevant_loads[index]
+
+        # Find the actual load case
+        actual_lc = None
+        for lc in self._cpp_model.get_load_cases():
+            if lc.id == beam_line_load.load_case_id:
+                actual_lc = lc
+                break
+        if actual_lc is None:
+            return False
+
+        # Update the beam-level tracking
+        if w_start is not None:
+            beam_line_load.w_start = list(w_start)
+        if w_end is not None:
+            beam_line_load.w_end = list(w_end)
+
+        # Find the beam
+        beam = None
+        for b in self.beams:
+            if b.beam_id == beam_line_load.beam_id:
+                beam = b
+                break
+        if beam is None:
+            return False
+
+        # Update element-level loads: first remove old ones, then add new ones
+        # We need to find and remove line loads for this beam's elements
+        element_ids = {elem.id for elem in beam.elements}
+        cpp_line_loads = actual_lc.get_line_loads()
+
+        # Find indices of line loads belonging to this beam (in reverse order for safe removal)
+        indices_to_remove = []
+        for i, ll in enumerate(cpp_line_loads):
+            if ll.element_id in element_ids:
+                indices_to_remove.append(i)
+
+        # Remove in reverse order
+        for i in reversed(indices_to_remove):
+            actual_lc.remove_line_load(i)
+
+        # Re-add with new values
+        w_start_vec = np.array(beam_line_load.w_start, dtype=float)
+        w_end_vec = np.array(beam_line_load.w_end, dtype=float)
+
+        if len(beam.elements) == 1:
+            actual_lc.add_line_load(beam.elements[0].id, w_start_vec, w_end_vec)
+        else:
+            # Multi-element beam: interpolate loads
+            total_length = beam.length
+            cumulative_length = 0.0
+            for elem in beam.elements:
+                t_start = cumulative_length / total_length
+                t_end = (cumulative_length + elem.length) / total_length
+                w_elem_start = w_start_vec + t_start * (w_end_vec - w_start_vec)
+                w_elem_end = w_start_vec + t_end * (w_end_vec - w_start_vec)
+                actual_lc.add_line_load(elem.id, w_elem_start, w_elem_end)
+                cumulative_length += elem.length
+
+        return True
+
+    def delete_line_load(
+        self,
+        index: int,
+        load_case: Optional[_CppLoadCase] = None
+    ) -> bool:
+        """Delete a line load by index.
+
+        Removes both the beam-level tracking and the underlying element-level loads.
+
+        Args:
+            index: Index of the line load in the filtered list (0-based)
+            load_case: LoadCase to filter by (uses all if None)
+
+        Returns:
+            True if load was found and deleted, False otherwise
+        """
+        # Get the relevant line loads
+        if load_case is None:
+            relevant_loads = list(self._beam_line_loads)
+        else:
+            relevant_loads = [
+                ll for ll in self._beam_line_loads
+                if ll.load_case_id == load_case.id
+            ]
+
+        if index < 0 or index >= len(relevant_loads):
+            return False
+
+        beam_line_load = relevant_loads[index]
+
+        # Find the actual load case
+        actual_lc = None
+        for lc in self._cpp_model.get_load_cases():
+            if lc.id == beam_line_load.load_case_id:
+                actual_lc = lc
+                break
+        if actual_lc is None:
+            return False
+
+        # Find the beam to get its element IDs
+        beam = None
+        for b in self.beams:
+            if b.beam_id == beam_line_load.beam_id:
+                beam = b
+                break
+
+        if beam is not None:
+            # Remove element-level loads
+            element_ids = {elem.id for elem in beam.elements}
+            cpp_line_loads = actual_lc.get_line_loads()
+
+            # Find indices to remove (in reverse order)
+            indices_to_remove = []
+            for i, ll in enumerate(cpp_line_loads):
+                if ll.element_id in element_ids:
+                    indices_to_remove.append(i)
+
+            for i in reversed(indices_to_remove):
+                actual_lc.remove_line_load(i)
+
+        # Remove from beam-level tracking
+        self._beam_line_loads.remove(beam_line_load)
+
+        return True
 
     # ===== Vessel Motions =====
 
@@ -3541,6 +3871,82 @@ class StructuralModel:
     def boundary_conditions(self):
         """Direct access to boundary conditions handler."""
         return self._cpp_model.boundary_conditions
+
+    def get_boundary_conditions(self) -> List[dict]:
+        """Get all boundary conditions in the model.
+
+        Returns:
+            List of dictionaries with node_id, local_dof, value, and position
+        """
+        bc_list = []
+        fixed_dofs = self._cpp_model.boundary_conditions.get_fixed_dofs()
+
+        # Build node ID to position map
+        all_nodes = self._cpp_model.get_all_nodes()
+        node_positions = {node.id: [node.x, node.y, node.z] for node in all_nodes}
+
+        for fd in fixed_dofs:
+            node_pos = node_positions.get(fd.node_id)
+
+            dof_names = ["UX", "UY", "UZ", "RX", "RY", "RZ", "WARP"]
+            dof_name = dof_names[fd.local_dof] if fd.local_dof < len(dof_names) else f"DOF{fd.local_dof}"
+
+            bc_list.append({
+                "node_id": fd.node_id,
+                "local_dof": fd.local_dof,
+                "dof_name": dof_name,
+                "value": fd.value,
+                "position": node_pos
+            })
+        return bc_list
+
+    def update_boundary_condition(
+        self,
+        position: List[float],
+        dof: DOFIndex,
+        value: float
+    ) -> bool:
+        """Update a boundary condition's prescribed value.
+
+        Args:
+            position: [x, y, z] coordinates of the node
+            dof: DOF index to update
+            value: New prescribed value
+
+        Returns:
+            True if BC was found and updated, False otherwise
+        """
+        # Find node at position using wrapper's method
+        node = self.find_node_at(position)
+        if node is None:
+            return False
+
+        # Remove old BC and add new one with updated value
+        removed = self._cpp_model.boundary_conditions.remove_fixed_dof(node.id, int(dof))
+        if removed:
+            self._cpp_model.boundary_conditions.add_fixed_dof(node.id, dof, value)
+            return True
+        return False
+
+    def remove_boundary_condition(
+        self,
+        position: List[float],
+        dof: Optional[DOFIndex] = None
+    ) -> int:
+        """Remove boundary condition(s) at a position.
+
+        Args:
+            position: [x, y, z] coordinates of the node
+            dof: Specific DOF to remove. If None, removes all BCs at the node.
+
+        Returns:
+            Number of boundary conditions removed
+        """
+        if dof is not None:
+            result = self._cpp_model.remove_bc_at(position, int(dof))
+            return 1 if result else 0
+        else:
+            return self._cpp_model.remove_all_bcs_at(position)
 
     # ===== Beam Subdivision (Task 4.4) =====
 
