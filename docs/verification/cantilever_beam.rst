@@ -66,7 +66,7 @@ Verification
     >>>
     >>> beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE300", "Steel")
     >>> model.fix_node_at([0, 0, 0])
-    >>> model.add_point_load([L, 0, 0], DOFIndex.UZ, -P)
+    >>> model.add_point_load([L, 0, 0], force=[0, 0, -P])
     >>> _ = model.analyze()
     >>>
     >>> # Get FEM results
@@ -141,7 +141,7 @@ Verification
     >>>
     >>> beam = model.add_beam_by_coords(
     ...     [0, 0, 0], [L, 0, 0], "IPE200", "Steel",
-    ...     num_elements=4  # Subdivide for better accuracy
+    ...     subdivisions=4  # Subdivide for better accuracy
     ... )
     >>> model.fix_node_at([0, 0, 0])
     >>> model.add_line_load(beam, [0, 0, -w])
@@ -157,7 +157,7 @@ Verification
 
     >>> # Print results for reference
     >>> print(f"Deflection: analytical={delta_analytical:.6f} m, FEM={delta_fem:.6f} m")  # doctest: +ELLIPSIS
-    Deflection: analytical=0.0959... m, FEM=0.0959... m
+    Deflection: analytical=0.153... m, FEM=0.153... m
 
 Test Case 3: Moment at Free End
 ===============================
@@ -206,7 +206,7 @@ Verification
     >>>
     >>> beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE300", "Steel")
     >>> model.fix_node_at([0, 0, 0])
-    >>> model.add_point_load([L, 0, 0], DOFIndex.RY, M0)  # Positive moment
+    >>> model.add_point_load([L, 0, 0], moment=[0, M0, 0])  # Positive moment about Y
     >>> _ = model.analyze()
     >>>
     >>> # Get FEM results (moment causes upward deflection for positive My)

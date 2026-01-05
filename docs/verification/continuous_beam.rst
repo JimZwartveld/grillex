@@ -67,8 +67,8 @@ Verification
     >>> _ = model.add_section("IPE300", A=0.00538, Iy=I, Iz=6.04e-6, J=2.01e-7)
     >>>
     >>> # Create two spans with sufficient elements
-    >>> beam1 = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE300", "Steel", num_elements=4)
-    >>> beam2 = model.add_beam_by_coords([L, 0, 0], [2*L, 0, 0], "IPE300", "Steel", num_elements=4)
+    >>> beam1 = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE300", "Steel", subdivisions=4)
+    >>> beam2 = model.add_beam_by_coords([L, 0, 0], [2*L, 0, 0], "IPE300", "Steel", subdivisions=4)
     >>>
     >>> # Apply supports
     >>> model.fix_node_at([0, 0, 0])        # Left support
@@ -151,7 +151,7 @@ Verification
     >>> _ = model.add_material("Steel", E=E, nu=0.3, rho=7.85e-3)
     >>> _ = model.add_section("IPE200", A=0.00285, Iy=I, Iz=1.42e-6, J=6.9e-8)
     >>>
-    >>> beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE200", "Steel", num_elements=4)
+    >>> beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE200", "Steel", subdivisions=4)
     >>>
     >>> # Fixed at left, pinned at right
     >>> model.fix_node_at([0, 0, 0])
@@ -228,7 +228,7 @@ Verification
     >>> _ = model.add_material("Steel", E=E, nu=0.3, rho=7.85e-3)
     >>> _ = model.add_section("IPE300", A=0.00538, Iy=I, Iz=6.04e-6, J=2.01e-7)
     >>>
-    >>> beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE300", "Steel", num_elements=10)
+    >>> beam = model.add_beam_by_coords([0, 0, 0], [L, 0, 0], "IPE300", "Steel", subdivisions=10)
     >>>
     >>> # Fixed at both ends
     >>> model.fix_node_at([0, 0, 0])

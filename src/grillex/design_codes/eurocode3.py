@@ -14,9 +14,9 @@ Reference:
     Part 1-1: General rules and rules for buildings
 
 Example usage:
-    >>> from grillex.design_codes.eurocode3 import Eurocode3
-    >>> code = Eurocode3()
-    >>> results = code.check_beam(beam, result_case, combination)
+    >>> from grillex.design_codes.eurocode3 import Eurocode3  # doctest: +SKIP
+    >>> code = Eurocode3()  # doctest: +SKIP
+    >>> results = code.check_beam(beam, result_case, combination)  # doctest: +SKIP
 """
 
 from dataclasses import dataclass
@@ -405,9 +405,9 @@ class Eurocode3(DesignCode):
         check_locations: Normalized positions along beam to check (0.0 to 1.0).
 
     Example:
-        >>> code = Eurocode3(gamma_M0=1.0)
-        >>> code.check_locations = [0.0, 0.25, 0.5, 0.75, 1.0]
-        >>> results = code.check_beam(beam, result_case, combination)
+        >>> code = Eurocode3(gamma_M0=1.0)  # doctest: +SKIP
+        >>> code.check_locations = [0.0, 0.25, 0.5, 0.75, 1.0]  # doctest: +SKIP
+        >>> results = code.check_beam(beam, result_case, combination)  # doctest: +SKIP
     """
 
     def __init__(

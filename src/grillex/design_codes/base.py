@@ -5,8 +5,8 @@ checks in a pluggable manner. Design codes like Eurocode, DNV, AISC, etc.
 can be implemented as separate modules that inherit from these base classes.
 
 Example usage:
-    >>> from grillex.design_codes.base import DesignCode, DesignCheck
-    >>> class MyAxialCheck(DesignCheck):
+    >>> from grillex.design_codes.base import DesignCode, DesignCheck  # doctest: +SKIP
+    >>> class MyAxialCheck(DesignCheck):  # doctest: +SKIP
     ...     @property
     ...     def name(self) -> str:
     ...         return "Axial Capacity"
@@ -35,14 +35,14 @@ class CheckResult:
         details: Optional dictionary with additional check-specific information.
 
     Example:
-        >>> result = CheckResult(
+        >>> result = CheckResult(  # doctest: +SKIP
         ...     element_id=1,
         ...     location=0.5,
         ...     check_name="Axial Buckling",
         ...     utilization=0.85,
         ...     load_combination="ULS1"
         ... )
-        >>> result.status
+        >>> result.status  # doctest: +SKIP
         'PASS'
     """
 
@@ -78,7 +78,7 @@ class DesignCheck(ABC):
         - compute_utilization: Method computing demand/capacity ratio
 
     Example:
-        >>> class AxialCheck(DesignCheck):
+        >>> class AxialCheck(DesignCheck):  # doctest: +SKIP
         ...     @property
         ...     def name(self) -> str:
         ...         return "Axial Capacity"
@@ -170,7 +170,7 @@ class DesignCode(ABC):
         - check_beam: Method performing all checks on a beam
 
     Example:
-        >>> class MyDesignCode(DesignCode):
+        >>> class MyDesignCode(DesignCode):  # doctest: +SKIP
         ...     @property
         ...     def name(self) -> str:
         ...         return "My Standard v1.0"

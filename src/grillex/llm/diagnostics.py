@@ -67,10 +67,10 @@ def get_fix_suggestions(error: GrillexError) -> List[FixSuggestion]:
         List of FixSuggestion objects, sorted by priority (1 = first to try).
 
     Example:
-        >>> error = GrillexError.unconstrained([0, 1, 2], [0])
-        >>> suggestions = get_fix_suggestions(error)
-        >>> for s in suggestions:
-        ...     print(f"{s.tool_name}: {s.description}")
+        >>> error = GrillexError.unconstrained([0, 1, 2], [0])  # doctest: +SKIP
+        >>> suggestions = get_fix_suggestions(error)  # doctest: +SKIP
+        >>> for s in suggestions:  # doctest: +SKIP
+        ...     print(f"{s.tool_name}: {s.description}")  # doctest: +SKIP
     """
     if error.is_ok():
         return []

@@ -182,9 +182,9 @@ the finite element mesh:
     >>> _ = model.add_support_curve(plate, edge_index=0, uz=True)
     >>> _ = model.add_support_curve(plate, edge_index=3, uz=True)
 
-    # Generate mesh
-    >>> stats = model.mesh()
-    >>> stats.n_plate_elements >= 4
+    # Generate mesh (requires gmsh to be installed)
+    >>> stats = model.mesh()  # doctest: +SKIP
+    >>> stats.n_plate_elements >= 4  # doctest: +SKIP
     True
 
 The returned ``MeshStatistics`` object contains:

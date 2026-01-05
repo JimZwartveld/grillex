@@ -46,7 +46,7 @@ Here's a simple example of analyzing a cantilever beam:
     >>> model.fix_node_at([0, 0, 0])
     >>>
     >>> # Apply a 10 kN downward point load at the free end
-    >>> model.add_point_load([6, 0, 0], DOFIndex.UZ, -10.0)
+    >>> model.add_point_load([6, 0, 0], force=[0, 0, -10.0])
     >>>
     >>> # Run the analysis
     >>> _ = model.analyze()

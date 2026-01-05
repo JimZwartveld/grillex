@@ -142,7 +142,7 @@ Example 1: Horizontal Beam
     >>>
     >>> # For vertical loading (gravity), use UZ (local z = global Z for this beam)
     >>> model.fix_node_at([0, 0, 0])
-    >>> model.add_point_load([10, 0, 0], 2, -10.0)  # DOFIndex.UZ = 2
+    >>> model.add_point_load([10, 0, 0], force=[0, 0, -10.0])  # Force in -Z direction
     >>> _ = model.analyze()
     >>>
     >>> # Vertical displacement is negative (downward)
