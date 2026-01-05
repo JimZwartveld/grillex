@@ -1787,7 +1787,8 @@ TOOLS: List[Dict[str, Any]] = [
                     "type": "number",
                     "description": "Gravitational acceleration in m/s² (default: 9.81 for standard gravity)"
                 }
-            }
+            },
+            "required": []
         }
     },
     {
@@ -1845,7 +1846,8 @@ TOOLS: List[Dict[str, Any]] = [
         "description": "List all vessel motion definitions in the model. Returns the name, motion center, and acceleration components for each motion condition.",
         "input_schema": {
             "type": "object",
-            "properties": {}
+            "properties": {},
+            "required": []
         }
     },
 ]
