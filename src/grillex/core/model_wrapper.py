@@ -2625,15 +2625,12 @@ class StructuralModel:
                         if lc["load_case_id"] not in linked_ids
                     ]
 
-            # Clear acceleration fields and remove from tracking
+            # Delete load cases from C++ Model and remove from tracking
             for lc in linked_load_cases:
-                # Clear acceleration field (set to zero)
-                lc.set_acceleration_field([0, 0, 0, 0, 0, 0], [0, 0, 0])
-                # Remove from linked tracking
+                # Remove from linked tracking first (before deletion invalidates ID)
                 self._linked_load_case_ids.discard(lc.id)
-
-            # Note: We can't actually delete LoadCase objects from C++ Model,
-            # but they're now inactive (zero acceleration) and untracked
+                # Actually delete the load case from the C++ Model
+                self._cpp_model.delete_load_case(lc)
         else:
             # Just unlink - keep load cases with their current acceleration
             for lc in linked_load_cases:

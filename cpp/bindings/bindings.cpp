@@ -1505,6 +1505,12 @@ PYBIND11_MODULE(_grillex_cpp, m) {
         .def("get_load_cases", &grillex::Model::get_load_cases,
              "Get all load cases in the model",
              py::return_value_policy::reference_internal)
+        .def("delete_load_case", &grillex::Model::delete_load_case,
+             py::arg("load_case"),
+             "Delete a load case from the model.\n\n"
+             "Removes the load case and destroys it. Returns True if found and deleted.\n"
+             "If the deleted load case was the active load case, it is cleared.\n"
+             "Note: Any existing Python references to the deleted load case become invalid.")
         .def("get_result", &grillex::Model::get_result,
              py::arg("load_case"),
              "Get result for a specific load case",

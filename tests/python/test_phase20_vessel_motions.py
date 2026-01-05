@@ -1246,8 +1246,8 @@ class TestVesselMotionDeletion:
         assert "Roll +" in deleted
         assert "Roll -" in deleted
 
-    def test_delete_vessel_motion_clears_acceleration(self):
-        """delete_vessel_motion clears acceleration field of linked load cases."""
+    def test_delete_vessel_motion_deletes_load_cases(self):
+        """delete_vessel_motion actually removes load cases from the model."""
         model = StructuralModel("Test")
         model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
         model.add_section("IPE300", A=0.01, Iy=1e-4, Iz=1e-5, J=1e-6)
@@ -1256,15 +1256,15 @@ class TestVesselMotionDeletion:
 
         model.add_vessel_motion_load_case("Roll", roll=0.12)
 
-        # Get load case before deletion
-        load_cases = model._cpp_model.get_load_cases()
-        roll_lc = next(lc for lc in load_cases if lc.name == 'Roll')
-        assert roll_lc.get_acceleration()[3] == pytest.approx(0.12)
+        # Verify load case exists before deletion
+        load_cases_before = model._cpp_model.get_load_cases()
+        assert any(lc.name == 'Roll' for lc in load_cases_before)
 
         model.delete_vessel_motion("Roll")
 
-        # Acceleration should be cleared
-        assert all(a == 0.0 for a in roll_lc.get_acceleration())
+        # Load case should be completely removed from the model
+        load_cases_after = model._cpp_model.get_load_cases()
+        assert not any(lc.name == 'Roll' for lc in load_cases_after)
 
     def test_delete_vessel_motion_removes_from_linked_tracking(self):
         """delete_vessel_motion removes load case IDs from linked tracking."""
@@ -1276,15 +1276,16 @@ class TestVesselMotionDeletion:
 
         model.add_vessel_motion_load_case("Roll", roll=0.12)
 
-        # Get load case
+        # Get load case ID before deletion
         load_cases = model._cpp_model.get_load_cases()
         roll_lc = next(lc for lc in load_cases if lc.name == 'Roll')
-        assert model.is_load_case_linked_to_vessel_motion(roll_lc)
+        roll_lc_id = roll_lc.id
+        assert roll_lc_id in model._linked_load_case_ids
 
         model.delete_vessel_motion("Roll")
 
-        # Should no longer be tracked as linked
-        assert not model.is_load_case_linked_to_vessel_motion(roll_lc)
+        # ID should no longer be tracked as linked
+        assert roll_lc_id not in model._linked_load_case_ids
 
     def test_delete_vessel_motion_not_found_raises(self):
         """delete_vessel_motion raises ValueError if motion not found."""
