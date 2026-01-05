@@ -47,6 +47,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake build-essential libeigen3-dev python3-dev python3-pip python3-venv
 
+      - name: Create virtual environment
+        run: |
+          python3 -m venv .venv
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
       - name: Build C++ extension
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -54,8 +59,8 @@ jobs:
 
       - name: Install package and docs dependencies
         run: |
-          python3 -m pip install -e .[testing]
-          python3 -m pip install sphinx sphinx-rtd-theme sphinx-autodoc-typehints
+          pip install -e .[testing]
+          pip install sphinx sphinx-rtd-theme sphinx-autodoc-typehints
 
       - name: Run doctests
         run: |
