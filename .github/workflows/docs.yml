@@ -42,6 +42,11 @@ jobs:
           # Use system Python on self-hosted runner
           python3 --version
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential libeigen3-dev
+
       - name: Build C++ extension
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release
