@@ -984,6 +984,7 @@ class StructuralModel:
         self._load_combinations: List[dict] = []
         self._combination_id_counter = 1
         self._beam_line_loads: List[BeamLineLoad] = []  # Beam-level line load tracking
+        self._linked_load_case_ids: set = set()  # Load cases linked to vessel motions (immutable)
 
     # ===== Material and Section Management =====
 
@@ -2348,7 +2349,8 @@ class StructuralModel:
         sway: float = 0.0,
         yaw: float = 0.0,
         motion_center: Optional[List[float]] = None,
-        load_type: LoadCaseType = LoadCaseType.Environmental
+        load_type: LoadCaseType = LoadCaseType.Environmental,
+        create_signed_pairs: bool = False
     ) -> "VesselMotion":
         """
         Create a load case with vessel motion accelerations.
@@ -2361,6 +2363,11 @@ class StructuralModel:
         Structures located away from the motion center experience additional
         tangential accelerations due to rotation.
 
+        Load cases created by this method are linked to the VesselMotion object.
+        When the VesselMotion is modified, all linked load cases are automatically
+        updated. Linked load cases are immutable - their acceleration field cannot
+        be modified directly.
+
         Args:
             name: Load case name
             heave: Vertical acceleration in m/s² (positive = up)
@@ -2371,9 +2378,11 @@ class StructuralModel:
             yaw: Yaw angular acceleration in rad/s² (positive = bow to port)
             motion_center: Reference point [x, y, z] in meters (default: origin)
             load_type: LoadCaseType (default: Environmental)
+            create_signed_pairs: If True, create both positive and negative
+                load cases (e.g., "Roll +" and "Roll -"). Default: False
 
         Returns:
-            The created VesselMotion object
+            The created VesselMotion object (with linked load cases)
 
         Example:
             >>> from grillex.core import StructuralModel
@@ -2384,38 +2393,65 @@ class StructuralModel:
             ...     pitch=0.08,
             ...     motion_center=[50.0, 0.0, 5.0]
             ... )
+            >>> # With signed pairs
+            >>> motion = model.add_vessel_motion_load_case(
+            ...     "Roll",
+            ...     roll=0.12,
+            ...     create_signed_pairs=True  # Creates "Roll +" and "Roll -"
+            ... )
+            >>> len(motion.get_linked_load_cases())
+            2
         """
-        from .vessel_motion import VesselMotion
+        from .vessel_motion import VesselMotion, MotionComponent, MotionType
 
-        # Create the VesselMotion object
+        # Create the VesselMotion object (without triggering updates yet)
         motion = VesselMotion(name)
-        if motion_center is not None:
-            motion.set_motion_center(motion_center)
 
-        # Add components
-        if surge != 0.0:
-            motion.add_surge(surge)
-        if sway != 0.0:
-            motion.add_sway(sway)
-        if heave != 0.0:
-            motion.add_heave(heave)
-        if roll != 0.0:
-            motion.add_roll(roll)
-        if pitch != 0.0:
-            motion.add_pitch(pitch)
-        if yaw != 0.0:
-            motion.add_yaw(yaw)
-
-        # Create the load case
-        load_case = self.create_load_case(name, load_type)
-
-        # Apply the vessel motion to the load case
-        motion.apply_to_load_case(load_case)
-
-        # Store the vessel motion for retrieval
+        # Store the vessel motion for retrieval first
         if not hasattr(self, '_vessel_motions'):
             self._vessel_motions: Dict[str, "VesselMotion"] = {}
         self._vessel_motions[name] = motion
+
+        if create_signed_pairs:
+            # Create two load cases with opposite signs
+            lc_positive = self.create_load_case(f"{name} +", load_type)
+            lc_negative = self.create_load_case(f"{name} -", load_type)
+
+            # Link both to the vessel motion
+            motion.link_load_case(lc_positive, sign_multiplier=1.0, suffix=" +")
+            motion.link_load_case(lc_negative, sign_multiplier=-1.0, suffix=" -")
+
+            # Track as immutable (linked to vessel motion)
+            self._linked_load_case_ids.add(lc_positive.id)
+            self._linked_load_case_ids.add(lc_negative.id)
+        else:
+            # Create single load case
+            load_case = self.create_load_case(name, load_type)
+            motion.link_load_case(load_case, sign_multiplier=1.0, suffix="")
+
+            # Track as immutable (linked to vessel motion)
+            self._linked_load_case_ids.add(load_case.id)
+
+        # Now set the motion center and add components
+        if motion_center is not None:
+            motion.motion_center = list(motion_center)
+
+        # Add components directly (avoid triggering updates for each one)
+        if surge != 0.0:
+            motion.components.append(MotionComponent(MotionType.SURGE, surge))
+        if sway != 0.0:
+            motion.components.append(MotionComponent(MotionType.SWAY, sway))
+        if heave != 0.0:
+            motion.components.append(MotionComponent(MotionType.HEAVE, heave))
+        if roll != 0.0:
+            motion.components.append(MotionComponent(MotionType.ROLL, roll))
+        if pitch != 0.0:
+            motion.components.append(MotionComponent(MotionType.PITCH, pitch))
+        if yaw != 0.0:
+            motion.components.append(MotionComponent(MotionType.YAW, yaw))
+
+        # Trigger final update after all components added
+        motion._update_linked_load_cases()
 
         return motion
 
@@ -2488,6 +2524,135 @@ class StructuralModel:
         if not hasattr(self, '_vessel_motions'):
             self._vessel_motions: Dict[str, "VesselMotion"] = {}
         self._vessel_motions[motion.name] = motion
+
+    def is_load_case_linked_to_vessel_motion(self, load_case: _CppLoadCase) -> bool:
+        """Check if a load case is linked to a vessel motion.
+
+        Linked load cases have their acceleration field managed by the VesselMotion
+        object and should not be modified directly. The acceleration field is
+        automatically updated when the VesselMotion is modified.
+
+        Args:
+            load_case: LoadCase to check
+
+        Returns:
+            True if the load case is linked to a vessel motion
+
+        Example:
+            >>> model.add_vessel_motion_load_case("Roll", roll=0.12)
+            >>> lc = model.get_load_case("Roll")
+            >>> model.is_load_case_linked_to_vessel_motion(lc)
+            True
+        """
+        return load_case.id in self._linked_load_case_ids
+
+    def get_vessel_motion_for_load_case(
+        self,
+        load_case: _CppLoadCase
+    ) -> Optional["VesselMotion"]:
+        """Get the VesselMotion that controls a load case's acceleration field.
+
+        Args:
+            load_case: LoadCase to find the controlling VesselMotion for
+
+        Returns:
+            VesselMotion if the load case is linked, None otherwise
+        """
+        if not self.is_load_case_linked_to_vessel_motion(load_case):
+            return None
+
+        if not hasattr(self, '_vessel_motions'):
+            return None
+
+        # Search through vessel motions to find the one with this load case
+        for motion in self._vessel_motions.values():
+            for linked_lc in motion.get_linked_load_cases():
+                if linked_lc.id == load_case.id:
+                    return motion
+
+        return None
+
+    def delete_vessel_motion(
+        self,
+        name: str,
+        delete_linked_load_cases: bool = True,
+        force: bool = False
+    ) -> List[str]:
+        """Delete a vessel motion and optionally its linked load cases.
+
+        When a vessel motion is deleted:
+        - The VesselMotion object is removed from the model
+        - Linked load cases can be deleted or unlinked (kept but no longer auto-updated)
+        - Load combinations referencing deleted load cases are updated
+
+        Args:
+            name: Name of the vessel motion to delete
+            delete_linked_load_cases: If True (default), also delete linked load cases.
+                If False, load cases are unlinked but kept (acceleration field preserved).
+            force: If True, delete even if load combinations reference the load cases.
+                If False (default), raises error if load combinations would be affected.
+
+        Returns:
+            List of deleted or affected load case names
+
+        Raises:
+            ValueError: If vessel motion not found
+            ValueError: If load combinations reference linked load cases and force=False
+
+        Example:
+            >>> model.add_vessel_motion_load_case("Roll", roll=0.12, create_signed_pairs=True)
+            >>> # Delete vessel motion and its load cases
+            >>> deleted = model.delete_vessel_motion("Roll")
+            >>> deleted
+            ['Roll +', 'Roll -']
+        """
+        if not hasattr(self, '_vessel_motions') or name not in self._vessel_motions:
+            raise ValueError(f"Vessel motion '{name}' not found")
+
+        motion = self._vessel_motions[name]
+        linked_load_cases = motion.get_linked_load_cases()
+        affected_names = [lc.name for lc in linked_load_cases]
+
+        if delete_linked_load_cases:
+            # Check if any load combinations reference these load cases
+            linked_ids = {lc.id for lc in linked_load_cases}
+            affected_combinations = []
+
+            for combo in self._load_combinations:
+                combo_lc_ids = {lc["load_case_id"] for lc in combo.get("load_cases", [])}
+                if linked_ids & combo_lc_ids:  # Intersection
+                    affected_combinations.append(combo["name"])
+
+            if affected_combinations and not force:
+                raise ValueError(
+                    f"Cannot delete vessel motion '{name}': load combinations "
+                    f"{affected_combinations} reference its load cases. "
+                    f"Use force=True to delete anyway, or update combinations first."
+                )
+
+            # Remove load cases from combinations if force=True
+            if affected_combinations and force:
+                for combo in self._load_combinations:
+                    combo["load_cases"] = [
+                        lc for lc in combo.get("load_cases", [])
+                        if lc["load_case_id"] not in linked_ids
+                    ]
+
+            # Delete load cases from C++ Model and remove from tracking
+            for lc in linked_load_cases:
+                # Remove from linked tracking first (before deletion invalidates ID)
+                self._linked_load_case_ids.discard(lc.id)
+                # Actually delete the load case from the C++ Model
+                self._cpp_model.delete_load_case(lc)
+        else:
+            # Just unlink - keep load cases with their current acceleration
+            for lc in linked_load_cases:
+                self._linked_load_case_ids.discard(lc.id)
+
+        # Remove vessel motion from registry
+        del self._vessel_motions[name]
+
+        return affected_names
 
     # ===== Analysis =====
 

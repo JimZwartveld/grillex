@@ -195,6 +195,38 @@ std::vector<LoadCase*> Model::get_load_cases() const {
     return result;
 }
 
+bool Model::delete_load_case(LoadCase* load_case) {
+    if (!load_case) {
+        return false;
+    }
+
+    // Find the load case in the vector
+    auto it = std::find_if(load_cases_.begin(), load_cases_.end(),
+        [load_case](const std::unique_ptr<LoadCase>& lc) {
+            return lc.get() == load_case;
+        });
+
+    if (it == load_cases_.end()) {
+        return false;  // Load case not found
+    }
+
+    // Clear active/default pointers if they point to this load case
+    if (active_load_case_ == load_case) {
+        active_load_case_ = nullptr;
+    }
+    if (default_load_case_ == load_case) {
+        default_load_case_ = nullptr;
+    }
+
+    // Remove from results map if present
+    results_.erase(load_case->id());
+
+    // Erase from vector (this destroys the LoadCase)
+    load_cases_.erase(it);
+
+    return true;
+}
+
 const LoadCaseResult& Model::get_result(LoadCase* load_case) const {
     auto it = results_.find(load_case->id());
     if (it == results_.end()) {

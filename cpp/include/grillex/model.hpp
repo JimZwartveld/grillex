@@ -293,6 +293,25 @@ public:
     std::vector<LoadCase*> get_load_cases() const;
 
     /**
+     * @brief Delete a load case from the model
+     * @param load_case Pointer to load case to delete
+     * @return true if load case was found and deleted, false otherwise
+     *
+     * Removes the load case from the model and destroys it. If the deleted
+     * load case was the active load case, active_load_case_ is set to nullptr.
+     * If it was the default load case, default_load_case_ is also cleared.
+     *
+     * Note: This invalidates any existing pointers to the deleted load case.
+     * Results for this load case are also removed.
+     *
+     * Example:
+     *   auto lc = model.create_load_case("Temporary");
+     *   // ... use load case ...
+     *   model.delete_load_case(lc);  // lc is now invalid
+     */
+    bool delete_load_case(LoadCase* load_case);
+
+    /**
      * @brief Get result for a specific load case
      * @param load_case Pointer to load case
      * @return LoadCaseResult reference
