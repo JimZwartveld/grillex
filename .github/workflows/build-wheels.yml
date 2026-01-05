@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - master
+      - development
+      - release
     tags:
       - 'v*'
   pull_request:
@@ -20,9 +22,8 @@ on:
         type: choice
         options:
           - none
-          - testpypi
-          - pypi
-          - private
+          - dev
+          - prod
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -172,20 +173,15 @@ jobs:
           pytest tests/python -v -x --ignore=tests/python/test_gmsh*.py -k "not slow"
 
   # =============================================================================
-  # Publish to PyPI
+  # Publish to Development PyPI (on push to development branch)
   # =============================================================================
-  publish_pypi:
-    name: Publish to PyPI
+  publish_dev:
+    name: Publish to Dev PyPI
     needs: [build_wheels, build_sdist, test_wheels]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-
-    environment:
-      name: pypi
-      url: https://pypi.org/project/grillex/
-
-    permissions:
-      id-token: write  # Required for trusted publishing
+    runs-on: self-hosted
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/development') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'dev')
 
     steps:
       - name: Download all wheels
@@ -203,102 +199,72 @@ jobs:
 
       - name: List distribution files
         run: ls -la dist/
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          # Uses trusted publishing - no API token needed if configured
-          # Alternatively, use: password: ${{ secrets.PYPI_API_TOKEN }}
-          verbose: true
-          print-hash: true
-
-  # =============================================================================
-  # Publish to TestPyPI (for testing)
-  # =============================================================================
-  publish_testpypi:
-    name: Publish to TestPyPI
-    needs: [build_wheels, build_sdist]
-    runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'testpypi') ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/project/grillex/
-
-    permissions:
-      id-token: write
-
-    steps:
-      - name: Download all wheels
-        uses: actions/download-artifact@v4
-        with:
-          pattern: wheels-*
-          path: dist
-          merge-multiple: true
-
-      - name: Download sdist
-        uses: actions/download-artifact@v4
-        with:
-          name: sdist
-          path: dist
-
-      - name: Publish to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          verbose: true
-          skip-existing: true
-
-  # =============================================================================
-  # Publish to Private PyPI Server
-  # =============================================================================
-  # Configure these secrets in your repository:
-  #   PRIVATE_PYPI_URL      - Your PyPI server URL (e.g., https://pypi.company.com/simple/)
-  #   PRIVATE_PYPI_USERNAME - Username for authentication
-  #   PRIVATE_PYPI_PASSWORD - Password or token for authentication
-  # =============================================================================
-  publish_private:
-    name: Publish to Private PyPI
-    needs: [build_wheels, build_sdist, test_wheels]
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'private'
-
-    environment:
-      name: private-pypi
-
-    steps:
-      - name: Download all wheels
-        uses: actions/download-artifact@v4
-        with:
-          pattern: wheels-*
-          path: dist
-          merge-multiple: true
-
-      - name: Download sdist
-        uses: actions/download-artifact@v4
-        with:
-          name: sdist
-          path: dist
-
-      - name: List distribution files
-        run: ls -la dist/
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
 
       - name: Install twine
         run: pip install twine
 
-      - name: Publish to Private PyPI
+      - name: Publish to Dev PyPI
         env:
-          TWINE_REPOSITORY_URL: ${{ secrets.PRIVATE_PYPI_URL }}
-          TWINE_USERNAME: ${{ secrets.PRIVATE_PYPI_USERNAME }}
-          TWINE_PASSWORD: ${{ secrets.PRIVATE_PYPI_PASSWORD }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: |
-          echo "Publishing to: $TWINE_REPOSITORY_URL"
-          twine upload --verbose --skip-existing dist/*
+          echo "Publishing to Dev PyPI (pypi-dev.jimzwartveld.com)"
+
+          # Upload using twine with custom headers for Cloudflare Access
+          for file in dist/*; do
+            echo "Uploading: $file"
+            curl -X POST \
+              -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
+              -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
+              -F "content=@${file}" \
+              "https://pypi-dev.jimzwartveld.com:8081/"
+          done
+
+  # =============================================================================
+  # Publish to Production PyPI (on push to release branch or tags)
+  # =============================================================================
+  publish_prod:
+    name: Publish to Prod PyPI
+    needs: [build_wheels, build_sdist, test_wheels]
+    runs-on: self-hosted
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/release') ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'prod')
+
+    steps:
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      - name: Download sdist
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+      - name: List distribution files
+        run: ls -la dist/
+
+      - name: Install twine
+        run: pip install twine
+
+      - name: Publish to Prod PyPI
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          echo "Publishing to Prod PyPI (pypi-prod.jimzwartveld.com)"
+
+          # Upload using twine with custom headers for Cloudflare Access
+          for file in dist/*; do
+            echo "Uploading: $file"
+            curl -X POST \
+              -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
+              -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
+              -F "content=@${file}" \
+              "https://pypi-prod.jimzwartveld.com:8082/"
+          done

@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+      - release
     paths:
       - 'docs/**'
       - 'src/**/*.py'
@@ -28,7 +29,7 @@ jobs:
   # =============================================================================
   build-docs:
     name: Build Documentation
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout repository
@@ -37,14 +38,9 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libeigen3-dev cmake build-essential
+          # Use system Python on self-hosted runner
+          python3 --version
 
       - name: Build C++ extension
         run: |
@@ -75,21 +71,13 @@ jobs:
           retention-days: 7
 
   # =============================================================================
-  # Deploy to GitHub Pages (only on main branch)
+  # Deploy to local filesystem (only on main branch)
   # =============================================================================
   deploy-docs:
-    name: Deploy to GitHub Pages
+    name: Deploy Documentation
     needs: build-docs
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    permissions:
-      pages: write
-      id-token: write
-
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: self-hosted
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release')
 
     steps:
       - name: Download documentation artifact
@@ -98,14 +86,16 @@ jobs:
           name: documentation
           path: docs/_build/html
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
+      - name: Deploy to local docs server
+        run: |
+          # Create target directory if it doesn't exist
+          mkdir -p /home/jzwartveld/docs/html/grillex
 
-      - name: Upload to GitHub Pages
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs/_build/html
+          # Remove old documentation
+          rm -rf /home/jzwartveld/docs/html/grillex/*
 
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          # Copy new documentation
+          cp -r docs/_build/html/* /home/jzwartveld/docs/html/grillex/
+
+          echo "Documentation deployed to /home/jzwartveld/docs/html/grillex/"
+          echo "Available at: https://docs.jimzwartveld.com/grillex/"

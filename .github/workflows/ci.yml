@@ -5,11 +5,15 @@ on:
     branches:
       - main
       - master
+      - development
+      - release
       - 'feature/**'
   pull_request:
     branches:
       - main
       - master
+      - development
+      - release
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

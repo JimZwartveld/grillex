@@ -1,10 +1,11 @@
-name: Build and Push Docker Images
+name: Build and Deploy MCP Server
 
 on:
   push:
     branches:
       - main
       - master
+      - release
     tags:
       - 'v*'
   pull_request:
@@ -18,8 +19,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/grillex
+  MCP_COMPOSE_FILE: docker-compose.mcp.yml
+  MCP_SERVICE_NAME: grillex-mcp
 
 jobs:
   # =============================================================================
@@ -27,10 +28,10 @@ jobs:
   # =============================================================================
   build-mcp:
     name: Build MCP Server
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    runs-on: self-hosted
+
+    outputs:
+      image_tag: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -51,65 +52,57 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Using version: $VERSION"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Build MCP Docker image
+        run: |
+          docker build \
+            -t grillex-mcp:${{ steps.version.outputs.version }} \
+            -t grillex-mcp:latest \
+            -f mcp/Dockerfile \
+            --build-arg GRILLEX_VERSION=${{ steps.version.outputs.version }} \
+            .
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata for MCP
-        id: meta-mcp
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-mcp
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-
-
-      - name: Build and push MCP image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: mcp/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta-mcp.outputs.tags }}
-          labels: ${{ steps.meta-mcp.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            GRILLEX_VERSION=${{ steps.version.outputs.version }}
+      - name: Test MCP compose config
+        run: docker-compose -f ${{ env.MCP_COMPOSE_FILE }} config
 
   # =============================================================================
-  # Test Docker Compose Configuration
+  # Deploy MCP Server (on release branch or tags)
   # =============================================================================
-  test-compose:
-    name: Test Docker Compose
-    runs-on: ubuntu-latest
-    needs: [build-mcp]
-    if: github.event_name != 'pull_request'
+  deploy-mcp:
+    name: Deploy MCP Server
+    needs: build-mcp
+    runs-on: self-hosted
+    if: |
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v'))
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Stop existing MCP service
+        run: |
+          docker-compose -f ${{ env.MCP_COMPOSE_FILE }} down || true
 
-      - name: Test MCP compose config
-        run: docker-compose -f docker-compose.mcp.yml config
+      - name: Start MCP service
+        run: |
+          docker-compose -f ${{ env.MCP_COMPOSE_FILE }} up -d
+
+      - name: Verify deployment
+        run: |
+          echo "Waiting for MCP service to start..."
+          sleep 10
+
+          # Health check
+          if docker-compose -f ${{ env.MCP_COMPOSE_FILE }} ps | grep -q "Up"; then
+            echo "MCP service is running"
+            echo "Available at: https://mcp.jimzwartveld.com/grillex"
+          else
+            echo "MCP service failed to start"
+            docker-compose -f ${{ env.MCP_COMPOSE_FILE }} logs
+            exit 1
+          fi
+
+      - name: Show service logs
+        if: always()
+        run: |
+          docker-compose -f ${{ env.MCP_COMPOSE_FILE }} logs --tail=50
