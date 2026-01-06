@@ -548,6 +548,62 @@ tox
 pip install -e .[testing]
 ```
 
+### Release Strategy
+
+When the user indicates they are ready to release a package, follow this process:
+
+**1. Suggest a Version Number**
+
+Use semantic versioning (`vMAJOR.MINOR.PATCH`):
+
+| Change Type | Version Bump | Example |
+|-------------|--------------|---------|
+| Breaking API changes | MAJOR | v1.0.0 → v2.0.0 |
+| New features (backwards compatible) | MINOR | v1.0.0 → v1.1.0 |
+| Bug fixes, patches, minor improvements | PATCH | v1.0.0 → v1.0.1 |
+
+**To determine the appropriate version:**
+1. Check the current version in `pyproject.toml` or the latest git tag
+2. Review commits since the last release using `git log --oneline <last-tag>..HEAD`
+3. Categorize changes and suggest the appropriate bump
+
+**2. Update the Changelog**
+
+Update `CHANGELOG.md` with all changes since the last version:
+
+```markdown
+## [vX.Y.Z] - YYYY-MM-DD
+
+### Added
+- New features added since last release
+
+### Changed
+- Changes to existing functionality
+
+### Fixed
+- Bug fixes
+
+### Deprecated
+- Features that will be removed in future versions
+
+### Removed
+- Features removed in this release
+```
+
+**Steps:**
+1. Run `git log --oneline <last-tag>..HEAD` to see all commits since last release
+2. Group commits by category (Added, Changed, Fixed, etc.)
+3. Write human-readable descriptions (not just commit messages)
+4. Include any breaking changes prominently at the top
+
+**3. Create the Release**
+
+After user approval of version and changelog:
+1. Update version in `pyproject.toml`
+2. Commit changelog and version bump
+3. Create git tag: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
+4. Push with tags: `git push && git push --tags`
+
 ## Test Organization
 
 Tests are organized by implementation phase:
