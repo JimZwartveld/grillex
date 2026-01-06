@@ -7,12 +7,15 @@ on:
       - master
       - development
       - release
+      - 'feature/**'
     tags:
       - 'v*'
   pull_request:
     branches:
       - main
       - master
+      - development
+      - release
   workflow_dispatch:
     inputs:
       publish_target:
@@ -31,25 +34,21 @@ concurrency:
 
 jobs:
   # =============================================================================
-  # Build wheels for all platforms
+  # Build wheels for Linux (self-hosted runner - free minutes)
+  # Runs on ALL events (push, PR, tags, workflow_dispatch)
   # =============================================================================
-  build_wheels:
-    name: Build wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-14]
+  build_wheels_linux:
+    name: Build wheels on Linux
+    runs-on: self-hosted
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Needed for setuptools_scm
+          fetch-depth: 0
           submodules: true
 
-      - name: Set up QEMU (for Linux ARM64 builds)
-        if: runner.os == 'Linux'
+      - name: Set up QEMU (for ARM64 builds)
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
@@ -57,26 +56,60 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.21
         env:
-          # Platform-specific architecture settings
           CIBW_ARCHS_LINUX: x86_64 aarch64
-          CIBW_ARCHS_MACOS: arm64
-          CIBW_ARCHS_WINDOWS: AMD64
           # Skip tests on emulated platforms (too slow)
           CIBW_TEST_SKIP: "*-*linux_aarch64"
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          name: wheels-linux
           path: ./wheelhouse/*.whl
           retention-days: 7
 
   # =============================================================================
-  # Build source distribution
+  # Build wheels for Windows (GitHub-hosted - only on critical branches)
+  # macOS builds removed to save GitHub Actions minutes (10x multiplier)
+  # =============================================================================
+  build_wheels_windows:
+    name: Build wheels on Windows
+    runs-on: windows-latest
+    # Only run Windows builds on push to development/main/release branches or tags
+    # Skip on PRs and feature branches to save GitHub Actions minutes (2x multiplier)
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       (github.ref == 'refs/heads/development' ||
+        github.ref == 'refs/heads/main' ||
+        github.ref == 'refs/heads/master' ||
+        github.ref == 'refs/heads/release' ||
+        startsWith(github.ref, 'refs/tags/v')))
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.21
+        env:
+          CIBW_ARCHS_WINDOWS: AMD64
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows
+          path: ./wheelhouse/*.whl
+          retention-days: 7
+
+  # =============================================================================
+  # Build source distribution (self-hosted runner - free minutes)
   # =============================================================================
   build_sdist:
     name: Build source distribution
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout repository
@@ -85,15 +118,22 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+        run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          pyenv local 3.11
 
       - name: Install build dependencies
-        run: pip install build
+        run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          pip install build
 
       - name: Build sdist
-        run: python -m build --sdist
+        run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          python -m build --sdist
 
       - name: Upload sdist
         uses: actions/upload-artifact@v4
@@ -103,16 +143,68 @@ jobs:
           retention-days: 7
 
   # =============================================================================
-  # Test the built wheels
+  # Test the built Linux wheels (self-hosted runner - free minutes)
   # =============================================================================
-  test_wheels:
-    name: Test wheel on ${{ matrix.os }} / Python ${{ matrix.python }}
-    needs: build_wheels
-    runs-on: ${{ matrix.os }}
+  test_wheels_linux:
+    name: Test Linux wheel / Python ${{ matrix.python }}
+    needs: build_wheels_linux
+    runs-on: self-hosted
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.11', '3.12', '3.13']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          pyenv install -s ${{ matrix.python }}
+          pyenv local ${{ matrix.python }}
+
+      - name: Download Linux wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-linux
+          path: wheelhouse
+
+      - name: Install wheel
+        run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          PYTHON_VERSION=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
+          WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*manylinux*x86_64*.whl" | head -1)
+          echo "Installing: $WHEEL"
+          pip install "${WHEEL}[testing]"
+
+      - name: Run tests
+        run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          pytest tests/python -v -x --ignore=tests/python/test_gmsh*.py -k "not slow"
+
+  # =============================================================================
+  # Test the built Windows wheels (GitHub-hosted - only on critical branches)
+  # =============================================================================
+  test_wheels_windows:
+    name: Test Windows wheel / Python ${{ matrix.python }}
+    needs: build_wheels_windows
+    runs-on: windows-latest
+    # Only run if Windows wheels were built (same condition)
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       (github.ref == 'refs/heads/development' ||
+        github.ref == 'refs/heads/main' ||
+        github.ref == 'refs/heads/master' ||
+        github.ref == 'refs/heads/release' ||
+        startsWith(github.ref, 'refs/tags/v')))
+    strategy:
+      fail-fast: false
+      matrix:
         python: ['3.11', '3.12', '3.13']
 
     steps:
@@ -124,49 +216,19 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Download all wheels
+      - name: Download Windows wheels
         uses: actions/download-artifact@v4
         with:
-          pattern: wheels-*
+          name: wheels-windows
           path: wheelhouse
-          merge-multiple: true
 
       - name: Install wheel
         shell: bash
         run: |
-          # Find and install the appropriate wheel for this platform
           PYTHON_VERSION=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
-
-          # Determine platform and architecture
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            PLATFORM="manylinux"
-            ARCH="x86_64"
-          elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            PLATFORM="macosx"
-            ARCH=$(uname -m)
-          elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            PLATFORM="win"
-            ARCH="amd64"
-          fi
-
-          echo "Looking for wheel: Python=$PYTHON_VERSION, Platform=$PLATFORM, Arch=$ARCH"
-          ls -la wheelhouse/
-
-          # Find matching wheel with correct architecture
-          WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*${PLATFORM}*${ARCH}*.whl" -o -name "grillex-*${PYTHON_VERSION}*${PLATFORM}*${ARCH}.whl" | head -1)
-
-          if [[ -z "$WHEEL" ]]; then
-            echo "No exact match found, trying without arch..."
-            WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*${PLATFORM}*.whl" | grep -v aarch64 | head -1)
-          fi
-
-          if [[ -z "$WHEEL" ]]; then
-            echo "Error: No compatible wheel found"
-            exit 1
-          fi
-
+          WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*win*amd64*.whl" | head -1)
           echo "Installing: $WHEEL"
-          pip install "$WHEEL"[testing]
+          pip install "${WHEEL}[testing]"
 
       - name: Run tests
         run: |
@@ -177,19 +239,25 @@ jobs:
   # =============================================================================
   publish_dev:
     name: Publish to Dev PyPI
-    needs: [build_wheels, build_sdist, test_wheels]
+    needs: [build_wheels_linux, build_sdist, test_wheels_linux]
     runs-on: self-hosted
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/development') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'dev')
 
     steps:
-      - name: Download all wheels
+      - name: Download Linux wheels
         uses: actions/download-artifact@v4
         with:
-          pattern: wheels-*
+          name: wheels-linux
           path: dist
-          merge-multiple: true
+
+      - name: Download Windows wheels (if available)
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-windows
+          path: dist
+        continue-on-error: true
 
       - name: Download sdist
         uses: actions/download-artifact@v4
@@ -201,7 +269,10 @@ jobs:
         run: ls -la dist/
 
       - name: Install twine
-        run: pip install twine
+        run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          pip install twine
 
       - name: Publish to Dev PyPI
         env:
@@ -210,14 +281,14 @@ jobs:
         run: |
           echo "Publishing to Dev PyPI (pypi-dev.jimzwartveld.com)"
 
-          # Upload using twine with custom headers for Cloudflare Access
+          # Upload using curl with custom headers for Cloudflare Access
           for file in dist/*; do
             echo "Uploading: $file"
             curl -X POST \
               -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
               -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
               -F "content=@${file}" \
-              "https://pypi-dev.jimzwartveld.com:8081/"
+              "https://pypi-dev.jimzwartveld.com/"
           done
 
   # =============================================================================
@@ -225,7 +296,7 @@ jobs:
   # =============================================================================
   publish_prod:
     name: Publish to Prod PyPI
-    needs: [build_wheels, build_sdist, test_wheels]
+    needs: [build_wheels_linux, build_wheels_windows, build_sdist, test_wheels_linux, test_wheels_windows]
     runs-on: self-hosted
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/release') ||
@@ -233,12 +304,17 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'prod')
 
     steps:
-      - name: Download all wheels
+      - name: Download Linux wheels
         uses: actions/download-artifact@v4
         with:
-          pattern: wheels-*
+          name: wheels-linux
           path: dist
-          merge-multiple: true
+
+      - name: Download Windows wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-windows
+          path: dist
 
       - name: Download sdist
         uses: actions/download-artifact@v4
@@ -250,7 +326,10 @@ jobs:
         run: ls -la dist/
 
       - name: Install twine
-        run: pip install twine
+        run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          pip install twine
 
       - name: Publish to Prod PyPI
         env:
@@ -259,12 +338,12 @@ jobs:
         run: |
           echo "Publishing to Prod PyPI (pypi-prod.jimzwartveld.com)"
 
-          # Upload using twine with custom headers for Cloudflare Access
+          # Upload using curl with custom headers for Cloudflare Access
           for file in dist/*; do
             echo "Uploading: $file"
             curl -X POST \
               -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
               -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
               -F "content=@${file}" \
-              "https://pypi-prod.jimzwartveld.com:8082/"
+              "https://pypi-prod.jimzwartveld.com/"
           done

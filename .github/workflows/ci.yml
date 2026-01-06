@@ -21,11 +21,11 @@ concurrency:
 
 jobs:
   # =============================================================================
-  # Build and test on Linux (primary platform)
+  # Build and test on Linux (self-hosted runner - free minutes)
   # =============================================================================
   test-linux:
     name: Test on Linux / Python ${{ matrix.python }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       fail-fast: false
       matrix:
@@ -38,22 +38,24 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-
-      - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libeigen3-dev cmake build-essential libglu1-mesa
+          # Use pyenv or system Python on self-hosted runner
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          pyenv install -s ${{ matrix.python }}
+          pyenv local ${{ matrix.python }}
 
       - name: Install Python dependencies
         run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
           pip install --upgrade pip
           pip install build pytest pytest-cov numpy scipy pyyaml pydantic
 
       - name: Build C++ extension and tests
         run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
           cmake --build build -j$(nproc)
 
@@ -68,10 +70,15 @@ jobs:
           ./test_warping
 
       - name: Install package in development mode
-        run: pip install -e .[testing,meshing]
+        run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          pip install -e .[testing,meshing]
 
       - name: Run Python tests
         run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
           pytest tests/python -v --cov=grillex --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage to Codecov
@@ -82,59 +89,21 @@ jobs:
           fail_ci_if_error: false
 
   # =============================================================================
-  # Build and test on macOS
-  # =============================================================================
-  test-macos:
-    name: Test on macOS
-    runs-on: macos-14
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install system dependencies
-        run: brew install eigen cmake
-
-      - name: Install Python dependencies
-        run: |
-          pip install --upgrade pip
-          pip install build pytest numpy scipy pyyaml pydantic
-
-      - name: Build C++ extension and tests
-        run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-          cmake --build build -j$(sysctl -n hw.ncpu)
-
-      - name: Run C++ tests
-        run: |
-          cd build/tests/cpp
-          ./test_boundary_conditions
-          ./test_eigenvalue_solver
-          ./test_singularity_diagnostics
-          ./test_constraints
-          ./test_internal_actions
-          ./test_warping
-
-      - name: Install package in development mode
-        run: pip install -e .[testing,meshing]
-
-      - name: Run Python tests
-        run: |
-          pytest tests/python -v
-
-  # =============================================================================
-  # Build and test on Windows
+  # Build and test on Windows (GitHub-hosted - only on critical branches)
+  # macOS tests removed to save GitHub Actions minutes (10x multiplier)
   # =============================================================================
   test-windows:
     name: Test on Windows
     runs-on: windows-latest
+    # Only run Windows tests on push to development/main/release branches or tags
+    # Skip on PRs and feature branches to save GitHub Actions minutes (2x multiplier)
+    if: |
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/development' ||
+       github.ref == 'refs/heads/main' ||
+       github.ref == 'refs/heads/master' ||
+       github.ref == 'refs/heads/release' ||
+       startsWith(github.ref, 'refs/tags/v'))
 
     steps:
       - name: Checkout repository
@@ -175,28 +144,38 @@ jobs:
           pytest tests/python -v
 
   # =============================================================================
-  # Code quality checks
+  # Code quality checks (self-hosted runner - free minutes)
   # =============================================================================
   lint:
     name: Lint and Format Check
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+        run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          pyenv local 3.11
 
       - name: Install linting tools
-        run: pip install ruff black
+        run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          pip install ruff black
 
       - name: Run ruff
-        run: ruff check src/grillex --output-format=github
+        run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          ruff check src/grillex --output-format=github
         continue-on-error: true
 
       - name: Check formatting with black
-        run: black --check --diff src/grillex
+        run: |
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(pyenv init -)"
+          black --check --diff src/grillex
         continue-on-error: true
