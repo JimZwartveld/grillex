@@ -57,11 +57,6 @@ jobs:
         run: |
           echo "${{ env.pythonLocation }}/bin" >> $GITHUB_PATH
 
-      - name: Set up QEMU (for ARM64 builds)
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -70,9 +65,7 @@ jobs:
       - name: Build wheels
         run: python -m cibuildwheel --output-dir wheelhouse
         env:
-          CIBW_ARCHS_LINUX: x86_64 aarch64
-          # Skip tests on emulated platforms (too slow)
-          CIBW_TEST_SKIP: "*-*linux_aarch64"
+          CIBW_ARCHS_LINUX: x86_64
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
