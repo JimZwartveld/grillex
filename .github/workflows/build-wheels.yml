@@ -207,17 +207,21 @@ jobs:
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          PYPI_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
           echo "Publishing to Dev PyPI (pypi-dev.jimzwartveld.com)"
 
-          # Upload using twine with custom headers for Cloudflare Access
           for file in dist/*; do
             echo "Uploading: $file"
             curl -X POST \
               -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
               -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
+              -u "${PYPI_USERNAME}:${PYPI_PASSWORD}" \
+              -F ":action=file_upload" \
               -F "content=@${file}" \
-              "https://pypi-dev.jimzwartveld.com:8081/"
+              "https://pypi-dev.jimzwartveld.com/"
           done
 
   # =============================================================================
@@ -256,15 +260,38 @@ jobs:
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          PYPI_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
           echo "Publishing to Prod PyPI (pypi-prod.jimzwartveld.com)"
 
-          # Upload using twine with custom headers for Cloudflare Access
           for file in dist/*; do
             echo "Uploading: $file"
             curl -X POST \
               -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
               -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
+              -u "${PYPI_USERNAME}:${PYPI_PASSWORD}" \
+              -F ":action=file_upload" \
               -F "content=@${file}" \
-              "https://pypi-prod.jimzwartveld.com:8082/"
+              "https://pypi-prod.jimzwartveld.com/"
+          done
+
+      - name: Also publish to Dev PyPI (keep dev aligned with prod)
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          PYPI_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        run: |
+          echo "Publishing to Dev PyPI (pypi-dev.jimzwartveld.com)"
+
+          for file in dist/*; do
+            echo "Uploading: $file"
+            curl -X POST \
+              -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
+              -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
+              -u "${PYPI_USERNAME}:${PYPI_PASSWORD}" \
+              -F ":action=file_upload" \
+              -F "content=@${file}" \
+              "https://pypi-dev.jimzwartveld.com/"
           done
