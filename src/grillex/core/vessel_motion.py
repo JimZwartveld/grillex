@@ -17,9 +17,9 @@ The six vessel motion degrees of freedom are:
 Example:
     >>> from grillex.core import VesselMotion
     >>> motion = VesselMotion("Design Heave + Roll")
-    >>> motion.set_motion_center([50.0, 0.0, 5.0])
-    >>> motion.add_heave(2.5)
-    >>> motion.add_roll(0.12)
+    >>> _ = motion.set_motion_center([50.0, 0.0, 5.0])
+    >>> _ = motion.add_heave(2.5)
+    >>> _ = motion.add_roll(0.12)
     >>> accel, ref_pt = motion.get_acceleration_field()
 """
 
@@ -103,10 +103,10 @@ class VesselMotion:
 
     Example:
         >>> motion = VesselMotion("Design Heave + Pitch")
-        >>> motion.set_motion_center([50.0, 0.0, 5.0])  # Midship, waterline
-        >>> motion.add_heave(2.5)  # 2.5 m/s² vertical acceleration
-        >>> motion.add_pitch(0.08)  # 0.08 rad/s² pitch acceleration
-        >>> motion.add_roll(0.12)  # 0.12 rad/s² roll acceleration
+        >>> _ = motion.set_motion_center([50.0, 0.0, 5.0])  # Midship, waterline
+        >>> _ = motion.add_heave(2.5)  # 2.5 m/s² vertical acceleration
+        >>> _ = motion.add_pitch(0.08)  # 0.08 rad/s² pitch acceleration
+        >>> _ = motion.add_roll(0.12)  # 0.12 rad/s² roll acceleration
     """
     name: str
     motion_center: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])

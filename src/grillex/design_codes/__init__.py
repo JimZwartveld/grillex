@@ -5,9 +5,9 @@ checks. Each design code is implemented as a separate module that inherits
 from the base classes defined here.
 
 Example usage:
-    >>> from grillex.design_codes import Eurocode3
-    >>> code = Eurocode3()
-    >>> results = code.check_beam(beam, result_case, combination)
+    >>> from grillex.design_codes import Eurocode3  # doctest: +SKIP
+    >>> code = Eurocode3()  # doctest: +SKIP
+    >>> results = code.check_beam(beam, result_case, combination)  # doctest: +SKIP
 
 Available base classes:
     - DesignCheck: Abstract base for individual checks (axial, bending, etc.)

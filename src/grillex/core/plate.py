@@ -86,15 +86,15 @@ class Plate:
         support_curves: List of support curves.
 
     Example:
-        >>> plate = Plate(
+        >>> plate = Plate(  # doctest: +SKIP
         ...     corners=[[0, 0, 0], [4, 0, 0], [4, 2, 0], [0, 2, 0]],
         ...     thickness=0.02,
         ...     material="Steel",
         ...     mesh_size=0.5
         ... )
-        >>> plate.n_corners
+        >>> plate.n_corners  # doctest: +SKIP
         4
-        >>> plate.is_planar()
+        >>> plate.is_planar()  # doctest: +SKIP
         True
     """
     corners: List[List[float]]

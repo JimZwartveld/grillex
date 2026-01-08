@@ -39,7 +39,7 @@ Complete Workflow Example
     >>> model.pin_node_at([10, 0, 0])  # Pinned support at right end
     >>>
     >>> # Step 5: Apply loads
-    >>> model.add_point_load([5, 0, 0], DOFIndex.UZ, -50.0)  # 50 kN at midspan
+    >>> model.add_point_load([5, 0, 0], force=[0, 0, -50.0])  # 50 kN at midspan
     >>>
     >>> # Step 6: Run analysis
     >>> _ = model.analyze()
@@ -104,7 +104,7 @@ The analysis can be customized with options:
     >>> _ = model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
     >>> beam = model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
     >>> model.fix_node_at([0, 0, 0])
-    >>> model.add_point_load([6, 0, 0], DOFIndex.UZ, -10.0)
+    >>> model.add_point_load([6, 0, 0], force=[0, 0, -10.0])
     >>>
     >>> # Run analysis (default options)
     >>> _ = model.analyze()
@@ -152,12 +152,12 @@ You can modify the model and re-analyze:
     >>> model.fix_node_at([0, 0, 0])
     >>>
     >>> # First analysis with 10 kN load
-    >>> model.add_point_load([6, 0, 0], DOFIndex.UZ, -10.0)
+    >>> model.add_point_load([6, 0, 0], force=[0, 0, -10.0])
     >>> _ = model.analyze()
     >>> disp1 = model.get_displacement_at([6, 0, 0], DOFIndex.UZ)
     >>>
     >>> # Add another 10 kN load
-    >>> model.add_point_load([6, 0, 0], DOFIndex.UZ, -10.0)
+    >>> model.add_point_load([6, 0, 0], force=[0, 0, -10.0])
     >>> _ = model.analyze()
     >>> disp2 = model.get_displacement_at([6, 0, 0], DOFIndex.UZ)
     >>>

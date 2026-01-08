@@ -39,7 +39,7 @@ Quick Start
     # Create beam, fix support, apply load
     beam = model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
     model.fix_node_at([0, 0, 0])
-    model.add_point_load([6, 0, 0], DOFIndex.UZ, -10.0)
+    model.add_point_load([6, 0, 0], force=[0, 0, -10.0])
 
     # Analyze and get results
     model.analyze()
