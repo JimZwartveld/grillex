@@ -21,11 +21,11 @@ concurrency:
 
 jobs:
   # =============================================================================
-  # Build and test on Linux (primary platform)
+  # Build and test on Linux (primary platform) - Self-hosted
   # =============================================================================
   test-linux:
     name: Test on Linux / Python ${{ matrix.python }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       fail-fast: false
       matrix:
@@ -41,6 +41,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+
+      - name: Add Python to PATH
+        run: |
+          echo "${{ env.pythonLocation }}/bin" >> $GITHUB_PATH
 
       - name: Install system dependencies
         run: |
@@ -82,104 +86,56 @@ jobs:
           fail_ci_if_error: false
 
   # =============================================================================
-  # Build and test on macOS
+  # Build and test on Windows - DISABLED (GitHub Actions minutes exhausted)
   # =============================================================================
-  test-macos:
-    name: Test on macOS
-    runs-on: macos-14
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install system dependencies
-        run: brew install eigen cmake
-
-      - name: Install Python dependencies
-        run: |
-          pip install --upgrade pip
-          pip install build pytest numpy scipy pyyaml pydantic
-
-      - name: Build C++ extension and tests
-        run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-          cmake --build build -j$(sysctl -n hw.ncpu)
-
-      - name: Run C++ tests
-        run: |
-          cd build/tests/cpp
-          ./test_boundary_conditions
-          ./test_eigenvalue_solver
-          ./test_singularity_diagnostics
-          ./test_constraints
-          ./test_internal_actions
-          ./test_warping
-
-      - name: Install package in development mode
-        run: pip install -e .[testing,meshing]
-
-      - name: Run Python tests
-        run: |
-          pytest tests/python -v
-
-  # =============================================================================
-  # Build and test on Windows
-  # =============================================================================
-  test-windows:
-    name: Test on Windows
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Python dependencies
-        run: |
-          pip install --upgrade pip
-          pip install build pytest numpy scipy pyyaml pydantic
-
-      - name: Build C++ extension and tests
-        run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-          cmake --build build --config Release -j $env:NUMBER_OF_PROCESSORS
-
-      - name: Run C++ tests
-        run: |
-          cd build/tests/cpp/Release
-          ./test_boundary_conditions.exe
-          ./test_eigenvalue_solver.exe
-          ./test_singularity_diagnostics.exe
-          ./test_constraints.exe
-          ./test_internal_actions.exe
-          ./test_warping.exe
-
-      - name: Install package in development mode
-        run: pip install -e .[testing,meshing]
-
-      - name: Run Python tests
-        run: |
-          pytest tests/python -v
+  # test-windows:
+  #   name: Test on Windows
+  #   runs-on: windows-latest
+  #
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #
+  #     - name: Set up Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.11'
+  #
+  #     - name: Install Python dependencies
+  #       run: |
+  #         pip install --upgrade pip
+  #         pip install build pytest numpy scipy pyyaml pydantic
+  #
+  #     - name: Build C++ extension and tests
+  #       run: |
+  #         cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+  #         cmake --build build --config Release -j $env:NUMBER_OF_PROCESSORS
+  #
+  #     - name: Run C++ tests
+  #       run: |
+  #         cd build/tests/cpp/Release
+  #         ./test_boundary_conditions.exe
+  #         ./test_eigenvalue_solver.exe
+  #         ./test_singularity_diagnostics.exe
+  #         ./test_constraints.exe
+  #         ./test_internal_actions.exe
+  #         ./test_warping.exe
+  #
+  #     - name: Install package in development mode
+  #       run: pip install -e .[testing,meshing]
+  #
+  #     - name: Run Python tests
+  #       run: |
+  #         pytest tests/python -v
 
   # =============================================================================
   # Code quality checks
   # =============================================================================
   lint:
     name: Lint and Format Check
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout repository
@@ -188,7 +144,11 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
+
+      - name: Add Python to PATH
+        run: |
+          echo "${{ env.pythonLocation }}/bin" >> $GITHUB_PATH
 
       - name: Install linting tools
         run: pip install ruff black

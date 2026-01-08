@@ -31,15 +31,19 @@ concurrency:
 
 jobs:
   # =============================================================================
-  # Build wheels for all platforms
+  # Build wheels for Linux only (self-hosted)
+  # Windows and macOS disabled to save GitHub Actions minutes
   # =============================================================================
   build_wheels:
-    name: Build wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-14]
+    name: Build wheels on Linux
+    runs-on: self-hosted
+    # Matrix disabled - only building on self-hosted Linux
+    # strategy:
+    #   fail-fast: false
+    #   matrix:
+    #     # Windows and macOS disabled to save GitHub Actions minutes
+    #     os: [ubuntu-latest]
+    #     # os: [ubuntu-latest, windows-latest, macos-14]
 
     steps:
       - name: Checkout repository
@@ -48,26 +52,36 @@ jobs:
           fetch-depth: 0  # Needed for setuptools_scm
           submodules: true
 
-      - name: Set up QEMU (for Linux ARM64 builds)
-        if: runner.os == 'Linux'
-        uses: docker/setup-qemu-action@v3
+      - name: Set up Python
+        id: setup-python
+        uses: actions/setup-python@v5
         with:
-          platforms: arm64
+          python-version: '3.12'
+
+      - name: Install cibuildwheel
+        run: |
+          ${{ steps.setup-python.outputs.python-path }} -m pip install --upgrade pip
+          ${{ steps.setup-python.outputs.python-path }} -m pip install cibuildwheel==2.21.0
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.21
+        run: ${{ steps.setup-python.outputs.python-path }} -m cibuildwheel --output-dir wheelhouse
         env:
-          # Platform-specific architecture settings
-          CIBW_ARCHS_LINUX: x86_64 aarch64
-          CIBW_ARCHS_MACOS: arm64
-          CIBW_ARCHS_WINDOWS: AMD64
-          # Skip tests on emulated platforms (too slow)
-          CIBW_TEST_SKIP: "*-*linux_aarch64"
+          # Build for Python 3.11, 3.12, 3.13
+          CIBW_BUILD: "cp311-* cp312-* cp313-*"
+          # Skip 32-bit builds and musllinux
+          CIBW_SKIP: "*-win32 *-manylinux_i686 *-musllinux_*"
+          # x86_64 only to save build time
+          CIBW_ARCHS_LINUX: x86_64
+          # Test that the package imports correctly
+          CIBW_TEST_COMMAND: >
+            python -c "import grillex; print('Grillex imported successfully')"
+          # Install numpy for testing
+          CIBW_TEST_REQUIRES: numpy
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          name: wheels-linux
           path: ./wheelhouse/*.whl
           retention-days: 7
 
@@ -76,7 +90,7 @@ jobs:
   # =============================================================================
   build_sdist:
     name: Build source distribution
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout repository
@@ -87,7 +101,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
+
+      - name: Add Python to PATH
+        run: echo "${{ env.pythonLocation }}/bin" >> $GITHUB_PATH
 
       - name: Install build dependencies
         run: pip install build
@@ -103,16 +120,15 @@ jobs:
           retention-days: 7
 
   # =============================================================================
-  # Test the built wheels
+  # Test the built wheels (Linux only)
   # =============================================================================
   test_wheels:
-    name: Test wheel on ${{ matrix.os }} / Python ${{ matrix.python }}
+    name: Test wheel on Linux / Python ${{ matrix.python }}
     needs: build_wheels
-    runs-on: ${{ matrix.os }}
+    runs-on: self-hosted
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
         python: ['3.11', '3.12', '3.13']
 
     steps:
@@ -124,41 +140,22 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Download all wheels
+      - name: Add Python to PATH
+        run: echo "${{ env.pythonLocation }}/bin" >> $GITHUB_PATH
+
+      - name: Download wheels
         uses: actions/download-artifact@v4
         with:
-          pattern: wheels-*
+          name: wheels-linux
           path: wheelhouse
-          merge-multiple: true
 
       - name: Install wheel
-        shell: bash
         run: |
-          # Find and install the appropriate wheel for this platform
           PYTHON_VERSION=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
-
-          # Determine platform and architecture
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            PLATFORM="manylinux"
-            ARCH="x86_64"
-          elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            PLATFORM="macosx"
-            ARCH=$(uname -m)
-          elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            PLATFORM="win"
-            ARCH="amd64"
-          fi
-
-          echo "Looking for wheel: Python=$PYTHON_VERSION, Platform=$PLATFORM, Arch=$ARCH"
+          echo "Looking for wheel: Python=$PYTHON_VERSION"
           ls -la wheelhouse/
 
-          # Find matching wheel with correct architecture
-          WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*${PLATFORM}*${ARCH}*.whl" -o -name "grillex-*${PYTHON_VERSION}*${PLATFORM}*${ARCH}.whl" | head -1)
-
-          if [[ -z "$WHEEL" ]]; then
-            echo "No exact match found, trying without arch..."
-            WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*${PLATFORM}*.whl" | grep -v aarch64 | head -1)
-          fi
+          WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*manylinux*x86_64*.whl" | head -1)
 
           if [[ -z "$WHEEL" ]]; then
             echo "Error: No compatible wheel found"
@@ -166,7 +163,8 @@ jobs:
           fi
 
           echo "Installing: $WHEEL"
-          pip install "$WHEEL"[testing]
+          pip install "$WHEEL"
+          pip install pytest numpy scipy pyyaml pydantic
 
       - name: Run tests
         run: |
