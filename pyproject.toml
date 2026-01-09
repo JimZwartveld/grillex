@@ -37,12 +37,14 @@ test-command = "python -c \"import grillex; from grillex.core import StructuralM
 build-verbosity = 1
 
 [tool.cibuildwheel.linux]
+# Build only for x86_64 architecture (not aarch64)
+archs = ["x86_64"]
+
 # Install pybind11 via pip (provides CMake config, avoids FetchContent issues)
 before-build = "pip install pybind11"
 
 # Use manylinux2014 for broader compatibility
 manylinux-x86_64-image = "manylinux2014"
-manylinux-aarch64-image = "manylinux2014"
 
 # Repair wheels to include shared libraries
 repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"
@@ -61,6 +63,9 @@ archs = ["arm64"]
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
 [tool.cibuildwheel.windows]
+# Build only for AMD64 architecture (not ARM64)
+archs = ["AMD64"]
+
 # Install pybind11 and delvewheel
 before-build = "pip install pybind11 delvewheel"
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel}"
