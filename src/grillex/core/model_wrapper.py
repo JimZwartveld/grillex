@@ -3050,7 +3050,9 @@ class StructuralModel:
         generator: "VesselMotions",
         analysis_settings: Optional["AnalysisSettings"] = None,
         create_load_cases: bool = True,
-        generate_combinations: bool = True
+        generate_combinations: bool = True,
+        permanent_load_case_names: Optional[List[str]] = None,
+        variable_load_case_names: Optional[List[str]] = None
     ) -> "VesselMotions":
         """Add a vessel motions generator and create its load cases.
 
@@ -3072,6 +3074,9 @@ class StructuralModel:
             analysis_settings: Settings for load combination generation (limit states, factors)
             create_load_cases: If True (default), creates C++ load cases
             generate_combinations: If True (default), generates load combinations
+            permanent_load_case_names: Names of permanent load cases to include in combinations
+                                      (e.g., ["Gravity", "Self-Weight"])
+            variable_load_case_names: Names of variable load cases to include in combinations
 
         Returns:
             The generator object (single source of truth for amplitudes)
@@ -3128,8 +3133,13 @@ class StructuralModel:
                 self._linked_load_case_ids.add(lc.id)
 
         if generate_combinations and analysis_settings is not None:
-            # Generate load combinations
-            combinations = generate_load_combinations(generator, analysis_settings)
+            # Generate load combinations with optional permanent/variable load cases
+            combinations = generate_load_combinations(
+                generator,
+                analysis_settings,
+                permanent_load_case_names=permanent_load_case_names,
+                variable_load_case_names=variable_load_case_names
+            )
             self._generated_combinations.extend(combinations)
 
         return generator

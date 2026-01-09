@@ -1593,12 +1593,14 @@ class GeneratedLoadCombination:
     """A generated load combination with factors.
 
     Attributes:
-        name: Combination name (e.g., "ULSa - Heave+ Roll+")
+        name: Combination name (e.g., "Heave+ Roll+")
         limit_state: The limit state this combination represents
         vessel_motions: List of VesselMotion objects combined in this load combination
         dead_load_factor: Factor for permanent loads
         live_load_factor: Factor for variable loads
         environmental_factor: Factor for environmental loads
+        permanent_load_case_names: Names of permanent load cases to include (e.g., ["Gravity"])
+        variable_load_case_names: Names of variable load cases to include
     """
     name: str
     limit_state: LimitState
@@ -1606,6 +1608,8 @@ class GeneratedLoadCombination:
     dead_load_factor: float
     live_load_factor: float
     environmental_factor: float
+    permanent_load_case_names: List[str] = field(default_factory=list)
+    variable_load_case_names: List[str] = field(default_factory=list)
 
     # Backwards compatibility: single vessel_motion property
     @property
@@ -1649,7 +1653,9 @@ class GeneratedLoadCombination:
 
 def generate_load_combinations(
     vessel_motions: VesselMotions,
-    settings: AnalysisSettings
+    settings: AnalysisSettings,
+    permanent_load_case_names: Optional[List[str]] = None,
+    variable_load_case_names: Optional[List[str]] = None
 ) -> List[GeneratedLoadCombination]:
     """Generate load combinations from vessel motions and analysis settings.
 
@@ -1660,6 +1666,8 @@ def generate_load_combinations(
     Args:
         vessel_motions: VesselMotions generator (e.g., VesselMotionsFromNobleDenton)
         settings: AnalysisSettings with design method and operation type
+        permanent_load_case_names: Names of permanent load cases to include (e.g., ["Gravity"])
+        variable_load_case_names: Names of variable load cases to include
 
     Returns:
         List of GeneratedLoadCombination objects
@@ -1670,13 +1678,17 @@ def generate_load_combinations(
         ...     roll_angle=10.0, roll_period=10.0
         ... )
         >>> settings = AnalysisSettings(design_method=DesignMethod.LRFD)
-        >>> combinations = generate_load_combinations(nd_motions, settings)
+        >>> combinations = generate_load_combinations(nd_motions, settings, ["Gravity"])
         >>> len(combinations)  # 8 combinations * 2 limit states (ULSa, ULSb)
         16
     """
     combinations = []
     limit_states = settings.get_limit_states()
     motion_combinations = vessel_motions.get_motion_combinations()
+
+    # Default to empty lists if not provided
+    perm_lc_names = permanent_load_case_names or []
+    var_lc_names = variable_load_case_names or []
 
     for motion_group in motion_combinations:
         # Build combination name from motion names
@@ -1692,12 +1704,14 @@ def generate_load_combinations(
         for limit_state in limit_states:
             factors = settings.get_factors(limit_state)
             combo = GeneratedLoadCombination(
-                name=f"{limit_state.value.upper()} - {combo_name}",
+                name=combo_name,  # Don't include limit state in name - it's in the type field
                 limit_state=limit_state,
                 vessel_motions=motion_group,
                 dead_load_factor=factors.dead_load,
                 live_load_factor=factors.live_load,
-                environmental_factor=factors.environmental
+                environmental_factor=factors.environmental,
+                permanent_load_case_names=perm_lc_names,
+                variable_load_case_names=var_lc_names
             )
             combinations.append(combo)
 
