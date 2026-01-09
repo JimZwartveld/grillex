@@ -1425,13 +1425,13 @@ def apply_generated_combinations(
     if dead_load_cases is None:
         dead_load_cases = [
             lc.name for lc in model.get_load_cases()
-            if lc.load_type == LoadCaseType.Permanent
+            if lc.type == LoadCaseType.Permanent
         ]
 
     if live_load_cases is None:
         live_load_cases = [
             lc.name for lc in model.get_load_cases()
-            if lc.load_type == LoadCaseType.Variable
+            if lc.type == LoadCaseType.Variable
         ]
 
     # Track which vessel motions have load cases created

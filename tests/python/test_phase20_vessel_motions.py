@@ -2086,3 +2086,202 @@ class TestLoadCombinationConversion:
         # No load cases added yet
         assert len(combo) == 0
         assert combo.empty()
+
+
+class TestVesselMotionGeneratorIntegration:
+    """Tests for vessel motion generator integration with StructuralModel."""
+
+    def test_add_vessel_motions_generator_creates_load_cases(self):
+        """Adding a generator creates load cases for each motion."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton, AnalysisSettings, DesignMethod
+        )
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Create vessel motions generator
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            pitch_angle=5.0,
+            pitch_period=8.0,
+            roll_angle=10.0,
+            roll_period=10.0,
+            motion_center=[3.0, 0.0, 0.0]
+        )
+
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+
+        # Add generator to model
+        motions = model.add_vessel_motions_generator(nd, settings)
+
+        # Should have 6 Noble Denton motions
+        assert len(motions) == 6
+
+        # Load cases should be created
+        load_cases = model.get_load_cases()
+        motion_names = [m.name for m in motions]
+
+        for name in motion_names:
+            found = any(lc.name == name for lc in load_cases)
+            assert found, f"Load case '{name}' not found"
+
+    def test_add_generator_creates_combinations(self):
+        """Adding a generator with settings creates load combinations."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton, AnalysisSettings, DesignMethod
+        )
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            roll_angle=10.0,
+            roll_period=10.0,
+            motion_center=[3.0, 0.0, 0.0]
+        )
+
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+        model.add_vessel_motions_generator(nd, settings)
+
+        # Generated combinations should be stored
+        combos = model.get_generated_load_combinations()
+        assert len(combos) > 0
+
+        # Should have multiple limit states
+        limit_states = {c.limit_state for c in combos}
+        assert len(limit_states) > 1
+
+    def test_analyze_includes_vessel_motion_load_cases(self):
+        """model.analyze() includes vessel motion load cases."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton
+        )
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+        model.fix_dof_at([6, 0, 0], DOFIndex.UZ)  # Roller support for stability
+
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            pitch_angle=5.0,
+            pitch_period=8.0,
+            motion_center=[3.0, 0.0, 0.0]
+        )
+
+        # Add without generating combinations
+        model.add_vessel_motions_generator(nd, generate_combinations=False)
+
+        # Analyze should succeed - load cases from motions are included
+        success = model.analyze()
+        assert success
+
+        # Check that we can get results for a vessel motion load case
+        motions = nd.get_motions()
+        assert len(motions) > 0
+
+        # Model should have results
+        assert model.is_analyzed()
+
+    def test_analyze_combinations_includes_generated(self):
+        """analyze_combinations() analyzes generated load combinations."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton, AnalysisSettings, DesignMethod
+        )
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+        model.fix_dof_at([6, 0, 0], DOFIndex.UZ)
+
+        # Add dead load using the convenience method
+        dead_lc = model.add_gravity_load_case("Dead", 9.81, LoadCaseType.Permanent)
+
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            roll_angle=10.0,
+            roll_period=10.0,
+            motion_center=[3.0, 0.0, 0.0]
+        )
+
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+        model.add_vessel_motions_generator(nd, settings)
+
+        # First analyze all load cases
+        model.analyze()
+
+        # Then analyze all combinations
+        results = model.analyze_combinations()
+
+        # Should have results for each generated combination
+        combos = model.get_generated_load_combinations()
+        assert len(results) >= len(combos)
+
+        # Each result should have converged
+        for name, result in results.items():
+            assert result.converged, f"Combination '{name}' did not converge"
+
+    def test_get_vessel_motion_generators(self):
+        """get_vessel_motion_generators() returns registered generators."""
+        from grillex.core import VesselMotionsFromAmplitudes, MotionAmplitudes
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Initially empty
+        assert len(model.get_vessel_motion_generators()) == 0
+
+        # Add a generator
+        amplitudes = MotionAmplitudes(heave=2.5, roll_angle=10.0, roll_period=10.0)
+        gen = VesselMotionsFromAmplitudes("Test", amplitudes)
+        model.add_vessel_motions_generator(gen, generate_combinations=False)
+
+        # Now has one generator
+        generators = model.get_vessel_motion_generators()
+        assert len(generators) == 1
+        assert generators[0].name == "Test"
+
+    def test_generator_without_settings_skips_combinations(self):
+        """Adding generator without settings doesn't create combinations."""
+        from grillex.core import VesselMotionsFromNobleDenton
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            roll_angle=10.0,
+            roll_period=10.0
+        )
+
+        # Add without settings
+        model.add_vessel_motions_generator(nd, analysis_settings=None)
+
+        # Load cases should exist
+        assert len(model.get_load_cases()) >= 6  # At least the 6 ND cases
+
+        # But no generated combinations
+        assert len(model.get_generated_load_combinations()) == 0
