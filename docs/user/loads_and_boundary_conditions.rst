@@ -374,6 +374,231 @@ This creates load cases named "Roll +" and "Roll -" with opposite acceleration
 signs. Both load cases are linked and automatically update when the VesselMotion
 is modified.
 
+Vessel Motion Generators
+------------------------
+
+For offshore design workflows, Grillex provides generator classes that create
+multiple load cases and load combinations automatically based on industry standards.
+
+Noble Denton Generator
+~~~~~~~~~~~~~~~~~~~~~~
+
+The ``VesselMotionsFromNobleDenton`` generator creates 6 standalone load cases
+per Noble Denton guidelines for heavy lift and transportation operations:
+
+.. doctest::
+
+    >>> from grillex.core import StructuralModel
+    >>> from grillex.core.vessel_motion import (
+    ...     VesselMotionsFromNobleDenton,
+    ...     AnalysisSettings,
+    ...     DesignMethod,
+    ... )
+    >>>
+    >>> # Create Noble Denton generator
+    >>> nd_generator = VesselMotionsFromNobleDenton(
+    ...     name="Transport",
+    ...     heave=2.5,           # m/s² heave acceleration
+    ...     roll_angle=15.0,     # degrees roll amplitude
+    ...     roll_period=10.0,    # seconds roll period
+    ...     pitch_angle=5.0,     # degrees pitch amplitude
+    ...     pitch_period=8.0,    # seconds pitch period
+    ...     motion_center=[50.0, 0.0, 5.0]  # Rotation center
+    ... )
+    >>>
+    >>> # Generate the 6 load cases
+    >>> motions = nd_generator.get_motions()
+    >>> [m.name for m in motions]  # doctest: +NORMALIZE_WHITESPACE
+    ['Transport - Heave+', 'Transport - Heave-',
+     'Transport - Pitch+', 'Transport - Pitch-',
+     'Transport - Roll+', 'Transport - Roll-']
+
+**Key characteristics:**
+
+- **6 standalone load cases**: Heave±, Pitch±, Roll± (each motion type is separate)
+- **No surge/sway coupling**: Rotations are defined at the motion center, so coupling
+  is handled implicitly through the reference point
+- **Angular acceleration from angle/period**: α = (2π/T)² × θ for simple harmonic motion
+
+Noble Denton Load Combinations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Noble Denton combinations pair heave with roll or pitch (8 combinations per limit state):
+
+.. doctest::
+
+    >>> # Get motion combinations (for load combination generation)
+    >>> combos = nd_generator.get_motion_combinations()
+    >>> len(combos)  # 8 pairings: Heave± × Roll±, Heave± × Pitch±
+    8
+
+The 8 combinations are:
+
+- Heave+ & Roll+, Heave+ & Roll-, Heave- & Roll+, Heave- & Roll-
+- Heave+ & Pitch+, Heave+ & Pitch-, Heave- & Pitch+, Heave- & Pitch-
+
+Amplitudes Generator
+~~~~~~~~~~~~~~~~~~~~
+
+The ``VesselMotionsFromAmplitudes`` generator creates load cases from direct
+acceleration amplitudes with surge/sway coupling rules:
+
+.. doctest::
+
+    >>> from grillex.core.vessel_motion import (
+    ...     VesselMotionsFromAmplitudes,
+    ...     MotionAmplitudes,
+    ... )
+    >>>
+    >>> # Define motion amplitudes
+    >>> amplitudes = MotionAmplitudes(
+    ...     heave=2.5,        # m/s²
+    ...     roll_accel=0.12,  # rad/s²
+    ...     pitch_accel=0.08, # rad/s²
+    ...     yaw_accel=0.05,   # rad/s²
+    ... )
+    >>>
+    >>> # Create generator with coupling rules
+    >>> amp_generator = VesselMotionsFromAmplitudes(
+    ...     name="Design Motion",
+    ...     amplitudes=amplitudes,
+    ...     motion_center=[50.0, 0.0, 5.0],
+    ... )
+    >>>
+    >>> # Get generated load cases (±pairs for each motion)
+    >>> motions = amp_generator.get_motions()
+    >>> len(motions)  # 8 load cases: Heave±, Pitch±, Roll±, Yaw±
+    8
+
+**Key characteristics:**
+
+- **8 load cases**: ± pairs for Heave, Pitch, Roll, Yaw
+- **Coupling rules applied**: +pitch → +surge, +roll → -sway
+- **16 combinations per limit state**: All 2⁴ permutations of Heave± × Pitch± × Roll± × Yaw±
+
+Load Combination Generation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Generate design load combinations with appropriate factors. Grillex supports
+two design methods: **LRFD** and **ASD**.
+
+**LRFD (Load and Resistance Factor Design):**
+
+.. doctest::
+
+    >>> from grillex.core.vessel_motion import generate_load_combinations
+    >>>
+    >>> # Configure LRFD settings (default)
+    >>> settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+    >>>
+    >>> # Generate combinations for Noble Denton
+    >>> combinations = generate_load_combinations(nd_generator, settings)
+    >>> len(combinations)  # 8 combos × 2 limit states (ULSa, ULSb) = 16
+    16
+
+.. list-table:: LRFD Load Combination Factors
+   :header-rows: 1
+   :widths: 20 20 20 20 20
+
+   * - Limit State
+     - Dead Load
+     - Live Load
+     - Environmental
+     - Use Case
+   * - ULS-a
+     - 1.3
+     - 1.3
+     - 0.7
+     - Permanent load dominant
+   * - ULS-b
+     - 1.0
+     - 1.0
+     - 1.3
+     - Environmental load dominant
+
+**ASD (Allowable Stress Design):**
+
+ASD uses unfactored service loads with a single SLS (Serviceability Limit State):
+
+.. doctest::
+
+    >>> # Configure ASD settings
+    >>> asd_settings = AnalysisSettings(design_method=DesignMethod.ASD)
+    >>>
+    >>> # Generate combinations - only SLS
+    >>> asd_combinations = generate_load_combinations(nd_generator, asd_settings)
+    >>> len(asd_combinations)  # 8 combos × 1 limit state (SLS) = 8
+    8
+    >>> asd_combinations[0].name
+    'SLS - Heave+ Roll+'
+
+.. list-table:: ASD Load Combination Factors
+   :header-rows: 1
+   :widths: 25 25 25 25
+
+   * - Limit State
+     - Dead Load
+     - Live Load
+     - Environmental
+   * - SLS
+     - 1.0
+     - 1.0
+     - 1.0
+
+**Design Method Comparison:**
+
+.. list-table:: Design Method Comparison
+   :header-rows: 1
+   :widths: 25 25 25 25
+
+   * - Design Method
+     - Limit States
+     - Noble Denton Combos
+     - Amplitudes Combos
+   * - LRFD
+     - ULS-a, ULS-b
+     - 8 × 2 = 16
+     - 16 × 2 = 32
+   * - ASD
+     - SLS only
+     - 8 × 1 = 8
+     - 16 × 1 = 16
+
+Integrating with StructuralModel
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Add a generator to a model to create load cases and combinations automatically:
+
+.. doctest::
+
+    >>> model = StructuralModel(name="Offshore Module")
+    >>> _ = model.add_material("Steel", E=210e6, nu=0.3, rho=7.85e-3)
+    >>> _ = model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+    >>> _ = model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+    >>> model.fix_node_at([0, 0, 0])
+    >>> model.fix_node_at([6, 0, 0])
+    >>>
+    >>> # Add Noble Denton generator (creates load cases and combinations)
+    >>> nd = VesselMotionsFromNobleDenton(
+    ...     "Transport", heave=2.5,
+    ...     roll_angle=15.0, roll_period=10.0,
+    ...     pitch_angle=5.0, pitch_period=8.0,
+    ... )
+    >>> settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+    >>> motions = model.add_vessel_motions_generator(
+    ...     generator=nd,
+    ...     analysis_settings=settings,
+    ...     create_load_cases=True,
+    ...     generate_combinations=True,
+    ... )
+    >>>
+    >>> # Query generated combinations
+    >>> combos = model.get_generated_load_combinations()
+    >>> len(combos)  # 16 combinations
+    16
+    >>> combos[0].name  # Example combination name
+    'ULSA - Heave+ Roll+'
+
 Load Cases
 ==========
 
