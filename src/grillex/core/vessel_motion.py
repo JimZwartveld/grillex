@@ -870,6 +870,21 @@ class VesselMotions(ABC):
         """
         pass
 
+    def get_motion_combinations(self) -> List[List[VesselMotion]]:
+        """Get the motion combinations for load combinations.
+
+        Returns a list of motion groups, where each group contains the motions
+        that should be combined together in a load combination.
+
+        By default, each motion is used individually (one motion per combination).
+        Subclasses can override this to provide different combination patterns.
+
+        Returns:
+            List of motion lists, each inner list is one combination's motions
+        """
+        # Default: each motion is its own combination
+        return [[m] for m in self.get_motions()]
+
     def get_motions(self) -> List[VesselMotion]:
         """Get generated motions, generating if not already done.
 
@@ -1103,6 +1118,52 @@ class VesselMotionsFromAmplitudes(VesselMotions):
 
         return motions
 
+    def get_motion_combinations(self) -> List[List[VesselMotion]]:
+        """Get all motion combinations (up to 16 total).
+
+        Generates all 2^4 = 16 permutations of Heave± × Pitch± × Roll± × Yaw±.
+        If any motion type is not defined (amplitude = 0), it's excluded.
+
+        Returns:
+            List of motion groups, each containing 2-4 motions to combine
+        """
+        from itertools import product
+
+        motions = self.get_motions()
+
+        # Group motions by type (each pair is +/-)
+        motion_pairs: List[List[VesselMotion]] = []
+        i = 0
+
+        # Heave
+        if self.amplitudes.heave != 0.0:
+            motion_pairs.append([motions[i], motions[i + 1]])  # Heave+, Heave-
+            i += 2
+
+        # Pitch
+        if self.amplitudes.get_pitch_acceleration() != 0.0:
+            motion_pairs.append([motions[i], motions[i + 1]])  # Pitch+, Pitch-
+            i += 2
+
+        # Roll
+        if self.amplitudes.get_roll_acceleration() != 0.0:
+            motion_pairs.append([motions[i], motions[i + 1]])  # Roll+, Roll-
+            i += 2
+
+        # Yaw
+        if self.amplitudes.get_yaw_acceleration() != 0.0:
+            motion_pairs.append([motions[i], motions[i + 1]])  # Yaw+, Yaw-
+
+        # Generate all combinations (cartesian product)
+        if not motion_pairs:
+            return []
+
+        combinations = []
+        for combo in product(*motion_pairs):
+            combinations.append(list(combo))
+
+        return combinations
+
 
 # ============================================================================
 # VesselMotionsFromNobleDenton
@@ -1114,12 +1175,20 @@ class VesselMotionsFromNobleDenton(VesselMotions):
 
     Noble Denton approach for heavy lift and transportation operations:
     - 2 heave-only cases (heave+ and heave-)
-    - 2 pitch+heave cases (pitch+ with heave, pitch- with heave)
-    - 2 roll+heave cases (roll+ with heave, roll- with heave)
+    - 2 pitch-only cases (pitch+ and pitch-)
+    - 2 roll-only cases (roll+ and roll-)
 
-    Coupling rules are applied:
-    - +pitch = +surge (bow pitching down causes forward acceleration)
-    - +roll = -sway (rolling to starboard causes port acceleration)
+    Load cases are standalone (not combined). Heave is combined with pitch/roll
+    in load combinations, not in the load cases themselves.
+
+    Note:
+        Noble Denton does NOT apply surge/sway coupling. Rotations are defined
+        at the motion center (rotation center of the barge), so coupling is
+        handled implicitly through the motion center reference point.
+
+    Load combinations (8 per limit state):
+    - Heave+ & Roll+, Heave+ & Roll-, Heave- & Roll+, Heave- & Roll-
+    - Heave+ & Pitch+, Heave+ & Pitch-, Heave- & Pitch+, Heave- & Pitch-
 
     Example:
         >>> nd_motions = VesselMotionsFromNobleDenton(
@@ -1136,8 +1205,8 @@ class VesselMotionsFromNobleDenton(VesselMotions):
         6
         >>> [m.name for m in motions]  # doctest: +NORMALIZE_WHITESPACE
         ['Noble Denton - Heave+', 'Noble Denton - Heave-',
-         'Noble Denton - Pitch+ Heave', 'Noble Denton - Pitch- Heave',
-         'Noble Denton - Roll+ Heave', 'Noble Denton - Roll- Heave']
+         'Noble Denton - Pitch+', 'Noble Denton - Pitch-',
+         'Noble Denton - Roll+', 'Noble Denton - Roll-']
     """
 
     def __init__(
@@ -1151,23 +1220,19 @@ class VesselMotionsFromNobleDenton(VesselMotions):
         pitch_period: float = 8.0,
         pitch_accel: Optional[float] = None,
         motion_center: Optional[List[float]] = None,
-        pitch_surge_coupling: float = 1.0,
-        roll_sway_coupling: float = -1.0
     ):
         """Initialize Noble Denton motion generator.
 
         Args:
             name: Name prefix for generated motions
-            heave: Heave acceleration in m/s² (always applied with roll/pitch)
+            heave: Heave acceleration in m/s²
             roll_angle: Roll amplitude in degrees
             roll_period: Roll period in seconds
             roll_accel: Roll acceleration in rad/s² (overrides angle/period)
             pitch_angle: Pitch amplitude in degrees
             pitch_period: Pitch period in seconds
             pitch_accel: Pitch acceleration in rad/s² (overrides angle/period)
-            motion_center: Reference point [x, y, z] in meters
-            pitch_surge_coupling: Coupling factor (+1.0 = +pitch gives +surge)
-            roll_sway_coupling: Coupling factor (-1.0 = +roll gives -sway)
+            motion_center: Reference point [x, y, z] in meters (rotation center)
         """
         super().__init__(name, motion_center)
         self.heave = heave
@@ -1177,8 +1242,6 @@ class VesselMotionsFromNobleDenton(VesselMotions):
         self.pitch_angle = pitch_angle
         self.pitch_period = pitch_period
         self.pitch_accel = pitch_accel
-        self.pitch_surge_coupling = pitch_surge_coupling
-        self.roll_sway_coupling = roll_sway_coupling
 
     def _get_roll_acceleration(self) -> float:
         """Get roll acceleration, converting from angle/period if needed."""
@@ -1201,13 +1264,18 @@ class VesselMotionsFromNobleDenton(VesselMotions):
         return 0.0
 
     def generate_motions(self) -> List[VesselMotion]:
-        """Generate 6 Noble Denton motion load cases.
+        """Generate 6 Noble Denton motion load cases (standalone, not combined).
 
         Returns:
             List of 6 VesselMotion objects:
-            - Heave+, Heave-
-            - Pitch+ Heave, Pitch- Heave
-            - Roll+ Heave, Roll- Heave
+            - Heave+, Heave- (heave only)
+            - Pitch+, Pitch- (pitch only, no heave, no surge coupling)
+            - Roll+, Roll- (roll only, no heave, no sway coupling)
+
+        Note:
+            Heave and pitch/roll are combined in load combinations, not here.
+            Noble Denton does not use surge/sway coupling - rotations are
+            defined at the motion center (rotation center of the barge).
         """
         motions = []
 
@@ -1227,51 +1295,65 @@ class VesselMotionsFromNobleDenton(VesselMotions):
         pitch_accel = self._get_pitch_acceleration()
         roll_accel = self._get_roll_acceleration()
 
-        # 3. Pitch+ with Heave (and coupled surge)
-        pitch_heave_pos = VesselMotion(f"{self.name} - Pitch+ Heave")
-        pitch_heave_pos.set_motion_center(self.motion_center)
-        pitch_heave_pos.add_heave(self.heave)
+        # 3. Pitch+ (pitch only, NO heave, NO surge coupling)
+        pitch_pos = VesselMotion(f"{self.name} - Pitch+")
+        pitch_pos.set_motion_center(self.motion_center)
         if pitch_accel != 0.0:
-            pitch_heave_pos.add_pitch(pitch_accel)
-            surge_coupled = pitch_accel * self.pitch_surge_coupling
-            if surge_coupled != 0.0:
-                pitch_heave_pos.add_surge(surge_coupled)
-        motions.append(pitch_heave_pos)
+            pitch_pos.add_pitch(pitch_accel)
+        motions.append(pitch_pos)
 
-        # 4. Pitch- with Heave (and coupled surge)
-        pitch_heave_neg = VesselMotion(f"{self.name} - Pitch- Heave")
-        pitch_heave_neg.set_motion_center(self.motion_center)
-        pitch_heave_neg.add_heave(self.heave)
+        # 4. Pitch- (pitch only, NO heave, NO surge coupling)
+        pitch_neg = VesselMotion(f"{self.name} - Pitch-")
+        pitch_neg.set_motion_center(self.motion_center)
         if pitch_accel != 0.0:
-            pitch_heave_neg.add_pitch(-pitch_accel)
-            surge_coupled_neg = -pitch_accel * self.pitch_surge_coupling
-            if surge_coupled_neg != 0.0:
-                pitch_heave_neg.add_surge(surge_coupled_neg)
-        motions.append(pitch_heave_neg)
+            pitch_neg.add_pitch(-pitch_accel)
+        motions.append(pitch_neg)
 
-        # 5. Roll+ with Heave (and coupled sway)
-        roll_heave_pos = VesselMotion(f"{self.name} - Roll+ Heave")
-        roll_heave_pos.set_motion_center(self.motion_center)
-        roll_heave_pos.add_heave(self.heave)
+        # 5. Roll+ (roll only, NO heave, NO sway coupling)
+        roll_pos = VesselMotion(f"{self.name} - Roll+")
+        roll_pos.set_motion_center(self.motion_center)
         if roll_accel != 0.0:
-            roll_heave_pos.add_roll(roll_accel)
-            sway_coupled = roll_accel * self.roll_sway_coupling
-            if sway_coupled != 0.0:
-                roll_heave_pos.add_sway(sway_coupled)
-        motions.append(roll_heave_pos)
+            roll_pos.add_roll(roll_accel)
+        motions.append(roll_pos)
 
-        # 6. Roll- with Heave (and coupled sway)
-        roll_heave_neg = VesselMotion(f"{self.name} - Roll- Heave")
-        roll_heave_neg.set_motion_center(self.motion_center)
-        roll_heave_neg.add_heave(self.heave)
+        # 6. Roll- (roll only, NO heave, NO sway coupling)
+        roll_neg = VesselMotion(f"{self.name} - Roll-")
+        roll_neg.set_motion_center(self.motion_center)
         if roll_accel != 0.0:
-            roll_heave_neg.add_roll(-roll_accel)
-            sway_coupled_neg = -roll_accel * self.roll_sway_coupling
-            if sway_coupled_neg != 0.0:
-                roll_heave_neg.add_sway(sway_coupled_neg)
-        motions.append(roll_heave_neg)
+            roll_neg.add_roll(-roll_accel)
+        motions.append(roll_neg)
 
         return motions
+
+    def get_motion_combinations(self) -> List[List[VesselMotion]]:
+        """Get Noble Denton motion combinations (8 total).
+
+        Noble Denton combinations pair heave with roll or pitch:
+        - Heave+ & Roll+, Heave+ & Roll-, Heave- & Roll+, Heave- & Roll-
+        - Heave+ & Pitch+, Heave+ & Pitch-, Heave- & Pitch+, Heave- & Pitch-
+
+        Returns:
+            List of 8 motion pairs
+        """
+        motions = self.get_motions()
+        # Motions are ordered: [Heave+, Heave-, Pitch+, Pitch-, Roll+, Roll-]
+        heave_pos, heave_neg = motions[0], motions[1]
+        pitch_pos, pitch_neg = motions[2], motions[3]
+        roll_pos, roll_neg = motions[4], motions[5]
+
+        combinations = [
+            # Heave × Roll combinations
+            [heave_pos, roll_pos],   # Heave+ Roll+
+            [heave_pos, roll_neg],   # Heave+ Roll-
+            [heave_neg, roll_pos],   # Heave- Roll+
+            [heave_neg, roll_neg],   # Heave- Roll-
+            # Heave × Pitch combinations
+            [heave_pos, pitch_pos],  # Heave+ Pitch+
+            [heave_pos, pitch_neg],  # Heave+ Pitch-
+            [heave_neg, pitch_pos],  # Heave- Pitch+
+            [heave_neg, pitch_neg],  # Heave- Pitch-
+        ]
+        return combinations
 
 
 # ============================================================================
@@ -1284,19 +1366,25 @@ class GeneratedLoadCombination:
     """A generated load combination with factors.
 
     Attributes:
-        name: Combination name (e.g., "ULSa - Heave+")
+        name: Combination name (e.g., "ULSa - Heave+ Roll+")
         limit_state: The limit state this combination represents
-        vessel_motion: The VesselMotion for environmental load
+        vessel_motions: List of VesselMotion objects combined in this load combination
         dead_load_factor: Factor for permanent loads
         live_load_factor: Factor for variable loads
         environmental_factor: Factor for environmental loads
     """
     name: str
     limit_state: LimitState
-    vessel_motion: VesselMotion
+    vessel_motions: List[VesselMotion]
     dead_load_factor: float
     live_load_factor: float
     environmental_factor: float
+
+    # Backwards compatibility: single vessel_motion property
+    @property
+    def vessel_motion(self) -> Optional[VesselMotion]:
+        """Get first vessel motion (for backwards compatibility)."""
+        return self.vessel_motions[0] if self.vessel_motions else None
 
     def to_load_combination(self, combination_id: int = 0) -> "LoadCombination":
         """Convert to a C++ LoadCombination object with type-based factors.
@@ -1338,8 +1426,9 @@ def generate_load_combinations(
 ) -> List[GeneratedLoadCombination]:
     """Generate load combinations from vessel motions and analysis settings.
 
-    Creates combinations for each vessel motion case with each applicable
-    limit state based on the design method.
+    Creates combinations using the vessel motion generator's combination pattern.
+    For Noble Denton, this creates 8 combinations per limit state (Heave × Roll/Pitch).
+    For Amplitudes, this creates up to 16 combinations per limit state (2^4 permutations).
 
     Args:
         vessel_motions: VesselMotions generator (e.g., VesselMotionsFromNobleDenton)
@@ -1350,24 +1439,35 @@ def generate_load_combinations(
 
     Example:
         >>> nd_motions = VesselMotionsFromNobleDenton(
-        ...     "ND", heave=2.5, pitch_angle=5.0, pitch_period=8.0
+        ...     "ND", heave=2.5, pitch_angle=5.0, pitch_period=8.0,
+        ...     roll_angle=10.0, roll_period=10.0
         ... )
         >>> settings = AnalysisSettings(design_method=DesignMethod.LRFD)
         >>> combinations = generate_load_combinations(nd_motions, settings)
-        >>> len(combinations)  # 6 motions * 2 limit states (ULSa, ULSb)
-        12
+        >>> len(combinations)  # 8 combinations * 2 limit states (ULSa, ULSb)
+        16
     """
     combinations = []
     limit_states = settings.get_limit_states()
-    motions = vessel_motions.get_motions()
+    motion_combinations = vessel_motions.get_motion_combinations()
 
-    for motion in motions:
+    for motion_group in motion_combinations:
+        # Build combination name from motion names
+        motion_names = []
+        for m in motion_group:
+            # Extract the suffix (e.g., "Heave+" from "Name - Heave+")
+            if " - " in m.name:
+                motion_names.append(m.name.split(" - ")[-1])
+            else:
+                motion_names.append(m.name)
+        combo_name = " ".join(motion_names)
+
         for limit_state in limit_states:
             factors = settings.get_factors(limit_state)
             combo = GeneratedLoadCombination(
-                name=f"{limit_state.value.upper()} - {motion.name}",
+                name=f"{limit_state.value.upper()} - {combo_name}",
                 limit_state=limit_state,
-                vessel_motion=motion,
+                vessel_motions=motion_group,
                 dead_load_factor=factors.dead_load,
                 live_load_factor=factors.live_load,
                 environmental_factor=factors.environmental
@@ -1405,7 +1505,10 @@ def apply_generated_combinations(
 
     Example:
         >>> # Generate combinations
-        >>> nd = VesselMotionsFromNobleDenton("ND", heave=2.5, pitch_angle=5.0, pitch_period=8.0)
+        >>> nd = VesselMotionsFromNobleDenton(
+        ...     "ND", heave=2.5, pitch_angle=5.0, pitch_period=8.0,
+        ...     roll_angle=10.0, roll_period=10.0
+        ... )
         >>> settings = AnalysisSettings(design_method=DesignMethod.LRFD)
         >>> generated = generate_load_combinations(nd, settings)
         >>>
@@ -1437,30 +1540,30 @@ def apply_generated_combinations(
     # Track which vessel motions have load cases created
     motion_load_cases: Dict[str, Any] = {}  # motion name -> LoadCase object
 
-    # Create vessel motion load cases for each unique motion
+    # Create vessel motion load cases for each unique motion across all combinations
     for gen in generated_combinations:
-        motion = gen.vessel_motion
-        if motion.name not in motion_load_cases:
-            # Check if load case already exists
-            existing = model.get_vessel_motion(motion.name)
-            if existing is not None:
-                # Use existing vessel motion's linked load case
-                motion_load_cases[motion.name] = all_load_cases.get(motion.name)
-            else:
-                # Create new vessel motion load case
-                vm = model.add_vessel_motion_load_case(
-                    name=motion.name,
-                    heave=_get_motion_component(motion, MotionType.HEAVE),
-                    pitch=_get_motion_component(motion, MotionType.PITCH),
-                    roll=_get_motion_component(motion, MotionType.ROLL),
-                    surge=_get_motion_component(motion, MotionType.SURGE),
-                    sway=_get_motion_component(motion, MotionType.SWAY),
-                    yaw=_get_motion_component(motion, MotionType.YAW),
-                    motion_center=motion.motion_center
-                )
-                # Refresh load cases dict and get the new one
-                all_load_cases = {lc.name: lc for lc in model.get_load_cases()}
-                motion_load_cases[motion.name] = all_load_cases.get(motion.name)
+        for motion in gen.vessel_motions:
+            if motion.name not in motion_load_cases:
+                # Check if load case already exists
+                existing = model.get_vessel_motion(motion.name)
+                if existing is not None:
+                    # Use existing vessel motion's linked load case
+                    motion_load_cases[motion.name] = all_load_cases.get(motion.name)
+                else:
+                    # Create new vessel motion load case
+                    vm = model.add_vessel_motion_load_case(
+                        name=motion.name,
+                        heave=_get_motion_component(motion, MotionType.HEAVE),
+                        pitch=_get_motion_component(motion, MotionType.PITCH),
+                        roll=_get_motion_component(motion, MotionType.ROLL),
+                        surge=_get_motion_component(motion, MotionType.SURGE),
+                        sway=_get_motion_component(motion, MotionType.SWAY),
+                        yaw=_get_motion_component(motion, MotionType.YAW),
+                        motion_center=motion.motion_center
+                    )
+                    # Refresh load cases dict and get the new one
+                    all_load_cases = {lc.name: lc for lc in model.get_load_cases()}
+                    motion_load_cases[motion.name] = all_load_cases.get(motion.name)
 
     # Convert to C++ LoadCombination objects with load cases added
     result = []
@@ -1480,10 +1583,11 @@ def apply_generated_combinations(
             if lc is not None:
                 combo.add_load_case(lc)
 
-        # Add environmental load case (uses environmental_factor automatically)
-        env_lc = motion_load_cases.get(gen.vessel_motion.name)
-        if env_lc is not None:
-            combo.add_load_case(env_lc)
+        # Add all environmental load cases for this combination
+        for motion in gen.vessel_motions:
+            env_lc = motion_load_cases.get(motion.name)
+            if env_lc is not None:
+                combo.add_load_case(env_lc)
 
         result.append(combo)
 

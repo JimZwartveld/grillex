@@ -793,8 +793,9 @@ Update documentation with vessel motion usage examples.
 | 20.8 | Documentation | Low | ⏳ Deferred |
 | 20.9 | Advanced VesselMotions system | High | ✅ Complete |
 | 20.10 | CRUD operations for generators | Medium | ✅ Complete |
+| 20.11 | Noble Denton load case refactoring | Medium | ✅ Complete |
 
-**Total Acceptance Criteria:** 55+ items (extended with Tasks 20.9, 20.10)
+**Total Acceptance Criteria:** 55+ items (extended with Tasks 20.9, 20.10, 20.11)
 
 ---
 
@@ -954,13 +955,18 @@ class VesselMotionsFromAmplitudes(VesselMotions):
     """
 
 class VesselMotionsFromNobleDenton(VesselMotions):
-    """Generate 6 standard Noble Denton load cases:
-    1. Heave up (+heave)
-    2. Heave down (-heave)
-    3. Pitch bow down (+pitch, +heave, +surge)
-    4. Pitch bow up (-pitch, +heave, -surge)
-    5. Roll starboard down (+roll, +heave, -sway)
-    6. Roll port down (-roll, +heave, +sway)
+    """Generate 6 standalone Noble Denton load cases:
+    1. Heave+ (heave only)
+    2. Heave- (heave only)
+    3. Pitch+ (pitch only, no heave, no surge coupling)
+    4. Pitch- (pitch only, no heave, no surge coupling)
+    5. Roll+ (roll only, no heave, no sway coupling)
+    6. Roll- (roll only, no heave, no sway coupling)
+
+    Note: Noble Denton does NOT apply surge/sway coupling.
+    Rotations are defined at motion center (rotation center of barge).
+
+    Combinations (8 per limit state): Heave± paired with Roll± and Pitch±
     """
 ```
 
@@ -985,9 +991,11 @@ def generate_load_combinations(
 
 1. **Removed IN_SERVICE operation type**: User feedback - only REMOVAL and TRANSPORT_INSTALL are relevant
 2. **ULSa environmental factor = 0.7**: Per standard practice, environmental loads use 0.7 factor for ULSa
-3. **6 Noble Denton load cases** (not 8): Heave±, Pitch± with heave/surge coupling, Roll± with heave/sway coupling
-4. **Coupling rules**: +pitch → +surge, +roll → -sway (per industry practice)
-5. **Angular acceleration from angle/period**: α = (2π/T)² × θ for simple harmonic motion
+3. **6 standalone Noble Denton load cases**: Heave±, Pitch±, Roll± (standalone, not combined)
+4. **No surge/sway coupling for Noble Denton**: Rotations defined at motion center handle coupling implicitly
+5. **8 combinations per limit state for Noble Denton**: Heave± paired with Roll± and Pitch±
+6. **Coupling rules for VesselMotionsFromAmplitudes**: +pitch → +surge, +roll → -sway (per industry practice)
+7. **Angular acceleration from angle/period**: α = (2π/T)² × θ for simple harmonic motion
 
 ### Tests Added
 35 new tests added to `test_phase20_vessel_motions.py`:
@@ -1239,3 +1247,138 @@ Added section "7. Python Wrapper CRUD Operations (For C++ Element Wrappers)" doc
 - Known C++ API limitations
 
 **All 12 new cargo tests passing ✓**
+
+---
+
+## Execution Notes: Task 20.11 - Noble Denton Load Case Refactoring (Completed 2026-01-09)
+
+### Overview
+Refactored the `VesselMotionsFromNobleDenton` generator to create standalone load cases and proper pairwise combinations, per user feedback on offshore industry practice.
+
+### Changes Made
+
+#### 1. Standalone Load Cases (No Combined Heave)
+
+**Before:** Load cases combined heave with pitch/roll:
+- Heave+, Heave-
+- Pitch+ Heave (heave + pitch + surge coupling)
+- Pitch- Heave (heave + pitch + surge coupling)
+- Roll+ Heave (heave + roll + sway coupling)
+- Roll- Heave (heave + roll + sway coupling)
+
+**After:** Load cases are standalone:
+- Heave+ (heave only)
+- Heave- (heave only)
+- Pitch+ (pitch only, no heave)
+- Pitch- (pitch only, no heave)
+- Roll+ (roll only, no heave)
+- Roll- (roll only, no heave)
+
+Heave and pitch/roll are combined in **load combinations**, not in load cases.
+
+#### 2. Removed Surge/Sway Coupling from Noble Denton
+
+**Rationale:** Noble Denton does NOT apply surge/sway coupling. Rotations are defined at the motion center (rotation center of the barge), so coupling is handled implicitly through the reference point.
+
+Removed parameters from `VesselMotionsFromNobleDenton.__init__`:
+- `pitch_surge_coupling` (removed)
+- `roll_sway_coupling` (removed)
+
+#### 3. New Combination Pattern (8 Combinations per Limit State)
+
+Added `get_motion_combinations()` method to `VesselMotionsFromNobleDenton`:
+
+```python
+def get_motion_combinations(self) -> List[List[VesselMotion]]:
+    """Get Noble Denton motion combinations (8 total).
+
+    Combinations pair heave with roll or pitch:
+    - Heave+ & Roll+, Heave+ & Roll-, Heave- & Roll+, Heave- & Roll-
+    - Heave+ & Pitch+, Heave+ & Pitch-, Heave- & Pitch+, Heave- & Pitch-
+    """
+```
+
+This replaces the previous pattern where each motion was its own combination.
+
+#### 4. Updated GeneratedLoadCombination Dataclass
+
+**Before:**
+```python
+@dataclass
+class GeneratedLoadCombination:
+    vessel_motion: VesselMotion  # Single motion
+```
+
+**After:**
+```python
+@dataclass
+class GeneratedLoadCombination:
+    vessel_motions: List[VesselMotion]  # Multiple motions per combination
+
+    @property
+    def vessel_motion(self) -> Optional[VesselMotion]:
+        """Backwards compatibility property."""
+        return self.vessel_motions[0] if self.vessel_motions else None
+```
+
+#### 5. Updated generate_load_combinations()
+
+Now uses `get_motion_combinations()` instead of iterating over individual motions:
+
+```python
+def generate_load_combinations(...) -> List[GeneratedLoadCombination]:
+    motion_combinations = vessel_motions.get_motion_combinations()
+
+    for motion_group in motion_combinations:
+        # Build name from motion suffixes (e.g., "Heave+ Roll+")
+        combo_name = " ".join([m.name.split(" - ")[-1] for m in motion_group])
+
+        for limit_state in limit_states:
+            combo = GeneratedLoadCombination(
+                name=f"{limit_state.value.upper()} - {combo_name}",
+                vessel_motions=motion_group,
+                ...
+            )
+```
+
+#### 6. Updated apply_generated_combinations()
+
+Now handles multiple vessel motions per combination:
+
+```python
+# Add all environmental load cases for this combination
+for motion in gen.vessel_motions:
+    env_lc = motion_load_cases.get(motion.name)
+    if env_lc is not None:
+        combo.add_load_case(env_lc)
+```
+
+### Test Updates
+
+Updated tests in `test_phase20_vessel_motions.py`:
+
+1. **test_case_names**: Expects `Pitch+` instead of `Pitch+ Heave`
+2. **test_pitch_cases_are_standalone**: Verifies pitch cases have NO heave
+3. **test_roll_cases_are_standalone**: Verifies roll cases have NO heave
+4. **test_pitch_no_surge_coupling_noble_denton**: Verifies NO surge coupling
+5. **test_roll_no_sway_coupling_noble_denton**: Verifies NO sway coupling
+6. **test_lrfd_generates_2x_combinations**: Expects 16 (8×2) not 12 (6×2)
+7. **test_asd_generates_1x_combinations**: Expects 8 (8×1) not 6 (6×1)
+8. **test_combination_has_vessel_motion_reference**: Updated for `vessel_motions` list
+9. **TestLoadCombinationConversion**: Updated to use `vessel_motions=[motion]`
+
+### Summary
+
+| Change | Before | After |
+|--------|--------|-------|
+| Pitch/Roll load cases | Combined with heave | Standalone (no heave) |
+| Surge/sway coupling | Applied | Not applied (rotation center handles it) |
+| Combinations per limit state | 6 (one per motion) | 8 (Heave × Roll, Heave × Pitch) |
+| Total combinations (LRFD) | 12 | 16 |
+| GeneratedLoadCombination | Single `vessel_motion` | List `vessel_motions` |
+
+### Files Modified
+- `src/grillex/core/vessel_motion.py` - Updated generators and combination logic
+- `tests/python/test_phase20_vessel_motions.py` - Updated tests for new behavior
+
+**Test Results:** 117 passed, 9 failed (pre-existing `delete_load_case` issue) ✓
