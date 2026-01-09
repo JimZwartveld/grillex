@@ -2,7 +2,7 @@
 
 This document provides a comprehensive overview of all acceptance criteria across implementation phases. It is automatically updated when tasks are completed.
 
-**Last Updated:** 2026-01-03 (Phase 20 Vessel Motions added)
+**Last Updated:** 2026-01-09 (Phase 17 FEM Reporting Modules added)
 
 ## Summary Statistics
 
@@ -25,10 +25,10 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 14 | DevOps | 4 | 0 | 4 | 0% |
 | 15 | Nonlinear Springs | 79 | 79 | 0 | 100% |
 | 16 | Eigenvalue Analysis | 78 | 75 | 3 | 96% |
-| 17 | Web Application Interface | - | - | - | Moved to grillex-webapp |
+| 17 | FEM Reporting Modules | 43 | 0 | 43 | 0% |
 | 19 | Plate Meshing | 12 | 12 | 0 | 100% |
 | 20 | Vessel Motions | 35 | 0 | 35 | 0% |
-| **Total** | | **446** | **374** | **72** | **84%** |
+| **Total** | | **489** | **374** | **115** | **76%** |
 
 ---
 
@@ -866,4 +866,107 @@ Each acceptance criterion should be verified by:
 - `implementation_plan_phase15.md` - Nonlinear springs (tension/compression-only, gap springs)
 - `CLAUDE.md` - AI assistant guidelines
 
-**Note:** Phase 17 (Web Application Interface) has been moved to the `grillex-webapp` repository.
+---
+
+## Phase 17: FEM Reporting Modules
+
+### Task 17.1: Create Reporting Framework and Base Classes
+- [ ] Table class supports all column types (text, int, float, scientific, percentage, status)
+- [ ] Tables can be exported to CSV format
+- [ ] Tables can be exported to Markdown format
+- [ ] Tables can be rendered as formatted text
+- [ ] Report class can combine multiple tables
+- [ ] All exports include units where applicable
+
+### Task 17.2: Input Data Reports - Materials and Sections
+- [ ] Material table includes E, nu, rho, fy, fu with units
+- [ ] Section table includes A, Iy, Iz, J, Iw, Asy, Asz with units
+- [ ] Empty/None values handled gracefully
+- [ ] Tables accessible via model.get_material_table() and model.get_section_table()
+
+### Task 17.3: Input Data Reports - Nodes and Elements
+- [ ] Node table includes ID, coordinates (X, Y, Z), active DOFs
+- [ ] Beam table includes ID, name, start/end coordinates, length, section, material
+- [ ] Beam table shows number of FE elements per beam
+- [ ] Coordinates formatted consistently with units
+
+### Task 17.4: Input Data Reports - Boundary Conditions and Loads
+- [ ] BC table shows node, DOF, type (fixed/prescribed), value
+- [ ] Nodal load table shows node, DOF, value with appropriate units
+- [ ] Line load table shows beam, type, direction, start/end values
+- [ ] Acceleration table shows direction and value
+- [ ] Load combination table shows name, type, and factor summary
+
+### Task 17.5: FEM Results Reports - Displacements
+- [ ] Displacement table includes all 6 DOFs with correct units
+- [ ] Results can be filtered by load case or load combination
+- [ ] Results can be filtered to specific nodes
+- [ ] Summary table shows maximum values per DOF with locations
+- [ ] Scientific notation used for small values
+
+### Task 17.6: FEM Results Reports - Reactions
+- [ ] Reaction table includes all 6 components with correct units
+- [ ] Only support nodes (with BCs) are included
+- [ ] Totals table shows sum of forces and moments
+- [ ] Results can be filtered by load case or combination
+
+### Task 17.7: FEM Results Reports - Internal Actions
+- [ ] Internal action table includes N, Vy, Vz, Mx, My, Mz with units
+- [ ] Tables can be generated at arbitrary positions or check locations
+- [ ] Extrema table shows max/min values with locations
+- [ ] Summary table covers all beams in model
+- [ ] Warping actions (B, Mx_sv, Mx_w) included for 14-DOF elements
+
+### Task 17.8: Design Code Check Reports
+- [ ] Check result table includes location, check name, utilization, status
+- [ ] Summary table shows max utilization per element
+- [ ] Governing checks table filters to critical results
+- [ ] Status column shows PASS/FAIL formatting
+- [ ] Utilization shown as percentage
+
+### Task 17.9: Model Input Summary Report
+- [ ] Report includes model overview table
+- [ ] Report includes all input data tables
+- [ ] Report can be exported to JSON, Markdown, text
+- [ ] Metadata includes generation timestamp
+
+### Task 17.10: Analysis Results Report
+- [ ] Report includes displacement summary and details
+- [ ] Report includes reactions with totals
+- [ ] Report includes internal action summary
+- [ ] Optional detailed internal actions per beam
+- [ ] Report can be exported to JSON, Markdown, text
+
+### Task 17.11: Design Check Report
+- [ ] Report includes design check overview
+- [ ] Report includes summary by element
+- [ ] Report includes governing checks table
+- [ ] Report includes detailed checks per element
+- [ ] Overall pass/fail status clearly shown
+
+### Task 17.12: Export to Multiple Formats
+- [ ] CSV export works for single tables and full reports
+- [ ] Markdown export produces valid GitHub-flavored Markdown
+- [ ] JSON export produces valid, indented JSON
+- [ ] Text export produces readable ASCII tables
+- [ ] Excel export optional (graceful error if openpyxl not installed)
+- [ ] All exports preserve units in headers/metadata
+
+### Task 17.13: LLM Tool Integration
+- [ ] All table builders have corresponding LLM tools
+- [ ] Report generators have LLM tools
+- [ ] Tools support multiple output formats
+- [ ] Tool descriptions are clear for LLM understanding
+
+### Task 17.14: Unit Tests
+- [ ] >90% code coverage for reporting module
+- [ ] All table builders tested
+- [ ] All export formats tested
+- [ ] Integration with model wrapper tested
+- [ ] Edge cases (empty models, missing data) handled
+
+### Task 17.15: Documentation
+- [ ] User documentation with examples
+- [ ] Doctests pass
+- [ ] API reference complete
+- [ ] Examples show all export formats
