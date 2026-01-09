@@ -696,7 +696,7 @@ class LimitState(Enum):
     """Limit states for load combinations.
 
     Attributes:
-        ULSa: Ultimate Limit State a - typically 1.3 * DL + 1.3 * LL + 1.0 * EL
+        ULSa: Ultimate Limit State a - typically 1.3 * DL + 1.3 * LL + 0.7 * EL
         ULSb: Ultimate Limit State b - typically 1.0 * DL + 1.0 * LL + 1.3 * EL
         SLS: Serviceability Limit State - typically 1.0 * DL + 1.0 * LL + 1.0 * EL
     """
@@ -735,7 +735,7 @@ DEFAULT_LOAD_FACTORS: Dict[LimitState, LoadCombinationFactors] = {
     LimitState.ULSa: LoadCombinationFactors(
         dead_load=1.3,
         live_load=1.3,
-        environmental=1.0
+        environmental=0.7
     ),
     LimitState.ULSb: LoadCombinationFactors(
         dead_load=1.0,
@@ -754,7 +754,7 @@ DEFAULT_REMOVAL_FACTORS: Dict[LimitState, LoadCombinationFactors] = {
     LimitState.ULSa: LoadCombinationFactors(
         dead_load=1.1,  # Reduced from 1.3 for removal
         live_load=1.1,
-        environmental=1.0
+        environmental=0.7
     ),
     LimitState.ULSb: LoadCombinationFactors(
         dead_load=1.0,

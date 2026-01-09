@@ -1423,10 +1423,10 @@ class TestLoadCombinationFactors:
         """DEFAULT_LOAD_FACTORS contains correct values."""
         from grillex.core import DEFAULT_LOAD_FACTORS, LimitState
 
-        # ULSa: 1.3 * DL + 1.3 * LL + 1.0 * EL
+        # ULSa: 1.3 * DL + 1.3 * LL + 0.7 * EL
         assert DEFAULT_LOAD_FACTORS[LimitState.ULSa].dead_load == 1.3
         assert DEFAULT_LOAD_FACTORS[LimitState.ULSa].live_load == 1.3
-        assert DEFAULT_LOAD_FACTORS[LimitState.ULSa].environmental == 1.0
+        assert DEFAULT_LOAD_FACTORS[LimitState.ULSa].environmental == 0.7
 
         # ULSb: 1.0 * DL + 1.0 * LL + 1.3 * EL
         assert DEFAULT_LOAD_FACTORS[LimitState.ULSb].dead_load == 1.0
@@ -1488,7 +1488,7 @@ class TestAnalysisSettings:
 
         assert factors.dead_load == 1.3
         assert factors.live_load == 1.3
-        assert factors.environmental == 1.0
+        assert factors.environmental == 0.7
 
     def test_get_factors_removal(self):
         """get_factors returns removal factors for removal operation."""
@@ -1913,7 +1913,7 @@ class TestLoadCombinationGeneration:
         # ULSa factors
         assert ulsa_combo.dead_load_factor == 1.3
         assert ulsa_combo.live_load_factor == 1.3
-        assert ulsa_combo.environmental_factor == 1.0
+        assert ulsa_combo.environmental_factor == 0.7
 
         # ULSb factors
         assert ulsb_combo.dead_load_factor == 1.0
