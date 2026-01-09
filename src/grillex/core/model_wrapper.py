@@ -3051,24 +3051,30 @@ class StructuralModel:
         analysis_settings: Optional["AnalysisSettings"] = None,
         create_load_cases: bool = True,
         generate_combinations: bool = True
-    ) -> List["VesselMotion"]:
+    ) -> "VesselMotions":
         """Add a vessel motions generator and create its load cases.
+
+        The generator is the single source of truth for motion amplitudes.
+        When added to a model, load cases are created directly from the generator's
+        specifications. The load cases are linked to the generator, so modifying
+        the generator's amplitudes automatically updates the load cases.
 
         This method:
         1. Registers the generator on the model
-        2. Creates load cases for each generated VesselMotion
-        3. Optionally generates load combinations based on analysis settings
+        2. Creates load cases directly from the generator's specs
+        3. Links load cases to the generator for auto-updates
+        4. Optionally generates load combinations based on analysis settings
 
         The generated load cases are automatically included when analyze() is called.
 
         Args:
             generator: VesselMotions generator (VesselMotionsFromAmplitudes, etc.)
             analysis_settings: Settings for load combination generation (limit states, factors)
-            create_load_cases: If True (default), creates C++ load cases for each motion
+            create_load_cases: If True (default), creates C++ load cases
             generate_combinations: If True (default), generates load combinations
 
         Returns:
-            List of VesselMotion objects created by the generator
+            The generator object (single source of truth for amplitudes)
 
         Example:
             >>> from grillex.core import (  # doctest: +SKIP
@@ -3084,39 +3090,41 @@ class StructuralModel:
             ...     motion_center=[50.0, 0.0, 5.0]
             ... )
             >>> settings = AnalysisSettings(design_method=DesignMethod.LRFD)  # doctest: +SKIP
-            >>> motions = model.add_vessel_motions_generator(nd, settings)  # doctest: +SKIP
-            >>> len(motions)  # 6 Noble Denton motions  # doctest: +SKIP
+            >>> gen = model.add_vessel_motions_generator(nd, settings)  # doctest: +SKIP
+            >>> len(gen.get_load_case_specs())  # 6 Noble Denton load cases  # doctest: +SKIP
             6
-            >>> # Now analyze() will include these load cases
+            >>> # Modify the generator - load cases update automatically
+            >>> gen.heave = 3.0  # doctest: +SKIP
             >>> model.analyze()  # doctest: +SKIP
         """
+        import numpy as np
         from .vessel_motion import (
             VesselMotions,
-            VesselMotion,
             AnalysisSettings,
             generate_load_combinations,
-            GeneratedLoadCombination
+            GeneratedLoadCombination,
+            LoadCaseSpec
         )
 
         # Register the generator
         self._vessel_motion_generators.append(generator)
 
-        # Generate motions
-        motions = generator.get_motions()
-
         if create_load_cases:
-            # Create load cases for each motion
-            for motion in motions:
-                # Register the motion
-                self.register_vessel_motion(motion)
+            # Create load cases directly from specs
+            for spec in generator.get_load_case_specs():
+                # Create load case
+                lc = self.create_load_case(spec.name, LoadCaseType.Environmental)
 
-                # Create load case for this motion
-                lc = self.create_load_case(motion.name, LoadCaseType.Environmental)
+                # Set acceleration field
+                lc.set_acceleration_field(
+                    np.array(spec.accelerations),
+                    np.array(spec.motion_center)
+                )
 
-                # Link motion to load case
-                motion.link_load_case(lc, sign_multiplier=1.0, suffix="")
+                # Link load case to generator for auto-updates
+                generator.link_load_case(spec.name, lc)
 
-                # Track as linked
+                # Track as linked (prevents direct modification)
                 self._linked_load_case_ids.add(lc.id)
 
         if generate_combinations and analysis_settings is not None:
@@ -3124,7 +3132,7 @@ class StructuralModel:
             combinations = generate_load_combinations(generator, analysis_settings)
             self._generated_combinations.extend(combinations)
 
-        return motions
+        return generator
 
     def get_vessel_motion_generators(self) -> List["VesselMotions"]:
         """Get all registered vessel motion generators.
@@ -3150,9 +3158,8 @@ class StructuralModel:
         """Delete a vessel motions generator and remove all its load cases/combinations.
 
         This removes:
-        - All load cases created by the generator's motions
+        - All load cases created by the generator
         - All generated load combinations associated with the generator
-        - The VesselMotion objects from the model registry
         - The generator from the model's generator list
 
         Args:
@@ -3179,23 +3186,23 @@ class StructuralModel:
         if generator is None:
             return False
 
-        # Get all motions from this generator
-        motions = generator.get_motions()
-        motion_names = {m.name for m in motions}
+        # Get all load case names from this generator
+        load_case_names = set(generator.get_load_case_names())
 
-        # Remove load cases for each motion
-        for motion in motions:
-            # Delete the vessel motion (which deletes linked load cases)
-            if hasattr(self, '_vessel_motions') and motion.name in self._vessel_motions:
-                try:
-                    self.delete_vessel_motion(motion.name, delete_linked_load_cases=True, force=True)
-                except ValueError:
-                    pass  # Motion might not be registered
+        # Remove load cases created by this generator
+        for lc_name in load_case_names:
+            lc = self.get_load_case(lc_name)
+            if lc is not None:
+                # Remove from linked IDs set
+                if lc.id in self._linked_load_case_ids:
+                    self._linked_load_case_ids.remove(lc.id)
+                # Delete the load case
+                self._cpp_model.delete_load_case(lc)
 
-        # Remove generated combinations associated with this generator's motions
+        # Remove generated combinations associated with this generator's load cases
         self._generated_combinations = [
             combo for combo in self._generated_combinations
-            if combo.vessel_motion is None or combo.vessel_motion.name not in motion_names
+            if not any(m.name in load_case_names for m in combo.vessel_motions)
         ]
 
         # Remove generator from list

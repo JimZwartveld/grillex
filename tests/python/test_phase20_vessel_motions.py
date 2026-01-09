@@ -2149,17 +2149,17 @@ class TestVesselMotionGeneratorIntegration:
 
         settings = AnalysisSettings(design_method=DesignMethod.LRFD)
 
-        # Add generator to model
-        motions = model.add_vessel_motions_generator(nd, settings)
+        # Add generator to model - returns the generator (single source of truth)
+        generator = model.add_vessel_motions_generator(nd, settings)
 
-        # Should have 6 Noble Denton motions
-        assert len(motions) == 6
+        # Generator should have 6 Noble Denton load case specs
+        assert len(generator.get_load_case_specs()) == 6
 
         # Load cases should be created
         load_cases = model.get_load_cases()
-        motion_names = [m.name for m in motions]
+        load_case_names = generator.get_load_case_names()
 
-        for name in motion_names:
+        for name in load_case_names:
             found = any(lc.name == name for lc in load_cases)
             assert found, f"Load case '{name}' not found"
 

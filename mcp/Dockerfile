@@ -34,7 +34,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source files needed for build
-COPY pyproject.toml setup.py setup.cfg CMakeLists.txt ./
+COPY pyproject.toml setup.py setup.cfg CMakeLists.txt README.rst LICENSE.txt ./
 COPY src/ src/
 COPY cpp/ cpp/
 
