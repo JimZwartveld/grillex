@@ -709,11 +709,9 @@ class OperationType(Enum):
     """Type of offshore operation.
 
     Attributes:
-        IN_SERVICE: Normal in-service condition
         REMOVAL: Removal/decommissioning condition (uses ULSa_removal factors)
         TRANSPORT_INSTALL: Transportation and Installation (T&I) condition
     """
-    IN_SERVICE = "in_service"
     REMOVAL = "removal"
     TRANSPORT_INSTALL = "transport_install"
 
@@ -780,19 +778,17 @@ class AnalysisSettings:
 
     Attributes:
         design_method: LRFD or ASD design approach
-        operation_type: Type of offshore operation
+        operation_type: Optional operation type (REMOVAL or TRANSPORT_INSTALL).
+            None means standard/default factors are used.
         custom_factors: Optional custom load factors (overrides defaults)
 
     Example:
-        >>> settings = AnalysisSettings(
-        ...     design_method=DesignMethod.LRFD,
-        ...     operation_type=OperationType.IN_SERVICE
-        ... )
+        >>> settings = AnalysisSettings(design_method=DesignMethod.LRFD)
         >>> settings.get_limit_states()
         [<LimitState.ULSa: 'ulsa'>, <LimitState.ULSb: 'ulsb'>]
     """
     design_method: DesignMethod = DesignMethod.LRFD
-    operation_type: OperationType = OperationType.IN_SERVICE
+    operation_type: Optional[OperationType] = None
     custom_factors: Optional[Dict[LimitState, LoadCombinationFactors]] = None
 
     def get_limit_states(self) -> List[LimitState]:

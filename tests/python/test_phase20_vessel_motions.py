@@ -1398,7 +1398,6 @@ class TestDesignMethodAndLimitState:
         """OperationType enum has correct values."""
         from grillex.core import OperationType
 
-        assert OperationType.IN_SERVICE.value == "in_service"
         assert OperationType.REMOVAL.value == "removal"
         assert OperationType.TRANSPORT_INSTALL.value == "transport_install"
 
@@ -1452,12 +1451,12 @@ class TestAnalysisSettings:
 
     def test_create_default_settings(self):
         """AnalysisSettings can be created with defaults."""
-        from grillex.core import AnalysisSettings, DesignMethod, OperationType
+        from grillex.core import AnalysisSettings, DesignMethod
 
         settings = AnalysisSettings()
 
         assert settings.design_method == DesignMethod.LRFD
-        assert settings.operation_type == OperationType.IN_SERVICE
+        assert settings.operation_type is None  # None = standard factors
 
     def test_lrfd_limit_states(self):
         """LRFD design method returns ULSa and ULSb limit states."""
