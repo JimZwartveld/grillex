@@ -421,6 +421,203 @@ Create reporters for boundary conditions and applied loads.
 
 ---
 
+## Task 17.4a: Input Data Reports - Cargo and Vessel Motions
+**Requirements:** R-DATA-004, R-CARGO-001
+**Dependencies:** Task 17.1, Phase 9 (Cargo), Phase 20 (Vessel Motions)
+**Difficulty:** Medium
+
+**Description:**
+Create reporters for cargo definitions and vessel motion parameters.
+
+**Steps:**
+1. Add to `src/grillex/reporting/input_reports.py`:
+   ```python
+   class CargoTableBuilder:
+       """Build cargo summary and connection tables."""
+
+       @staticmethod
+       def build_summary(model: "StructuralModel") -> Table:
+           """Create cargo summary table."""
+           columns = [
+               Column("Name", "name", ColumnType.TEXT),
+               Column("CoG X", "cog_x", ColumnType.FLOAT, unit="m"),
+               Column("CoG Y", "cog_y", ColumnType.FLOAT, unit="m"),
+               Column("CoG Z", "cog_z", ColumnType.FLOAT, unit="m"),
+               Column("Mass", "mass", ColumnType.FLOAT, unit="mT"),
+               Column("Ixx", "ixx", ColumnType.FLOAT, unit="mT·m²"),
+               Column("Iyy", "iyy", ColumnType.FLOAT, unit="mT·m²"),
+               Column("Izz", "izz", ColumnType.FLOAT, unit="mT·m²"),
+               Column("Connections", "n_connections", ColumnType.INTEGER),
+           ]
+           rows = []
+           for cargo in model.cargos:
+               rows.append({
+                   "name": cargo.name,
+                   "cog_x": cargo.cog[0],
+                   "cog_y": cargo.cog[1],
+                   "cog_z": cargo.cog[2],
+                   "mass": cargo.mass,
+                   "ixx": cargo.inertia[0] if cargo.inertia else 0.0,
+                   "iyy": cargo.inertia[1] if cargo.inertia else 0.0,
+                   "izz": cargo.inertia[2] if cargo.inertia else 0.0,
+                   "n_connections": len(cargo.connections),
+               })
+           return Table("Cargo Summary", columns, rows)
+
+       @staticmethod
+       def build_connections(model: "StructuralModel",
+                            cargo_name: Optional[str] = None) -> Table:
+           """Create cargo connections table."""
+           columns = [
+               Column("Cargo", "cargo", ColumnType.TEXT),
+               Column("Connection", "connection", ColumnType.TEXT),
+               Column("Position X", "pos_x", ColumnType.FLOAT, unit="m"),
+               Column("Position Y", "pos_y", ColumnType.FLOAT, unit="m"),
+               Column("Position Z", "pos_z", ColumnType.FLOAT, unit="m"),
+               Column("kx", "kx", ColumnType.SCIENTIFIC, unit="kN/m"),
+               Column("ky", "ky", ColumnType.SCIENTIFIC, unit="kN/m"),
+               Column("kz", "kz", ColumnType.SCIENTIFIC, unit="kN/m"),
+               Column("krx", "krx", ColumnType.SCIENTIFIC, unit="kNm/rad"),
+               Column("kry", "kry", ColumnType.SCIENTIFIC, unit="kNm/rad"),
+               Column("krz", "krz", ColumnType.SCIENTIFIC, unit="kNm/rad"),
+               Column("Condition", "condition", ColumnType.TEXT),
+           ]
+           rows = []
+           for cargo in model.cargos:
+               if cargo_name and cargo.name != cargo_name:
+                   continue
+               for conn in cargo.connections:
+                   rows.append({
+                       "cargo": cargo.name,
+                       "connection": conn.name,
+                       "pos_x": conn.structural_position[0],
+                       "pos_y": conn.structural_position[1],
+                       "pos_z": conn.structural_position[2],
+                       "kx": conn.stiffness[0],
+                       "ky": conn.stiffness[1],
+                       "kz": conn.stiffness[2],
+                       "krx": conn.stiffness[3],
+                       "kry": conn.stiffness[4],
+                       "krz": conn.stiffness[5],
+                       "condition": conn.loading_condition,
+                   })
+           return Table("Cargo Connections", columns, rows)
+
+   class VesselMotionTableBuilder:
+       """Build vessel motion tables."""
+
+       @staticmethod
+       def build_summary(model: "StructuralModel") -> Table:
+           """Create vessel motion summary table."""
+           columns = [
+               Column("Name", "name", ColumnType.TEXT),
+               Column("Center X", "center_x", ColumnType.FLOAT, unit="m"),
+               Column("Center Y", "center_y", ColumnType.FLOAT, unit="m"),
+               Column("Center Z", "center_z", ColumnType.FLOAT, unit="m"),
+               Column("Components", "n_components", ColumnType.INTEGER),
+               Column("Description", "description", ColumnType.TEXT),
+           ]
+           rows = []
+           for vm in model._vessel_motion_generators:
+               rows.append({
+                   "name": vm.name,
+                   "center_x": vm.motion_center[0],
+                   "center_y": vm.motion_center[1],
+                   "center_z": vm.motion_center[2],
+                   "n_components": len(vm.components),
+                   "description": vm.description or "",
+               })
+           return Table("Vessel Motions", columns, rows)
+
+       @staticmethod
+       def build_components(model: "StructuralModel",
+                           motion_name: Optional[str] = None) -> Table:
+           """Create vessel motion components table."""
+           columns = [
+               Column("Motion", "motion", ColumnType.TEXT),
+               Column("Type", "type", ColumnType.TEXT),
+               Column("Amplitude", "amplitude", ColumnType.FLOAT),
+               Column("Unit", "unit", ColumnType.TEXT),
+               Column("Phase", "phase", ColumnType.FLOAT, unit="rad"),
+           ]
+           rows = []
+           for vm in model._vessel_motion_generators:
+               if motion_name and vm.name != motion_name:
+                   continue
+               for comp in vm.components:
+                   # Determine unit based on motion type
+                   is_rotation = comp.motion_type.value in ("roll", "pitch", "yaw")
+                   unit = "rad/s²" if is_rotation else "m/s²"
+                   rows.append({
+                       "motion": vm.name,
+                       "type": comp.motion_type.value.capitalize(),
+                       "amplitude": comp.amplitude,
+                       "unit": unit,
+                       "phase": comp.phase,
+                   })
+           return Table("Vessel Motion Components", columns, rows)
+
+       @staticmethod
+       def build_accelerations_matrix(model: "StructuralModel") -> Table:
+           """Create acceleration matrix showing all motions and their 6-DOF accelerations."""
+           columns = [
+               Column("Motion", "motion", ColumnType.TEXT),
+               Column("Surge", "surge", ColumnType.FLOAT, unit="m/s²"),
+               Column("Sway", "sway", ColumnType.FLOAT, unit="m/s²"),
+               Column("Heave", "heave", ColumnType.FLOAT, unit="m/s²"),
+               Column("Roll", "roll", ColumnType.FLOAT, unit="rad/s²"),
+               Column("Pitch", "pitch", ColumnType.FLOAT, unit="rad/s²"),
+               Column("Yaw", "yaw", ColumnType.FLOAT, unit="rad/s²"),
+           ]
+           rows = []
+           for vm in model._vessel_motion_generators:
+               accel, _ = vm.get_acceleration_field()
+               rows.append({
+                   "motion": vm.name,
+                   "surge": accel[0],
+                   "sway": accel[1],
+                   "heave": accel[2],
+                   "roll": accel[3],
+                   "pitch": accel[4],
+                   "yaw": accel[5],
+               })
+           return Table("Vessel Motion Accelerations", columns, rows)
+   ```
+
+2. Add convenience methods to `StructuralModel`:
+   ```python
+   def get_cargo_table(self) -> Table:
+       """Get tabular summary of all cargo items."""
+       from grillex.reporting import CargoTableBuilder
+       return CargoTableBuilder.build_summary(self)
+
+   def get_cargo_connections_table(self, cargo_name: Optional[str] = None) -> Table:
+       """Get tabular report of cargo connections."""
+       from grillex.reporting import CargoTableBuilder
+       return CargoTableBuilder.build_connections(self, cargo_name)
+
+   def get_vessel_motion_table(self) -> Table:
+       """Get tabular summary of vessel motions."""
+       from grillex.reporting import VesselMotionTableBuilder
+       return VesselMotionTableBuilder.build_summary(self)
+
+   def get_vessel_motion_accelerations_table(self) -> Table:
+       """Get acceleration matrix for all vessel motions."""
+       from grillex.reporting import VesselMotionTableBuilder
+       return VesselMotionTableBuilder.build_accelerations_matrix(self)
+   ```
+
+**Acceptance Criteria:**
+- [ ] Cargo summary table includes name, CoG position, mass, inertia, connection count
+- [ ] Cargo connections table includes position, 6-DOF stiffnesses, loading condition
+- [ ] Cargo connections can be filtered by cargo name
+- [ ] Vessel motion summary includes name, motion center, component count
+- [ ] Vessel motion components table shows type, amplitude with correct units
+- [ ] Vessel motion accelerations matrix shows all 6-DOF accelerations
+- [ ] Empty cargo/vessel motion lists handled gracefully
+
+---
+
 ## Task 17.5: FEM Results Reports - Displacements
 **Requirements:** R-DATA-004, R-RES-001
 **Dependencies:** Task 17.1, Task 3.4 (Solver), Task 4.3 (Results access)

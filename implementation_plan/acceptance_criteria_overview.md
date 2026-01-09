@@ -25,10 +25,10 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 14 | DevOps | 4 | 0 | 4 | 0% |
 | 15 | Nonlinear Springs | 79 | 79 | 0 | 100% |
 | 16 | Eigenvalue Analysis | 78 | 75 | 3 | 96% |
-| 17 | FEM Reporting Modules | 43 | 0 | 43 | 0% |
+| 17 | FEM Reporting Modules | 50 | 0 | 50 | 0% |
 | 19 | Plate Meshing | 12 | 12 | 0 | 100% |
 | 20 | Vessel Motions | 35 | 0 | 35 | 0% |
-| **Total** | | **489** | **374** | **115** | **76%** |
+| **Total** | | **496** | **374** | **122** | **75%** |
 
 ---
 
@@ -896,6 +896,15 @@ Each acceptance criterion should be verified by:
 - [ ] Line load table shows beam, type, direction, start/end values
 - [ ] Acceleration table shows direction and value
 - [ ] Load combination table shows name, type, and factor summary
+
+### Task 17.4a: Input Data Reports - Cargo and Vessel Motions
+- [ ] Cargo summary table includes name, CoG position, mass, inertia, connection count
+- [ ] Cargo connections table includes position, 6-DOF stiffnesses, loading condition
+- [ ] Cargo connections can be filtered by cargo name
+- [ ] Vessel motion summary includes name, motion center, component count
+- [ ] Vessel motion components table shows type, amplitude with correct units
+- [ ] Vessel motion accelerations matrix shows all 6-DOF accelerations
+- [ ] Empty cargo/vessel motion lists handled gracefully
 
 ### Task 17.5: FEM Results Reports - Displacements
 - [ ] Displacement table includes all 6 DOFs with correct units
