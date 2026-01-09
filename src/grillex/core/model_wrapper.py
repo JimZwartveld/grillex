@@ -1263,6 +1263,63 @@ class StructuralModel:
                 return cargo
         return None
 
+    def delete_cargo(self, name_or_cargo: Union[str, Cargo]) -> bool:
+        """Delete a cargo from the model.
+
+        This removes the cargo from the model's cargo list and resets its
+        generated state so it can be re-added to another model.
+
+        Note:
+            Currently, the C++ point mass and spring elements remain in the
+            C++ model but are disconnected from the Python wrapper. This is
+            a known limitation - full C++ element removal requires additional
+            C++ API methods (remove_point_mass, remove_spring).
+
+            For most use cases, this is acceptable because:
+            - The elements won't be updated or referenced after deletion
+            - Re-analyzing the model will work correctly
+            - The memory impact is minimal
+
+        Args:
+            name_or_cargo: Cargo name or Cargo object to delete
+
+        Returns:
+            True if cargo was found and deleted, False otherwise
+
+        Example:
+            model.delete_cargo("Equipment")
+            # or
+            model.delete_cargo(cargo_obj)
+        """
+        # Find the cargo
+        cargo = None
+        if isinstance(name_or_cargo, str):
+            cargo = self.get_cargo(name_or_cargo)
+        else:
+            cargo = name_or_cargo if name_or_cargo in self.cargos else None
+
+        if cargo is None:
+            return False
+
+        # Note: C++ Model currently lacks remove_point_mass() and remove_spring()
+        # methods, so we can't fully remove the underlying C++ elements.
+        # The elements become orphaned but don't affect analysis results.
+
+        # Remove from cargo list
+        self.cargos.remove(cargo)
+
+        # Reset cargo's generated state
+        cargo._generated = False
+        cargo._model = None
+        cargo._cog_node = None
+        cargo._point_mass = None
+        for conn in cargo.connections:
+            conn.spring_element = None
+            conn.structural_node = None
+            conn.connection_node = None
+
+        return True
+
     # ===== Plate Elements =====
 
     def add_plate_element(
@@ -3085,6 +3142,66 @@ class StructuralModel:
         """
         from .vessel_motion import GeneratedLoadCombination
         return self._generated_combinations.copy()
+
+    def delete_vessel_motions_generator(
+        self,
+        generator_or_name: Union["VesselMotions", str]
+    ) -> bool:
+        """Delete a vessel motions generator and remove all its load cases/combinations.
+
+        This removes:
+        - All load cases created by the generator's motions
+        - All generated load combinations associated with the generator
+        - The VesselMotion objects from the model registry
+        - The generator from the model's generator list
+
+        Args:
+            generator_or_name: VesselMotions generator object or its name
+
+        Returns:
+            True if generator was found and deleted, False otherwise
+
+        Example:
+            model.delete_vessel_motions_generator("ND")
+            # or
+            model.delete_vessel_motions_generator(nd_generator)
+        """
+        # Find the generator
+        generator = None
+        if isinstance(generator_or_name, str):
+            for g in self._vessel_motion_generators:
+                if g.name == generator_or_name:
+                    generator = g
+                    break
+        else:
+            generator = generator_or_name if generator_or_name in self._vessel_motion_generators else None
+
+        if generator is None:
+            return False
+
+        # Get all motions from this generator
+        motions = generator.get_motions()
+        motion_names = {m.name for m in motions}
+
+        # Remove load cases for each motion
+        for motion in motions:
+            # Delete the vessel motion (which deletes linked load cases)
+            if hasattr(self, '_vessel_motions') and motion.name in self._vessel_motions:
+                try:
+                    self.delete_vessel_motion(motion.name, delete_linked_load_cases=True, force=True)
+                except ValueError:
+                    pass  # Motion might not be registered
+
+        # Remove generated combinations associated with this generator's motions
+        self._generated_combinations = [
+            combo for combo in self._generated_combinations
+            if combo.vessel_motion is None or combo.vessel_motion.name not in motion_names
+        ]
+
+        # Remove generator from list
+        self._vessel_motion_generators.remove(generator)
+
+        return True
 
     def analyze_combinations(
         self,

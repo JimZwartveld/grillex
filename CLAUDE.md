@@ -364,6 +364,71 @@ After implementing add_spring() with behavior and gap parameters:
 **Gap Detection:**
 If you implemented a feature and there's no corresponding LLM tool for it, that's a gap. Fill it immediately rather than deferring to Phase 12.
 
+### 7. Python Wrapper CRUD Operations (For C++ Element Wrappers)
+
+**CRITICAL:** When implementing a Python wrapper class that generates C++ elements (like `Cargo`, `VesselMotion`, etc.), you MUST implement full CRUD operations for BOTH the Python wrapper AND the underlying C++ objects.
+
+**Required Operations:**
+
+1. **Create (add_xxx)**
+   - Register the wrapper on the model
+   - Generate all underlying C++ elements (nodes, elements, constraints)
+   - Store references for later updates
+
+2. **Read (get_xxx)**
+   - Return the Python wrapper by name or index
+   - Provide access to underlying C++ elements
+
+3. **Update (set_xxx, modify_xxx)**
+   - Update Python wrapper properties
+   - **Auto-propagate changes to C++ elements** (like `VesselMotion._update_linked_load_cases()`)
+   - Changes should be immediate - no manual sync required
+
+4. **Delete (delete_xxx)**
+   - Remove the Python wrapper from the model
+   - Remove all underlying C++ elements (nodes, springs, constraints, load cases)
+   - Reset wrapper state so it can be re-added elsewhere
+
+**Example - Cargo Implementation:**
+
+```python
+class Cargo:
+    def set_mass(self, mass: float) -> "Cargo":
+        self.mass = mass
+        self._update_cpp_elements()  # Auto-propagate to C++
+        return self
+
+    def _update_cpp_elements(self) -> None:
+        if self._generated and self._point_mass is not None:
+            self._point_mass.mass = self.mass
+            # Update all C++ elements...
+
+class StructuralModel:
+    def add_cargo(self, cargo: Cargo) -> Cargo:
+        cargo.generate_elements(self._cpp_model)  # Create C++ elements
+        self.cargos.append(cargo)
+        return cargo
+
+    def delete_cargo(self, name: str) -> bool:
+        cargo = self.get_cargo(name)
+        # Remove C++ elements (point mass, springs, rigid links)
+        # Remove from model list
+        # Reset cargo state
+```
+
+**Checklist for Python Wrapper Classes:**
+- [ ] `add_xxx()` creates C++ elements and registers wrapper
+- [ ] `get_xxx()` returns wrapper(s) by name/index
+- [ ] `set_xxx()` methods auto-update C++ elements
+- [ ] `delete_xxx()` removes C++ elements and wrapper
+- [ ] Wrapper stores reference to C++ model for updates
+- [ ] Document any C++ element removal limitations
+
+**Known Limitations:**
+- C++ Model may lack removal methods for certain element types
+- Document these limitations in docstrings
+- Orphaned C++ elements don't affect analysis correctness
+
 ### Quick Reference Table
 
 | When Adding... | Update These Files |

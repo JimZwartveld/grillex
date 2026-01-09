@@ -2285,3 +2285,126 @@ class TestVesselMotionGeneratorIntegration:
 
         # But no generated combinations
         assert len(model.get_generated_load_combinations()) == 0
+
+    def test_delete_vessel_motions_generator_by_name(self):
+        """delete_vessel_motions_generator() removes generator by name."""
+        from grillex.core import VesselMotionsFromAmplitudes, MotionAmplitudes
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        amplitudes = MotionAmplitudes(heave=2.5, roll_angle=10.0, roll_period=10.0)
+        gen = VesselMotionsFromAmplitudes("ToDelete", amplitudes)
+        model.add_vessel_motions_generator(gen, generate_combinations=False)
+
+        # Count load cases before deletion
+        lcs_before = len(model.get_load_cases())
+        assert lcs_before >= 4  # At least 4 motions
+
+        # Delete by name
+        result = model.delete_vessel_motions_generator("ToDelete")
+
+        assert result is True
+        assert len(model.get_vessel_motion_generators()) == 0
+
+        # Load cases should be removed
+        lcs_after = len(model.get_load_cases())
+        assert lcs_after < lcs_before
+
+    def test_delete_vessel_motions_generator_by_object(self):
+        """delete_vessel_motions_generator() removes generator by object."""
+        from grillex.core import VesselMotionsFromNobleDenton
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            roll_angle=10.0,
+            roll_period=10.0
+        )
+        model.add_vessel_motions_generator(nd, generate_combinations=False)
+
+        # Delete by object reference
+        result = model.delete_vessel_motions_generator(nd)
+
+        assert result is True
+        assert len(model.get_vessel_motion_generators()) == 0
+
+    def test_delete_vessel_motions_generator_removes_combinations(self):
+        """delete_vessel_motions_generator() removes associated combinations."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton, AnalysisSettings, DesignMethod
+        )
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Add dead load
+        model.add_gravity_load_case("Dead", 9.81, LoadCaseType.Permanent)
+
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            roll_angle=10.0,
+            roll_period=10.0
+        )
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+        model.add_vessel_motions_generator(nd, settings)
+
+        # Verify combinations were created
+        combos_before = len(model.get_generated_load_combinations())
+        assert combos_before > 0
+
+        # Delete generator
+        model.delete_vessel_motions_generator(nd)
+
+        # Combinations should be removed
+        combos_after = len(model.get_generated_load_combinations())
+        assert combos_after == 0
+
+    def test_delete_vessel_motions_generator_nonexistent(self):
+        """delete_vessel_motions_generator() returns False for nonexistent."""
+        model = StructuralModel(name="Test")
+
+        result = model.delete_vessel_motions_generator("NonExistent")
+        assert result is False
+
+    def test_delete_one_of_multiple_generators(self):
+        """Deleting one generator leaves others intact."""
+        from grillex.core import VesselMotionsFromAmplitudes, MotionAmplitudes
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        amps1 = MotionAmplitudes(heave=2.0)
+        gen1 = VesselMotionsFromAmplitudes("Gen1", amps1)
+
+        amps2 = MotionAmplitudes(heave=3.0)
+        gen2 = VesselMotionsFromAmplitudes("Gen2", amps2)
+
+        model.add_vessel_motions_generator(gen1, generate_combinations=False)
+        model.add_vessel_motions_generator(gen2, generate_combinations=False)
+
+        assert len(model.get_vessel_motion_generators()) == 2
+
+        # Delete first generator
+        model.delete_vessel_motions_generator("Gen1")
+
+        # Second generator should still exist
+        generators = model.get_vessel_motion_generators()
+        assert len(generators) == 1
+        assert generators[0].name == "Gen2"
