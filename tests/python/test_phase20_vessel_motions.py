@@ -1584,6 +1584,26 @@ class TestMotionAmplitudes:
 
         np.testing.assert_almost_equal(pitch_accel, expected, decimal=6)
 
+    def test_get_yaw_acceleration_from_angle_period(self):
+        """Yaw acceleration is computed from angle/period."""
+        from grillex.core import MotionAmplitudes
+
+        amp = MotionAmplitudes(yaw_angle=3.0, yaw_period=12.0)
+        yaw_accel = amp.get_yaw_acceleration()
+
+        theta_rad = math.radians(3.0)
+        omega = 2 * math.pi / 12.0
+        expected = omega * omega * theta_rad
+
+        np.testing.assert_almost_equal(yaw_accel, expected, decimal=6)
+
+    def test_get_yaw_acceleration_direct(self):
+        """Direct yaw acceleration overrides angle/period."""
+        from grillex.core import MotionAmplitudes
+
+        amp = MotionAmplitudes(yaw_accel=0.05, yaw_angle=3.0, yaw_period=12.0)
+        assert amp.get_yaw_acceleration() == 0.05
+
 
 class TestVesselMotionsFromAmplitudes:
     """Tests for VesselMotionsFromAmplitudes generator."""
@@ -1601,7 +1621,7 @@ class TestVesselMotionsFromAmplitudes:
         assert "Heave-" in motions[1].name
 
     def test_generate_all_motions(self):
-        """Generates 6 motions for heave+pitch+roll."""
+        """Generates 8 motions for heave+pitch+roll+yaw (4 independent motions × 2)."""
         from grillex.core import VesselMotionsFromAmplitudes, MotionAmplitudes
 
         amp = MotionAmplitudes(
@@ -1609,7 +1629,9 @@ class TestVesselMotionsFromAmplitudes:
             pitch_angle=5.0,
             pitch_period=8.0,
             roll_angle=10.0,
-            roll_period=10.0
+            roll_period=10.0,
+            yaw_angle=3.0,
+            yaw_period=12.0
         )
         generator = VesselMotionsFromAmplitudes(
             "Design",
@@ -1618,7 +1640,7 @@ class TestVesselMotionsFromAmplitudes:
         )
         motions = generator.get_motions()
 
-        assert len(motions) == 6
+        assert len(motions) == 8  # 4 independent motions × 2 (+/-)
         names = [m.name for m in motions]
         assert "Design - Heave+" in names
         assert "Design - Heave-" in names
@@ -1626,6 +1648,8 @@ class TestVesselMotionsFromAmplitudes:
         assert "Design - Pitch-" in names
         assert "Design - Roll+" in names
         assert "Design - Roll-" in names
+        assert "Design - Yaw+" in names
+        assert "Design - Yaw-" in names
 
     def test_pitch_surge_coupling(self):
         """Pitch+ couples with surge (default +1.0 coupling)."""

@@ -912,6 +912,9 @@ class MotionAmplitudes:
         pitch_accel: Pitch angular acceleration in rad/s² (direct)
         pitch_angle: Pitch amplitude in degrees (with period)
         pitch_period: Pitch period in seconds
+        yaw_accel: Yaw angular acceleration in rad/s² (direct)
+        yaw_angle: Yaw amplitude in degrees (with period)
+        yaw_period: Yaw period in seconds
         surge: Surge acceleration in m/s² (if not coupled)
         sway: Sway acceleration in m/s² (if not coupled)
     """
@@ -922,6 +925,9 @@ class MotionAmplitudes:
     pitch_accel: Optional[float] = None
     pitch_angle: float = 0.0
     pitch_period: float = 8.0
+    yaw_accel: Optional[float] = None
+    yaw_angle: float = 0.0
+    yaw_period: float = 12.0
     surge: float = 0.0
     sway: float = 0.0
 
@@ -945,15 +951,29 @@ class MotionAmplitudes:
             return omega * omega * theta_rad
         return 0.0
 
+    def get_yaw_acceleration(self) -> float:
+        """Get yaw acceleration, converting from angle/period if needed."""
+        if self.yaw_accel is not None:
+            return self.yaw_accel
+        if self.yaw_angle != 0.0:
+            theta_rad = math.radians(self.yaw_angle)
+            omega = 2 * math.pi / self.yaw_period
+            return omega * omega * theta_rad
+        return 0.0
+
 
 class VesselMotionsFromAmplitudes(VesselMotions):
     """Generate vessel motion load cases from amplitude values with coupling.
 
+    Generates +/- variants for each of the 4 independent motions:
+    - Heave+/- (vertical acceleration)
+    - Roll+/- (with sway coupling)
+    - Pitch+/- (with surge coupling)
+    - Yaw+/- (heading change)
+
     Coupling rules (based on typical vessel motion behavior):
     - +pitch couples with +surge (bow down -> forward acceleration)
     - +roll couples with -sway (starboard down -> port acceleration)
-
-    Generates +/- variants for each non-zero amplitude.
 
     Example:
         >>> amplitudes = MotionAmplitudes(
@@ -961,15 +981,17 @@ class VesselMotionsFromAmplitudes(VesselMotions):
         ...     pitch_angle=5.0,
         ...     pitch_period=8.0,
         ...     roll_angle=10.0,
-        ...     roll_period=10.0
+        ...     roll_period=10.0,
+        ...     yaw_angle=3.0,
+        ...     yaw_period=12.0
         ... )
         >>> motions = VesselMotionsFromAmplitudes(
         ...     name="Design Motions",
         ...     amplitudes=amplitudes,
         ...     motion_center=[50.0, 0.0, 5.0]
         ... )
-        >>> len(motions.get_motions())  # heave+/-, pitch+/-, roll+/-
-        6
+        >>> len(motions.get_motions())  # heave+/-, pitch+/-, roll+/-, yaw+/-
+        8
     """
 
     def __init__(
@@ -1063,6 +1085,21 @@ class VesselMotionsFromAmplitudes(VesselMotions):
             if sway_coupled_neg != 0.0:
                 roll_neg.add_sway(sway_coupled_neg)
             motions.append(roll_neg)
+
+        # Yaw +/-
+        yaw_accel = self.amplitudes.get_yaw_acceleration()
+        if yaw_accel != 0.0:
+            # Yaw+
+            yaw_pos = VesselMotion(f"{self.name} - Yaw+")
+            yaw_pos.set_motion_center(self.motion_center)
+            yaw_pos.add_yaw(yaw_accel)
+            motions.append(yaw_pos)
+
+            # Yaw-
+            yaw_neg = VesselMotion(f"{self.name} - Yaw-")
+            yaw_neg.set_motion_center(self.motion_center)
+            yaw_neg.add_yaw(-yaw_accel)
+            motions.append(yaw_neg)
 
         return motions
 
