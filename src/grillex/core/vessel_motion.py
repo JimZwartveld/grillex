@@ -1298,6 +1298,39 @@ class GeneratedLoadCombination:
     live_load_factor: float
     environmental_factor: float
 
+    def to_load_combination(self, combination_id: int = 0) -> "LoadCombination":
+        """Convert to a C++ LoadCombination object with type-based factors.
+
+        Creates a LoadCombination with the correct factors for each load type.
+        Load cases must be added separately using add_load_case().
+
+        The factors are mapped as:
+        - dead_load_factor → permanent_factor
+        - live_load_factor → variable_factor
+        - environmental_factor → environmental_factor
+
+        Args:
+            combination_id: Unique ID for the combination (default: 0)
+
+        Returns:
+            C++ LoadCombination object with factors set, ready for load cases
+
+        Example:
+            >>> combo = generated.to_load_combination(combination_id=1)
+            >>> combo.add_load_case(dead_load)   # Uses dead_load_factor
+            >>> combo.add_load_case(vessel_motion)  # Uses environmental_factor
+        """
+        from grillex._grillex_cpp import LoadCombination
+
+        return LoadCombination(
+            combination_id,
+            self.name,
+            permanent_factor=self.dead_load_factor,
+            variable_factor=self.live_load_factor,
+            environmental_factor=self.environmental_factor,
+            accidental_factor=1.0
+        )
+
 
 def generate_load_combinations(
     vessel_motions: VesselMotions,
@@ -1342,3 +1375,122 @@ def generate_load_combinations(
             combinations.append(combo)
 
     return combinations
+
+
+def apply_generated_combinations(
+    model: "StructuralModel",
+    generated_combinations: List[GeneratedLoadCombination],
+    dead_load_cases: Optional[List[str]] = None,
+    live_load_cases: Optional[List[str]] = None
+) -> List["LoadCombination"]:
+    """Apply generated load combinations to a model.
+
+    This function:
+    1. Creates vessel motion load cases for each unique VesselMotion
+    2. Creates C++ LoadCombination objects with type-based factors
+    3. Adds all relevant load cases to each combination
+    4. Returns the list of LoadCombinations ready for analysis
+
+    If dead_load_cases or live_load_cases are not provided, they are
+    automatically detected from the model's existing load cases by type.
+
+    Args:
+        model: StructuralModel to apply combinations to
+        generated_combinations: List of GeneratedLoadCombination objects
+        dead_load_cases: Names of permanent load cases (auto-detected if None)
+        live_load_cases: Names of variable load cases (auto-detected if None)
+
+    Returns:
+        List of C++ LoadCombination objects with load cases added
+
+    Example:
+        >>> # Generate combinations
+        >>> nd = VesselMotionsFromNobleDenton("ND", heave=2.5, pitch_angle=5.0, pitch_period=8.0)
+        >>> settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+        >>> generated = generate_load_combinations(nd, settings)
+        >>>
+        >>> # Apply to model
+        >>> combinations = apply_generated_combinations(model, generated)
+        >>>
+        >>> # Analyze each combination
+        >>> for combo in combinations:
+        ...     result = model.analyze_load_combination(combo)
+    """
+    from grillex._grillex_cpp import LoadCaseType
+
+    # Get all load cases from model
+    all_load_cases = {lc.name: lc for lc in model.get_load_cases()}
+
+    # Auto-detect load case types if not provided
+    if dead_load_cases is None:
+        dead_load_cases = [
+            lc.name for lc in model.get_load_cases()
+            if lc.load_type == LoadCaseType.Permanent
+        ]
+
+    if live_load_cases is None:
+        live_load_cases = [
+            lc.name for lc in model.get_load_cases()
+            if lc.load_type == LoadCaseType.Variable
+        ]
+
+    # Track which vessel motions have load cases created
+    motion_load_cases: Dict[str, Any] = {}  # motion name -> LoadCase object
+
+    # Create vessel motion load cases for each unique motion
+    for gen in generated_combinations:
+        motion = gen.vessel_motion
+        if motion.name not in motion_load_cases:
+            # Check if load case already exists
+            existing = model.get_vessel_motion(motion.name)
+            if existing is not None:
+                # Use existing vessel motion's linked load case
+                motion_load_cases[motion.name] = all_load_cases.get(motion.name)
+            else:
+                # Create new vessel motion load case
+                vm = model.add_vessel_motion_load_case(
+                    name=motion.name,
+                    heave=_get_motion_component(motion, MotionType.HEAVE),
+                    pitch=_get_motion_component(motion, MotionType.PITCH),
+                    roll=_get_motion_component(motion, MotionType.ROLL),
+                    surge=_get_motion_component(motion, MotionType.SURGE),
+                    sway=_get_motion_component(motion, MotionType.SWAY),
+                    yaw=_get_motion_component(motion, MotionType.YAW),
+                    motion_center=motion.motion_center
+                )
+                # Refresh load cases dict and get the new one
+                all_load_cases = {lc.name: lc for lc in model.get_load_cases()}
+                motion_load_cases[motion.name] = all_load_cases.get(motion.name)
+
+    # Convert to C++ LoadCombination objects with load cases added
+    result = []
+    for i, gen in enumerate(generated_combinations):
+        # Create combination with type-based factors
+        combo = gen.to_load_combination(combination_id=i + 1)
+
+        # Add dead load cases (uses permanent_factor automatically)
+        for lc_name in dead_load_cases:
+            lc = all_load_cases.get(lc_name)
+            if lc is not None:
+                combo.add_load_case(lc)
+
+        # Add live load cases (uses variable_factor automatically)
+        for lc_name in live_load_cases:
+            lc = all_load_cases.get(lc_name)
+            if lc is not None:
+                combo.add_load_case(lc)
+
+        # Add environmental load case (uses environmental_factor automatically)
+        env_lc = motion_load_cases.get(gen.vessel_motion.name)
+        if env_lc is not None:
+            combo.add_load_case(env_lc)
+
+        result.append(combo)
+
+    return result
+
+
+def _get_motion_component(motion: VesselMotion, motion_type: MotionType) -> float:
+    """Get the amplitude of a specific motion component."""
+    comp = motion.get_component_by_type(motion_type)
+    return comp.amplitude if comp else 0.0

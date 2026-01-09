@@ -86,6 +86,7 @@ from .vessel_motion import (
     # Load combination generation
     GeneratedLoadCombination,
     generate_load_combinations,
+    apply_generated_combinations,
 )
 
 __all__ = [
@@ -140,4 +141,5 @@ __all__ = [
     'VesselMotionsFromAmplitudes', 'VesselMotionsFromNobleDenton',
     # Phase 20: Load combination generation
     'GeneratedLoadCombination', 'generate_load_combinations',
+    'apply_generated_combinations',
 ]

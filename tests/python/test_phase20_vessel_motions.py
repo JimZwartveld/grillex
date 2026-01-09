@@ -1985,3 +1985,104 @@ class TestLoadCombinationGeneration:
         for combo in combos:
             assert combo.vessel_motion is not None
             assert combo.vessel_motion.name in combo.name
+
+
+class TestLoadCombinationConversion:
+    """Tests for converting GeneratedLoadCombination to C++ LoadCombination."""
+
+    def test_to_load_combination_basic(self):
+        """to_load_combination() creates C++ LoadCombination with correct factors."""
+        from grillex.core import (
+            VesselMotion, GeneratedLoadCombination, LimitState
+        )
+        from grillex._grillex_cpp import LoadCombination, LoadCaseType
+
+        motion = VesselMotion("Heave+")
+        motion.add_heave(2.5)
+
+        gen = GeneratedLoadCombination(
+            name="ULSA - Heave+",
+            limit_state=LimitState.ULSa,
+            vessel_motion=motion,
+            dead_load_factor=1.3,
+            live_load_factor=1.3,
+            environmental_factor=0.7
+        )
+
+        combo = gen.to_load_combination(combination_id=1)
+
+        assert isinstance(combo, LoadCombination)
+        assert combo.name == "ULSA - Heave+"
+        assert combo.id == 1
+        # Check type-based factors
+        assert combo.get_type_factor(LoadCaseType.Permanent) == 1.3
+        assert combo.get_type_factor(LoadCaseType.Variable) == 1.3
+        assert combo.get_type_factor(LoadCaseType.Environmental) == 0.7
+
+    def test_to_load_combination_ulsb_factors(self):
+        """ULSb combination has correct factors (1.0/1.0/1.3)."""
+        from grillex.core import (
+            VesselMotion, GeneratedLoadCombination, LimitState
+        )
+        from grillex._grillex_cpp import LoadCaseType
+
+        motion = VesselMotion("Roll+")
+        gen = GeneratedLoadCombination(
+            name="ULSB - Roll+",
+            limit_state=LimitState.ULSb,
+            vessel_motion=motion,
+            dead_load_factor=1.0,
+            live_load_factor=1.0,
+            environmental_factor=1.3
+        )
+
+        combo = gen.to_load_combination(combination_id=2)
+
+        assert combo.get_type_factor(LoadCaseType.Permanent) == 1.0
+        assert combo.get_type_factor(LoadCaseType.Variable) == 1.0
+        assert combo.get_type_factor(LoadCaseType.Environmental) == 1.3
+
+    def test_to_load_combination_sls_factors(self):
+        """SLS combination has all factors at 1.0."""
+        from grillex.core import (
+            VesselMotion, GeneratedLoadCombination, LimitState
+        )
+        from grillex._grillex_cpp import LoadCaseType
+
+        motion = VesselMotion("Pitch+")
+        gen = GeneratedLoadCombination(
+            name="SLS - Pitch+",
+            limit_state=LimitState.SLS,
+            vessel_motion=motion,
+            dead_load_factor=1.0,
+            live_load_factor=1.0,
+            environmental_factor=1.0
+        )
+
+        combo = gen.to_load_combination(combination_id=3)
+
+        assert combo.get_type_factor(LoadCaseType.Permanent) == 1.0
+        assert combo.get_type_factor(LoadCaseType.Variable) == 1.0
+        assert combo.get_type_factor(LoadCaseType.Environmental) == 1.0
+
+    def test_to_load_combination_starts_empty(self):
+        """Combination starts with no load cases (must be added separately)."""
+        from grillex.core import (
+            VesselMotion, GeneratedLoadCombination, LimitState
+        )
+
+        motion = VesselMotion("Heave+")
+        gen = GeneratedLoadCombination(
+            name="Test",
+            limit_state=LimitState.ULSa,
+            vessel_motion=motion,
+            dead_load_factor=1.3,
+            live_load_factor=1.3,
+            environmental_factor=0.7
+        )
+
+        combo = gen.to_load_combination()
+
+        # No load cases added yet
+        assert len(combo) == 0
+        assert combo.empty()
