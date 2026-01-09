@@ -783,16 +783,17 @@ Update documentation with vessel motion usage examples.
 
 | Task | Description | Difficulty | Status |
 |------|-------------|------------|--------|
-| 20.1 | VesselMotion class | Medium | Pending |
-| 20.2 | StructuralModel methods | Medium | Pending |
-| 20.3 | Standard motion profiles | Low | Pending |
-| 20.4 | YAML support | Medium | Pending |
-| 20.5 | LLM tools | Medium | Pending |
-| 20.6 | Diagnostics | Low | Pending |
-| 20.7 | Comprehensive tests | Medium | Pending |
-| 20.8 | Documentation | Low | Pending |
+| 20.1 | VesselMotion class | Medium | ✅ Complete |
+| 20.2 | StructuralModel methods | Medium | ✅ Complete |
+| 20.3 | Standard motion profiles | Low | ✅ Complete |
+| 20.4 | YAML support | Medium | ✅ Complete |
+| 20.5 | LLM tools | Medium | ✅ Complete |
+| 20.6 | Diagnostics | Low | ✅ Complete |
+| 20.7 | Comprehensive tests | Medium | ✅ Complete |
+| 20.8 | Documentation | Low | ⏳ Deferred |
+| 20.9 | Advanced VesselMotions system | High | ✅ Complete |
 
-**Total Acceptance Criteria:** 38 items
+**Total Acceptance Criteria:** 45+ items (extended with Task 20.9)
 
 ---
 
@@ -876,15 +877,130 @@ Created `tests/python/test_phase20_vessel_motions.py` with 43 tests:
 | 20.3 Standard motion profiles | ✅ Complete |
 | 20.4 YAML support | ✅ Complete |
 | 20.5 LLM tools | ✅ Complete |
-| 20.6 Diagnostics | ⏳ Deferred (simple error handling in place) |
+| 20.6 Diagnostics | ✅ Complete |
 | 20.7 Comprehensive tests | ✅ Complete |
 | 20.8 Documentation | ⏳ Deferred (docstrings complete, RST docs pending) |
+| 20.9 Advanced VesselMotions system | ✅ Complete |
 
 **Files Created/Modified:**
-- `src/grillex/core/vessel_motion.py` (NEW)
+- `src/grillex/core/vessel_motion.py` (NEW + EXTENDED)
 - `src/grillex/core/__init__.py` (MODIFIED)
 - `src/grillex/core/model_wrapper.py` (MODIFIED)
 - `src/grillex/io/yaml_loader.py` (MODIFIED)
 - `src/grillex/llm/tools.py` (MODIFIED)
-- `tests/python/test_phase20_vessel_motions.py` (NEW)
+- `tests/python/test_phase20_vessel_motions.py` (NEW + EXTENDED)
 - `implementation_plan/implementation_plan_phase20_vessel_motions.md` (NEW)
+
+---
+
+## Execution Notes: Task 20.9 - Advanced VesselMotions System (Completed 2026-01-09)
+
+### Overview
+Extended the vessel motion system to support advanced load combination generation for offshore design codes.
+
+### Components Implemented
+
+#### 1. Design Method and Limit State Enums
+```python
+class DesignMethod(Enum):
+    LRFD = "lrfd"  # Load and Resistance Factor Design (ULSa/ULSb)
+    ASD = "asd"    # Allowable Stress Design (SLS only)
+
+class LimitState(Enum):
+    ULSa = "ulsa"  # 1.3 * DL + 1.3 * LL + 0.7 * EL
+    ULSb = "ulsb"  # 1.0 * DL + 1.0 * LL + 1.3 * EL
+    SLS = "sls"    # 1.0 * DL + 1.0 * LL + 1.0 * EL
+
+class OperationType(Enum):
+    REMOVAL = "removal"              # Reduced factors for removal operations
+    TRANSPORT_INSTALL = "transport_install"  # T&I operations
+```
+
+#### 2. Load Combination Factors
+```python
+@dataclass
+class LoadCombinationFactors:
+    dead_load: float
+    live_load: float
+    environmental: float
+
+DEFAULT_LOAD_FACTORS = {
+    LimitState.ULSa: LoadCombinationFactors(1.3, 1.3, 0.7),
+    LimitState.ULSb: LoadCombinationFactors(1.0, 1.0, 1.3),
+    LimitState.SLS: LoadCombinationFactors(1.0, 1.0, 1.0),
+}
+
+DEFAULT_REMOVAL_FACTORS = {
+    LimitState.ULSa: LoadCombinationFactors(1.1, 1.1, 0.7),
+    LimitState.ULSb: LoadCombinationFactors(1.0, 1.0, 1.3),
+    LimitState.SLS: LoadCombinationFactors(1.0, 1.0, 1.0),
+}
+```
+
+#### 3. VesselMotions Generator Classes
+```python
+class VesselMotions(ABC):
+    """Abstract base class for generating multiple VesselMotion instances."""
+    @abstractmethod
+    def generate(self) -> List[VesselMotion]: ...
+
+class VesselMotionsFromAmplitudes(VesselMotions):
+    """Generate vessel motions from amplitude specifications with coupling rules.
+
+    Coupling rules (per Noble Denton):
+    - +pitch couples with +surge
+    - +roll couples with -sway
+    """
+
+class VesselMotionsFromNobleDenton(VesselMotions):
+    """Generate 6 standard Noble Denton load cases:
+    1. Heave up (+heave)
+    2. Heave down (-heave)
+    3. Pitch bow down (+pitch, +heave, +surge)
+    4. Pitch bow up (-pitch, +heave, -surge)
+    5. Roll starboard down (+roll, +heave, -sway)
+    6. Roll port down (-roll, +heave, +sway)
+    """
+```
+
+#### 4. Load Combination Generation
+```python
+@dataclass
+class GeneratedLoadCombination:
+    name: str
+    limit_state: LimitState
+    dead_load_factor: float
+    live_load_factor: float
+    environmental_factor: float
+    vessel_motion: VesselMotion
+
+def generate_load_combinations(
+    vessel_motions: VesselMotions,
+    settings: Optional[AnalysisSettings] = None
+) -> List[GeneratedLoadCombination]: ...
+```
+
+### Key Design Decisions
+
+1. **Removed IN_SERVICE operation type**: User feedback - only REMOVAL and TRANSPORT_INSTALL are relevant
+2. **ULSa environmental factor = 0.7**: Per standard practice, environmental loads use 0.7 factor for ULSa
+3. **6 Noble Denton load cases** (not 8): Heave±, Pitch± with heave/surge coupling, Roll± with heave/sway coupling
+4. **Coupling rules**: +pitch → +surge, +roll → -sway (per industry practice)
+5. **Angular acceleration from angle/period**: α = (2π/T)² × θ for simple harmonic motion
+
+### Tests Added
+35 new tests added to `test_phase20_vessel_motions.py`:
+- `TestDesignMethodAndLimitState`: Enum value tests
+- `TestLoadCombinationFactors`: Factor value and default dict tests
+- `TestAnalysisSettings`: Settings configuration tests
+- `TestMotionAmplitudes`: Amplitude dataclass tests
+- `TestVesselMotionsFromAmplitudes`: Generator with coupling rules
+- `TestVesselMotionsFromNobleDenton`: 6 load case generation
+- `TestLoadCombinationGeneration`: End-to-end combination generation
+
+### Commits
+1. `1d9f86b` - Add advanced vessel motions system with Noble Denton support
+2. `cad214a` - Remove IN_SERVICE from OperationType enum
+3. `9fc605d` - Fix ULSa environmental factor to 0.7
+
+**All 78 tests in test_phase20_vessel_motions.py passing ✓**
