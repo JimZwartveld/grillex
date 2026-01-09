@@ -792,8 +792,9 @@ Update documentation with vessel motion usage examples.
 | 20.7 | Comprehensive tests | Medium | ✅ Complete |
 | 20.8 | Documentation | Low | ⏳ Deferred |
 | 20.9 | Advanced VesselMotions system | High | ✅ Complete |
+| 20.10 | CRUD operations for generators | Medium | ✅ Complete |
 
-**Total Acceptance Criteria:** 45+ items (extended with Task 20.9)
+**Total Acceptance Criteria:** 55+ items (extended with Tasks 20.9, 20.10)
 
 ---
 
@@ -1004,3 +1005,237 @@ def generate_load_combinations(
 3. `9fc605d` - Fix ULSa environmental factor to 0.7
 
 **All 78 tests in test_phase20_vessel_motions.py passing ✓**
+
+---
+
+## Execution Notes: Task 20.10 - CRUD Operations for VesselMotions Generators (Completed 2026-01-09)
+
+### Overview
+Implemented full CRUD (Create/Read/Update/Delete) operations for vessel motions generators and their integration with the C++ model. This ensures that generators properly create and remove load cases and load combinations.
+
+### Components Implemented
+
+#### 1. Generator Registration on StructuralModel
+
+```python
+def add_vessel_motions_generator(
+    self,
+    generator: VesselMotions,
+    analysis_settings: Optional[AnalysisSettings] = None,
+    create_load_cases: bool = True,
+    generate_combinations: bool = True
+) -> List[VesselMotion]:
+    """
+    Add a vessel motions generator to the model.
+
+    Creates load cases for each vessel motion and optionally generates
+    load combinations based on the analysis settings.
+
+    Args:
+        generator: VesselMotions generator instance
+        analysis_settings: Settings for combination generation (required if generate_combinations=True)
+        create_load_cases: Whether to create C++ LoadCase objects (default: True)
+        generate_combinations: Whether to generate load combinations (default: True)
+
+    Returns:
+        List of VesselMotion instances created by the generator
+    """
+```
+
+#### 2. Generator Deletion
+
+```python
+def delete_vessel_motions_generator(
+    self,
+    generator_or_name: Union[VesselMotions, str]
+) -> bool:
+    """
+    Delete a vessel motions generator and its associated elements.
+
+    Removes:
+    - All vessel motions created by the generator
+    - All load cases associated with those motions
+    - All generated load combinations from this generator
+
+    Args:
+        generator_or_name: Generator instance or generator name
+
+    Returns:
+        True if generator was found and deleted, False otherwise
+    """
+```
+
+#### 3. Query Methods
+
+```python
+def get_vessel_motion_generators(self) -> List[VesselMotions]:
+    """Return all registered vessel motion generators."""
+
+def get_generated_load_combinations(self) -> List[GeneratedLoadCombination]:
+    """Return all generated load combinations."""
+```
+
+#### 4. Combination Analysis
+
+```python
+def analyze_combinations(self) -> Dict[str, Any]:
+    """
+    Analyze all generated load combinations.
+
+    Converts GeneratedLoadCombination objects to C++ LoadCombination format
+    and performs linear superposition of results.
+
+    Returns:
+        Dict mapping combination name to analysis result
+    """
+```
+
+#### 5. GeneratedLoadCombination to C++ LoadCombination Conversion
+
+The `_create_cpp_combination()` method converts Python combination metadata to C++ format:
+- Maps load case names to C++ LoadCase objects
+- Applies correct factors for dead load, live load, and environmental components
+- Creates C++ LoadCombination with proper load case references
+
+### Model State Tracking
+
+Added to `StructuralModel.__init__`:
+```python
+self._vessel_motion_generators: List[VesselMotions] = []
+self._generated_combinations: List[GeneratedLoadCombination] = []
+```
+
+### Key Design Decisions
+
+1. **Load cases created on generator registration**: When `add_vessel_motions_generator()` is called, C++ LoadCase objects are immediately created for each motion
+2. **Combinations stored as metadata**: GeneratedLoadCombination objects are stored in Python and converted to C++ format only when `analyze_combinations()` is called
+3. **Cascading deletion**: Deleting a generator removes its motions → load cases → combinations
+4. **Generator name matching**: Generators can be deleted by name or by object reference
+
+### Tests Added
+
+11 new tests in `TestVesselMotionGeneratorIntegration`:
+- `test_add_vessel_motions_generator_creates_load_cases`
+- `test_add_generator_creates_combinations`
+- `test_analyze_includes_vessel_motion_load_cases`
+- `test_analyze_combinations_includes_generated`
+- `test_get_vessel_motion_generators`
+- `test_generator_without_settings_skips_combinations`
+- `test_delete_vessel_motions_generator_by_name`
+- `test_delete_vessel_motions_generator_by_object`
+- `test_delete_vessel_motions_generator_removes_combinations`
+- `test_delete_vessel_motions_generator_nonexistent`
+- `test_delete_one_of_multiple_generators`
+
+### Commits
+1. `00c1861` - Add yaw as 4th independent motion in VesselMotionsFromAmplitudes
+2. `95f9bef` - Add GeneratedLoadCombination to LoadCombination conversion
+3. `61cd033` - Integrate vessel motion generators with StructuralModel
+4. `b9e05a2` - Add CRUD operations for Cargo and VesselMotions generators
+5. `456f47e` - Merge development into vessel-motions branch
+
+### Files Modified
+- `src/grillex/core/model_wrapper.py` - Added generator CRUD methods
+- `src/grillex/core/vessel_motion.py` - Fixed `lc.type` attribute access
+- `tests/python/test_phase20_vessel_motions.py` - Added 11 generator integration tests
+
+**All 89 tests in test_phase20_vessel_motions.py passing ✓**
+
+---
+
+## Execution Notes: Cargo CRUD Auto-Update (Completed 2026-01-09)
+
+### Overview
+While implementing vessel motions generator CRUD, also added proper CRUD operations for Cargo (Python wrapper that generates C++ elements).
+
+### Components Implemented
+
+#### 1. Cargo Auto-Update on Property Changes
+
+```python
+def _update_cpp_elements(self) -> None:
+    """Update C++ elements when cargo properties change."""
+    if not self._generated or self._point_mass is None:
+        return
+    self._point_mass.mass = self.mass
+    self._point_mass.set_full_inertia(...)
+    for conn in self.connections:
+        if conn.spring_element is not None:
+            conn.spring_element.kx = conn.stiffness[0]
+            # ... etc
+```
+
+Modified methods to auto-update:
+- `set_mass()` - Updates C++ PointMass.mass
+- `set_inertia()` - Updates C++ PointMass inertia tensor
+- `set_connection_stiffness()` - NEW: Updates C++ SpringElement stiffnesses
+
+#### 2. Cargo Deletion
+
+```python
+def delete_cargo(self, name_or_cargo: Union[str, Cargo]) -> bool:
+    """
+    Delete a cargo from the model.
+
+    Removes the cargo from the model's cargo list and resets the cargo's
+    generated state so it can be re-added elsewhere.
+
+    Note: The underlying C++ elements (PointMass, SpringElement, etc.)
+    cannot be removed from the C++ Model as it lacks removal methods.
+    This is a known limitation.
+
+    Returns:
+        True if cargo was found and deleted, False otherwise
+    """
+```
+
+#### 3. COG Change Protection
+
+```python
+def set_cog(self, position: List[float]) -> "Cargo":
+    if self._generated:
+        raise RuntimeError(
+            "Cannot change CoG position after cargo has been added to a model. "
+            "Nodes cannot be moved after creation."
+        )
+    # ...
+```
+
+### Known Limitations
+
+**C++ Element Removal**: The C++ Model class lacks `remove_point_mass()` and `remove_spring()` methods. When `delete_cargo()` is called:
+- The cargo is removed from `model.cargos` list
+- The cargo's `_generated` state is reset
+- The C++ elements remain in the model but are orphaned
+
+This limitation is documented in the code and CLAUDE.md.
+
+### Tests Added
+
+12 new tests in `test_phase9_cargo.py`:
+- `TestCargoAutoUpdate` (7 tests):
+  - `test_set_mass_updates_cpp_point_mass`
+  - `test_set_inertia_updates_cpp_point_mass`
+  - `test_set_connection_stiffness_updates_cpp_spring`
+  - `test_set_connection_stiffness_invalid_index`
+  - `test_set_cog_raises_error_if_generated`
+  - `test_get_connection_by_index`
+  - `test_get_connection_invalid_index`
+
+- `TestCargoDelete` (5 tests):
+  - `test_delete_cargo_by_name`
+  - `test_delete_cargo_by_object`
+  - `test_delete_cargo_nonexistent`
+  - `test_delete_cargo_multiple`
+  - `test_deleted_cargo_can_be_readded`
+
+### CLAUDE.md Update
+
+Added section "7. Python Wrapper CRUD Operations (For C++ Element Wrappers)" documenting:
+- Required CRUD operations for Python wrappers
+- Auto-propagation pattern for property changes
+- Example code for Cargo implementation
+- Checklist for wrapper class implementation
+- Known C++ API limitations
+
+**All 12 new cargo tests passing ✓**
