@@ -3050,9 +3050,7 @@ class StructuralModel:
         generator: "VesselMotions",
         analysis_settings: Optional["AnalysisSettings"] = None,
         create_load_cases: bool = True,
-        generate_combinations: bool = True,
-        permanent_load_case_names: Optional[List[str]] = None,
-        variable_load_case_names: Optional[List[str]] = None
+        generate_combinations: bool = True
     ) -> "VesselMotions":
         """Add a vessel motions generator and create its load cases.
 
@@ -3066,6 +3064,7 @@ class StructuralModel:
         2. Creates load cases directly from the generator's specs
         3. Links load cases to the generator for auto-updates
         4. Optionally generates load combinations based on analysis settings
+        5. Automatically creates and includes a Gravity load case in combinations
 
         The generated load cases are automatically included when analyze() is called.
 
@@ -3074,9 +3073,6 @@ class StructuralModel:
             analysis_settings: Settings for load combination generation (limit states, factors)
             create_load_cases: If True (default), creates C++ load cases
             generate_combinations: If True (default), generates load combinations
-            permanent_load_case_names: Names of permanent load cases to include in combinations
-                                      (e.g., ["Gravity", "Self-Weight"])
-            variable_load_case_names: Names of variable load cases to include in combinations
 
         Returns:
             The generator object (single source of truth for amplitudes)
@@ -3133,16 +3129,11 @@ class StructuralModel:
                 self._linked_load_case_ids.add(lc.id)
 
         if generate_combinations and analysis_settings is not None:
-            # Ensure Gravity load case exists and collect all permanent load cases
-            perm_lc_names = list(permanent_load_case_names) if permanent_load_case_names else []
-
             # Check if Gravity exists, create if not
             gravity_exists = False
             for lc in self.get_load_cases():
                 if lc.name == "Gravity":
                     gravity_exists = True
-                    if "Gravity" not in perm_lc_names:
-                        perm_lc_names.append("Gravity")
                     break
 
             if not gravity_exists:
@@ -3152,14 +3143,14 @@ class StructuralModel:
                     np.array([0.0, 0.0, -9.81, 0.0, 0.0, 0.0]),
                     np.array([0.0, 0.0, 0.0])
                 )
-                perm_lc_names.append("Gravity")
 
-            # Generate load combinations with permanent/variable load cases
+            # Generate load combinations - Gravity is automatically included
+            # as a permanent load case since it's typed as Permanent
             combinations = generate_load_combinations(
                 generator,
                 analysis_settings,
-                permanent_load_case_names=perm_lc_names,
-                variable_load_case_names=variable_load_case_names
+                permanent_load_case_names=["Gravity"],
+                variable_load_case_names=[]
             )
             self._generated_combinations.extend(combinations)
 
