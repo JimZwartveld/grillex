@@ -69,6 +69,7 @@ class ActionType(Enum):
 if TYPE_CHECKING:
     import pandas as pd
     from .vessel_motion import VesselMotion
+    from ..sections import GrillexSectionAdapter, SectionInfo
 
 # Core imports
 from grillex._grillex_cpp import (
@@ -987,6 +988,7 @@ class StructuralModel:
         self._linked_load_case_ids: set = set()  # Load cases linked to vessel motions (immutable)
         self._vessel_motion_generators: List[Any] = []  # VesselMotions generators
         self._generated_combinations: List[Any] = []  # GeneratedLoadCombination objects
+        self._section_adapters: Dict[str, "GrillexSectionAdapter"] = {}  # Section library adapters
 
     # ===== Material and Section Management =====
 
@@ -1074,6 +1076,245 @@ class StructuralModel:
     def get_section(self, name: str) -> Optional[_CppSection]:
         """Get a section by name."""
         return self._sections.get(name)
+
+    # ===== Section Library Integration =====
+
+    def register_section_library(
+        self,
+        adapter: Union[str, Any, "GrillexSectionAdapter"],
+        name: Optional[str] = None,
+        input_units: str = "mm"
+    ) -> str:
+        """Register a section library for use in the model.
+
+        This allows adding sections from external libraries (AISC, Eurocode, custom JSON)
+        via the sectionbuilder integration.
+
+        Args:
+            adapter: Can be one of:
+                - Path to JSON library file (str)
+                - SectionBuilder library adapter
+                - GrillexSectionAdapter instance
+            name: Optional name override for the library (auto-generated if None)
+            input_units: "mm" for standard databases, "m" for custom sections.
+                Only used when adapter is a path or raw SectionBuilder adapter.
+
+        Returns:
+            Registered adapter name
+
+        Raises:
+            ImportError: If sectionbuilder is not installed
+            ValueError: If adapter type is not supported
+
+        Examples:
+            >>> model = StructuralModel()  # doctest: +SKIP
+            >>> model.register_section_library("eurocode_sections.json", "eurocode")  # doctest: +SKIP
+            >>> model.add_section_from_library("HEB300")  # doctest: +SKIP
+        """
+        from ..sections import (
+            GrillexSectionAdapter,
+            create_adapter_from_json,
+            SECTIONBUILDER_AVAILABLE
+        )
+
+        # Determine adapter type and wrap if needed
+        if isinstance(adapter, str):
+            # Path to JSON file
+            if not SECTIONBUILDER_AVAILABLE:
+                raise ImportError(
+                    "sectionbuilder package is required for JSON libraries. "
+                    "Install it with: pip install sectionbuilder"
+                )
+            grillex_adapter = create_adapter_from_json(adapter, input_units)
+            if name is None:
+                import os
+                name = os.path.splitext(os.path.basename(adapter))[0]
+        elif isinstance(adapter, GrillexSectionAdapter):
+            # Already wrapped
+            grillex_adapter = adapter
+            if name is None:
+                name = adapter.adapter_name
+        else:
+            # Assume it's a raw SectionBuilder adapter
+            if not SECTIONBUILDER_AVAILABLE:
+                raise ImportError(
+                    "sectionbuilder package is required. "
+                    "Install it with: pip install sectionbuilder"
+                )
+            grillex_adapter = GrillexSectionAdapter(adapter, input_units=input_units)
+            if name is None:
+                name = grillex_adapter.adapter_name
+
+        self._section_adapters[name] = grillex_adapter
+        return name
+
+    def search_sections(
+        self,
+        query: str,
+        library: Optional[str] = None
+    ) -> List["SectionInfo"]:
+        """Search registered section libraries for matching sections.
+
+        Args:
+            query: Search string (e.g., "HEB", "W14")
+            library: Specific library to search (searches all if None)
+
+        Returns:
+            List of SectionInfo objects for matching sections
+
+        Raises:
+            KeyError: If specified library not found
+
+        Examples:
+            >>> model = StructuralModel()  # doctest: +SKIP
+            >>> model.register_section_library("eurocode.json", "eurocode")  # doctest: +SKIP
+            >>> results = model.search_sections("HEB")  # doctest: +SKIP
+            >>> for r in results[:3]:  # doctest: +SKIP
+            ...     print(r.designation)  # doctest: +SKIP
+        """
+        from ..sections import SectionInfo
+
+        results: List[SectionInfo] = []
+
+        if library is not None:
+            if library not in self._section_adapters:
+                raise KeyError(f"Library '{library}' not registered")
+            adapters = {library: self._section_adapters[library]}
+        else:
+            adapters = self._section_adapters
+
+        for lib_name, adapter in adapters.items():
+            for info in adapter.search(query):
+                info.library_name = lib_name
+                results.append(info)
+
+        return results
+
+    def add_section_from_library(
+        self,
+        designation: str,
+        library: Optional[str] = None,
+        name: Optional[str] = None
+    ) -> _CppSection:
+        """Add a section from a registered library.
+
+        Retrieves section properties from the library, converts units
+        and axis conventions, and creates the section in the model.
+
+        Args:
+            designation: Section designation (e.g., "HEB300", "W14X22")
+            library: Library name (searches all if None)
+            name: Optional name override for the section in grillex
+
+        Returns:
+            Created Section object
+
+        Raises:
+            KeyError: If section not found in any library
+            ValueError: If no libraries are registered
+
+        Examples:
+            >>> model = StructuralModel()  # doctest: +SKIP
+            >>> model.register_section_library("eurocode.json", "eurocode")  # doctest: +SKIP
+            >>> model.add_section_from_library("HEB300")  # doctest: +SKIP
+        """
+        if not self._section_adapters:
+            raise ValueError(
+                "No section libraries registered. "
+                "Call register_section_library() first."
+            )
+
+        # Find the section
+        adapter = None
+        if library is not None:
+            if library not in self._section_adapters:
+                raise KeyError(f"Library '{library}' not registered")
+            adapter = self._section_adapters[library]
+            if designation not in adapter:
+                raise KeyError(
+                    f"Section '{designation}' not found in library '{library}'"
+                )
+        else:
+            # Search all libraries
+            for lib_name, lib_adapter in self._section_adapters.items():
+                if designation in lib_adapter:
+                    adapter = lib_adapter
+                    break
+            if adapter is None:
+                raise KeyError(
+                    f"Section '{designation}' not found in any registered library. "
+                    f"Registered libraries: {list(self._section_adapters.keys())}"
+                )
+
+        # Get converted properties
+        params = adapter.get_grillex_section_params(designation)
+
+        # Use designation as name if not specified
+        section_name = name if name is not None else designation
+
+        # Create section in grillex
+        return self.add_section(
+            name=section_name,
+            A=params["A"],
+            Iy=params["Iy"],
+            Iz=params["Iz"],
+            J=params["J"],
+            Iw=params.get("Iw", 0.0),
+            Asy=params.get("Asy", 0.0),
+            Asz=params.get("Asz", 0.0),
+        )
+
+    def add_section_from_properties(
+        self,
+        name: str,
+        properties: Any,
+        input_units: str = "mm"
+    ) -> _CppSection:
+        """Add section from computed SectionBuilder properties.
+
+        Useful for custom/composite sections created programmatically
+        using sectionbuilder's section builders.
+
+        Args:
+            name: Section name in grillex
+            properties: SectionBuilder SectionProperties object
+            input_units: "mm" if properties are in mm, "m" if in meters
+
+        Returns:
+            Created Section object
+
+        Raises:
+            ImportError: If sectionbuilder is not installed
+
+        Examples:
+            >>> from sectionbuilder import ISection  # doctest: +SKIP
+            >>> section = ISection(h=300, b=150, tw=8, tf=12)  # doctest: +SKIP
+            >>> props = section.calculate_properties()  # doctest: +SKIP
+            >>> model.add_section_from_properties("Custom_I", props, "mm")  # doctest: +SKIP
+        """
+        from ..sections import convert_section_properties
+
+        # Convert to grillex units and conventions
+        params = convert_section_properties(properties, input_units=input_units)
+
+        return self.add_section(
+            name=name,
+            A=params["A"],
+            Iy=params["Iy"],
+            Iz=params["Iz"],
+            J=params["J"],
+            Iw=params.get("Iw", 0.0),
+            Asy=params.get("Asy", 0.0),
+            Asz=params.get("Asz", 0.0),
+        )
+
+    def list_section_libraries(self) -> List[str]:
+        """List all registered section library names.
+
+        Returns:
+            List of library names
+        """
+        return list(self._section_adapters.keys())
 
     # ===== Node Management =====
 
