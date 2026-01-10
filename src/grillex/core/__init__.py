@@ -70,6 +70,23 @@ from .vessel_motion import (
     MotionType,
     MotionComponent,
     LinkedLoadCase,
+    # Design methods and limit states
+    DesignMethod,
+    LimitState,
+    OperationType,
+    LoadCombinationFactors,
+    AnalysisSettings,
+    DEFAULT_LOAD_FACTORS,
+    DEFAULT_REMOVAL_FACTORS,
+    # VesselMotions generators (plural)
+    VesselMotions,
+    MotionAmplitudes,
+    VesselMotionsFromAmplitudes,
+    VesselMotionsFromNobleDenton,
+    # Load combination generation
+    GeneratedLoadCombination,
+    generate_load_combinations,
+    apply_generated_combinations,
 )
 
 __all__ = [
@@ -115,4 +132,14 @@ __all__ = [
     'supports_shear_deformation',
     # Phase 20: Vessel Motions
     'VesselMotion', 'MotionType', 'MotionComponent', 'LinkedLoadCase',
+    # Phase 20: Design methods and limit states
+    'DesignMethod', 'LimitState', 'OperationType',
+    'LoadCombinationFactors', 'AnalysisSettings',
+    'DEFAULT_LOAD_FACTORS', 'DEFAULT_REMOVAL_FACTORS',
+    # Phase 20: VesselMotions generators (plural)
+    'VesselMotions', 'MotionAmplitudes',
+    'VesselMotionsFromAmplitudes', 'VesselMotionsFromNobleDenton',
+    # Phase 20: Load combination generation
+    'GeneratedLoadCombination', 'generate_load_combinations',
+    'apply_generated_combinations',
 ]

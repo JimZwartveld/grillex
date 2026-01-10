@@ -2,16 +2,8 @@ name: Build and Deploy MCP Server
 
 on:
   push:
-    branches:
-      - main
-      - master
-      - release
     tags:
       - 'v*'
-  pull_request:
-    branches:
-      - main
-      - master
   workflow_dispatch:
 
 concurrency:
@@ -21,17 +13,24 @@ concurrency:
 env:
   MCP_COMPOSE_FILE: docker-compose.mcp.yml
   MCP_SERVICE_NAME: grillex-mcp
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-mcp
 
 jobs:
   # =============================================================================
-  # Build MCP Server Docker Image
+  # Build and Push MCP Server Docker Image
   # =============================================================================
   build-mcp:
     name: Build MCP Server
     runs-on: self-hosted
 
+    permissions:
+      contents: read
+      packages: write
+
     outputs:
       image_tag: ${{ steps.version.outputs.version }}
+      image_url: ${{ steps.version.outputs.image_url }}
 
     steps:
       - name: Checkout repository
@@ -50,34 +49,60 @@ jobs:
             VERSION="${VERSION#v}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "image_url=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION" >> $GITHUB_OUTPUT
           echo "Using version: $VERSION"
 
-      - name: Build MCP Docker image
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push MCP Server image
         run: |
+          IMAGE_BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          IMAGE_BASE_LOWER=$(echo "$IMAGE_BASE" | tr '[:upper:]' '[:lower:]')
+
           docker build \
-            -t grillex-mcp:${{ steps.version.outputs.version }} \
-            -t grillex-mcp:latest \
+            -t "${IMAGE_BASE_LOWER}:${{ steps.version.outputs.version }}" \
+            -t "${IMAGE_BASE_LOWER}:latest" \
             -f mcp/Dockerfile \
             --build-arg GRILLEX_VERSION=${{ steps.version.outputs.version }} \
             .
+
+          docker push "${IMAGE_BASE_LOWER}:${{ steps.version.outputs.version }}"
+          docker push "${IMAGE_BASE_LOWER}:latest"
 
       - name: Test MCP compose config
         run: docker-compose -f ${{ env.MCP_COMPOSE_FILE }} config
 
   # =============================================================================
-  # Deploy MCP Server (on release branch or tags)
+  # Deploy MCP Server (on version tags only)
   # =============================================================================
   deploy-mcp:
     name: Deploy MCP Server
     needs: build-mcp
     runs-on: self-hosted
-    if: |
-      github.event_name == 'push' &&
-      (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v'))
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image from ghcr.io
+        run: |
+          IMAGE_BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          IMAGE_BASE_LOWER=$(echo "$IMAGE_BASE" | tr '[:upper:]' '[:lower:]')
+
+          docker pull "${IMAGE_BASE_LOWER}:${{ needs.build-mcp.outputs.image_tag }}"
+          docker pull "${IMAGE_BASE_LOWER}:latest"
 
       - name: Stop existing MCP service
         run: |
@@ -85,6 +110,11 @@ jobs:
 
       - name: Start MCP service
         run: |
+          IMAGE_BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          IMAGE_BASE_LOWER=$(echo "$IMAGE_BASE" | tr '[:upper:]' '[:lower:]')
+
+          # Export for docker-compose
+          export GRILLEX_MCP_IMAGE="${IMAGE_BASE_LOWER}:${{ needs.build-mcp.outputs.image_tag }}"
           docker-compose -f ${{ env.MCP_COMPOSE_FILE }} up -d
 
       - name: Verify deployment

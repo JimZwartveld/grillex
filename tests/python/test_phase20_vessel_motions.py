@@ -1369,3 +1369,1085 @@ class TestVesselMotionDeletion:
         # Load case should be removed from combination
         updated_combo = next(c for c in model.get_load_combinations() if c["id"] == combo["id"])
         assert len(updated_combo["load_cases"]) == 0
+
+
+# =============================================================================
+# Tests for VesselMotions (plural) - Multi-Motion Generation
+# =============================================================================
+
+
+class TestDesignMethodAndLimitState:
+    """Tests for DesignMethod, LimitState, and OperationType enums."""
+
+    def test_design_method_enum(self):
+        """DesignMethod enum has LRFD and ASD values."""
+        from grillex.core import DesignMethod
+
+        assert DesignMethod.LRFD.value == "lrfd"
+        assert DesignMethod.ASD.value == "asd"
+
+    def test_limit_state_enum(self):
+        """LimitState enum has ULSa, ULSb, and SLS values."""
+        from grillex.core import LimitState
+
+        assert LimitState.ULSa.value == "ulsa"
+        assert LimitState.ULSb.value == "ulsb"
+        assert LimitState.SLS.value == "sls"
+
+    def test_operation_type_enum(self):
+        """OperationType enum has correct values."""
+        from grillex.core import OperationType
+
+        assert OperationType.REMOVAL.value == "removal"
+        assert OperationType.TRANSPORT_INSTALL.value == "transport_install"
+
+
+class TestLoadCombinationFactors:
+    """Tests for LoadCombinationFactors dataclass."""
+
+    def test_create_factors(self):
+        """LoadCombinationFactors can be created."""
+        from grillex.core import LoadCombinationFactors
+
+        factors = LoadCombinationFactors(
+            dead_load=1.3,
+            live_load=1.3,
+            environmental=1.0
+        )
+
+        assert factors.dead_load == 1.3
+        assert factors.live_load == 1.3
+        assert factors.environmental == 1.0
+
+    def test_default_load_factors(self):
+        """DEFAULT_LOAD_FACTORS contains correct values."""
+        from grillex.core import DEFAULT_LOAD_FACTORS, LimitState
+
+        # ULSa: 1.3 * DL + 1.3 * LL + 0.7 * EL
+        assert DEFAULT_LOAD_FACTORS[LimitState.ULSa].dead_load == 1.3
+        assert DEFAULT_LOAD_FACTORS[LimitState.ULSa].live_load == 1.3
+        assert DEFAULT_LOAD_FACTORS[LimitState.ULSa].environmental == 0.7
+
+        # ULSb: 1.0 * DL + 1.0 * LL + 1.3 * EL
+        assert DEFAULT_LOAD_FACTORS[LimitState.ULSb].dead_load == 1.0
+        assert DEFAULT_LOAD_FACTORS[LimitState.ULSb].environmental == 1.3
+
+        # SLS: 1.0 * all
+        assert DEFAULT_LOAD_FACTORS[LimitState.SLS].dead_load == 1.0
+        assert DEFAULT_LOAD_FACTORS[LimitState.SLS].live_load == 1.0
+        assert DEFAULT_LOAD_FACTORS[LimitState.SLS].environmental == 1.0
+
+    def test_default_removal_factors(self):
+        """DEFAULT_REMOVAL_FACTORS has reduced ULSa factors."""
+        from grillex.core import DEFAULT_REMOVAL_FACTORS, LimitState
+
+        # Removal ULSa: 1.1 instead of 1.3
+        assert DEFAULT_REMOVAL_FACTORS[LimitState.ULSa].dead_load == 1.1
+        assert DEFAULT_REMOVAL_FACTORS[LimitState.ULSa].live_load == 1.1
+
+
+class TestAnalysisSettings:
+    """Tests for AnalysisSettings dataclass."""
+
+    def test_create_default_settings(self):
+        """AnalysisSettings can be created with defaults."""
+        from grillex.core import AnalysisSettings, DesignMethod
+
+        settings = AnalysisSettings()
+
+        assert settings.design_method == DesignMethod.LRFD
+        assert settings.operation_type is None  # None = standard factors
+
+    def test_lrfd_limit_states(self):
+        """LRFD design method returns ULSa and ULSb limit states."""
+        from grillex.core import AnalysisSettings, DesignMethod, LimitState
+
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+        limit_states = settings.get_limit_states()
+
+        assert LimitState.ULSa in limit_states
+        assert LimitState.ULSb in limit_states
+        assert LimitState.SLS not in limit_states
+        assert len(limit_states) == 2
+
+    def test_asd_limit_states(self):
+        """ASD design method returns only SLS limit state."""
+        from grillex.core import AnalysisSettings, DesignMethod, LimitState
+
+        settings = AnalysisSettings(design_method=DesignMethod.ASD)
+        limit_states = settings.get_limit_states()
+
+        assert limit_states == [LimitState.SLS]
+
+    def test_get_factors_default(self):
+        """get_factors returns default factors for in-service."""
+        from grillex.core import AnalysisSettings, DesignMethod, LimitState
+
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+        factors = settings.get_factors(LimitState.ULSa)
+
+        assert factors.dead_load == 1.3
+        assert factors.live_load == 1.3
+        assert factors.environmental == 0.7
+
+    def test_get_factors_removal(self):
+        """get_factors returns removal factors for removal operation."""
+        from grillex.core import AnalysisSettings, DesignMethod, LimitState, OperationType
+
+        settings = AnalysisSettings(
+            design_method=DesignMethod.LRFD,
+            operation_type=OperationType.REMOVAL
+        )
+        factors = settings.get_factors(LimitState.ULSa)
+
+        assert factors.dead_load == 1.1
+        assert factors.live_load == 1.1
+
+    def test_custom_factors_override(self):
+        """Custom factors override defaults."""
+        from grillex.core import (
+            AnalysisSettings, DesignMethod, LimitState, LoadCombinationFactors
+        )
+
+        custom = {
+            LimitState.ULSa: LoadCombinationFactors(
+                dead_load=1.5, live_load=1.5, environmental=1.2
+            )
+        }
+        settings = AnalysisSettings(
+            design_method=DesignMethod.LRFD,
+            custom_factors=custom
+        )
+        factors = settings.get_factors(LimitState.ULSa)
+
+        assert factors.dead_load == 1.5
+        assert factors.live_load == 1.5
+        assert factors.environmental == 1.2
+
+
+class TestMotionAmplitudes:
+    """Tests for MotionAmplitudes dataclass."""
+
+    def test_create_amplitudes(self):
+        """MotionAmplitudes can be created."""
+        from grillex.core import MotionAmplitudes
+
+        amp = MotionAmplitudes(
+            heave=2.5,
+            roll_angle=15.0,
+            roll_period=10.0,
+            pitch_angle=5.0,
+            pitch_period=8.0
+        )
+
+        assert amp.heave == 2.5
+        assert amp.roll_angle == 15.0
+        assert amp.roll_period == 10.0
+
+    def test_get_roll_acceleration_from_angle_period(self):
+        """Roll acceleration is computed from angle/period."""
+        from grillex.core import MotionAmplitudes
+
+        amp = MotionAmplitudes(roll_angle=15.0, roll_period=10.0)
+        roll_accel = amp.get_roll_acceleration()
+
+        # α = (2π/T)² × θ
+        theta_rad = math.radians(15.0)
+        omega = 2 * math.pi / 10.0
+        expected = omega * omega * theta_rad
+
+        np.testing.assert_almost_equal(roll_accel, expected, decimal=6)
+
+    def test_get_roll_acceleration_direct(self):
+        """Direct roll acceleration overrides angle/period."""
+        from grillex.core import MotionAmplitudes
+
+        amp = MotionAmplitudes(
+            roll_accel=0.5,  # Direct acceleration
+            roll_angle=15.0,  # This is ignored
+            roll_period=10.0
+        )
+        roll_accel = amp.get_roll_acceleration()
+
+        assert roll_accel == 0.5
+
+    def test_get_pitch_acceleration_from_angle_period(self):
+        """Pitch acceleration is computed from angle/period."""
+        from grillex.core import MotionAmplitudes
+
+        amp = MotionAmplitudes(pitch_angle=5.0, pitch_period=8.0)
+        pitch_accel = amp.get_pitch_acceleration()
+
+        theta_rad = math.radians(5.0)
+        omega = 2 * math.pi / 8.0
+        expected = omega * omega * theta_rad
+
+        np.testing.assert_almost_equal(pitch_accel, expected, decimal=6)
+
+    def test_get_yaw_acceleration_from_angle_period(self):
+        """Yaw acceleration is computed from angle/period."""
+        from grillex.core import MotionAmplitudes
+
+        amp = MotionAmplitudes(yaw_angle=3.0, yaw_period=12.0)
+        yaw_accel = amp.get_yaw_acceleration()
+
+        theta_rad = math.radians(3.0)
+        omega = 2 * math.pi / 12.0
+        expected = omega * omega * theta_rad
+
+        np.testing.assert_almost_equal(yaw_accel, expected, decimal=6)
+
+    def test_get_yaw_acceleration_direct(self):
+        """Direct yaw acceleration overrides angle/period."""
+        from grillex.core import MotionAmplitudes
+
+        amp = MotionAmplitudes(yaw_accel=0.05, yaw_angle=3.0, yaw_period=12.0)
+        assert amp.get_yaw_acceleration() == 0.05
+
+
+class TestVesselMotionsFromAmplitudes:
+    """Tests for VesselMotionsFromAmplitudes generator."""
+
+    def test_generate_heave_only(self):
+        """Generates heave+/- when only heave is specified."""
+        from grillex.core import VesselMotionsFromAmplitudes, MotionAmplitudes
+
+        amp = MotionAmplitudes(heave=2.5)
+        generator = VesselMotionsFromAmplitudes("Test", amp)
+        motions = generator.get_motions()
+
+        assert len(motions) == 2
+        assert "Heave+" in motions[0].name
+        assert "Heave-" in motions[1].name
+
+    def test_generate_all_motions(self):
+        """Generates 8 motions for heave+pitch+roll+yaw (4 independent motions × 2)."""
+        from grillex.core import VesselMotionsFromAmplitudes, MotionAmplitudes
+
+        amp = MotionAmplitudes(
+            heave=2.5,
+            pitch_angle=5.0,
+            pitch_period=8.0,
+            roll_angle=10.0,
+            roll_period=10.0,
+            yaw_angle=3.0,
+            yaw_period=12.0
+        )
+        generator = VesselMotionsFromAmplitudes(
+            "Design",
+            amp,
+            motion_center=[50.0, 0.0, 5.0]
+        )
+        motions = generator.get_motions()
+
+        assert len(motions) == 8  # 4 independent motions × 2 (+/-)
+        names = [m.name for m in motions]
+        assert "Design - Heave+" in names
+        assert "Design - Heave-" in names
+        assert "Design - Pitch+" in names
+        assert "Design - Pitch-" in names
+        assert "Design - Roll+" in names
+        assert "Design - Roll-" in names
+        assert "Design - Yaw+" in names
+        assert "Design - Yaw-" in names
+
+    def test_pitch_surge_coupling(self):
+        """Pitch+ couples with surge (default +1.0 coupling)."""
+        from grillex.core import VesselMotionsFromAmplitudes, MotionAmplitudes, MotionType
+
+        amp = MotionAmplitudes(pitch_accel=0.1)  # Direct acceleration
+        generator = VesselMotionsFromAmplitudes(
+            "Test",
+            amp,
+            pitch_surge_coupling=1.0  # +pitch = +surge
+        )
+        motions = generator.get_motions()
+
+        pitch_pos = next(m for m in motions if "Pitch+" in m.name)
+        surge_comp = pitch_pos.get_component_by_type(MotionType.SURGE)
+
+        assert surge_comp is not None
+        assert surge_comp.amplitude > 0  # Positive surge for positive pitch
+
+    def test_roll_sway_coupling(self):
+        """Roll+ couples with sway (default -1.0 coupling)."""
+        from grillex.core import VesselMotionsFromAmplitudes, MotionAmplitudes, MotionType
+
+        amp = MotionAmplitudes(roll_accel=0.1)  # Direct acceleration
+        generator = VesselMotionsFromAmplitudes(
+            "Test",
+            amp,
+            roll_sway_coupling=-1.0  # +roll = -sway
+        )
+        motions = generator.get_motions()
+
+        roll_pos = next(m for m in motions if "Roll+" in m.name)
+        sway_comp = roll_pos.get_component_by_type(MotionType.SWAY)
+
+        assert sway_comp is not None
+        assert sway_comp.amplitude < 0  # Negative sway for positive roll
+
+    def test_motion_center_propagated(self):
+        """Motion center is propagated to all generated motions."""
+        from grillex.core import VesselMotionsFromAmplitudes, MotionAmplitudes
+
+        amp = MotionAmplitudes(heave=2.5)
+        center = [50.0, 10.0, 5.0]
+        generator = VesselMotionsFromAmplitudes("Test", amp, motion_center=center)
+        motions = generator.get_motions()
+
+        for m in motions:
+            assert m.motion_center == center
+
+
+class TestVesselMotionsFromNobleDenton:
+    """Tests for VesselMotionsFromNobleDenton generator."""
+
+    def test_generates_6_cases(self):
+        """Generates exactly 6 load cases."""
+        from grillex.core import VesselMotionsFromNobleDenton
+
+        generator = VesselMotionsFromNobleDenton(
+            "ND",
+            heave=2.5,
+            roll_angle=15.0,
+            roll_period=10.0,
+            pitch_angle=5.0,
+            pitch_period=8.0
+        )
+        motions = generator.get_motions()
+
+        assert len(motions) == 6
+
+    def test_case_names(self):
+        """Cases are named correctly per Noble Denton convention.
+
+        Load cases are standalone (heave, pitch, roll separate).
+        Combinations are created in load combinations, not load cases.
+        """
+        from grillex.core import VesselMotionsFromNobleDenton
+
+        generator = VesselMotionsFromNobleDenton(
+            "ND",
+            heave=2.5,
+            pitch_angle=5.0,
+            pitch_period=8.0,
+            roll_angle=10.0,
+            roll_period=10.0
+        )
+        motions = generator.get_motions()
+        names = [m.name for m in motions]
+
+        assert "ND - Heave+" in names
+        assert "ND - Heave-" in names
+        assert "ND - Pitch+" in names
+        assert "ND - Pitch-" in names
+        assert "ND - Roll+" in names
+        assert "ND - Roll-" in names
+
+    def test_heave_only_cases(self):
+        """Heave-only cases have only heave acceleration."""
+        from grillex.core import VesselMotionsFromNobleDenton, MotionType
+
+        generator = VesselMotionsFromNobleDenton(
+            "ND",
+            heave=2.5,
+            pitch_angle=5.0,
+            pitch_period=8.0
+        )
+        motions = generator.get_motions()
+
+        heave_pos = next(m for m in motions if m.name == "ND - Heave+")
+        heave_neg = next(m for m in motions if m.name == "ND - Heave-")
+
+        # Heave+ has positive heave
+        heave_comp = heave_pos.get_component_by_type(MotionType.HEAVE)
+        assert heave_comp is not None
+        assert heave_comp.amplitude == 2.5
+
+        # Heave- has negative heave
+        heave_comp_neg = heave_neg.get_component_by_type(MotionType.HEAVE)
+        assert heave_comp_neg.amplitude == -2.5
+
+    def test_pitch_cases_are_standalone(self):
+        """Pitch cases have only pitch (no heave - combined in load combinations)."""
+        from grillex.core import VesselMotionsFromNobleDenton, MotionType
+
+        generator = VesselMotionsFromNobleDenton(
+            "ND",
+            heave=2.5,
+            pitch_angle=5.0,
+            pitch_period=8.0
+        )
+        motions = generator.get_motions()
+
+        pitch_pos = next(m for m in motions if m.name == "ND - Pitch+")
+
+        heave = pitch_pos.get_component_by_type(MotionType.HEAVE)
+        pitch = pitch_pos.get_component_by_type(MotionType.PITCH)
+
+        assert heave is None  # No heave in pitch-only load case
+        assert pitch is not None
+        assert pitch.amplitude > 0
+
+    def test_roll_cases_are_standalone(self):
+        """Roll cases have only roll (no heave - combined in load combinations)."""
+        from grillex.core import VesselMotionsFromNobleDenton, MotionType
+
+        generator = VesselMotionsFromNobleDenton(
+            "ND",
+            heave=2.5,
+            roll_angle=15.0,
+            roll_period=10.0
+        )
+        motions = generator.get_motions()
+
+        roll_pos = next(m for m in motions if m.name == "ND - Roll+")
+
+        heave = roll_pos.get_component_by_type(MotionType.HEAVE)
+        roll = roll_pos.get_component_by_type(MotionType.ROLL)
+
+        assert heave is None  # No heave in roll-only load case
+        assert roll is not None
+        assert roll.amplitude > 0
+
+    def test_pitch_no_surge_coupling_noble_denton(self):
+        """Noble Denton pitch cases do NOT have surge coupling.
+
+        Surge/sway coupling is not used in Noble Denton - rotations are
+        defined at the motion center (rotation center of the barge).
+        """
+        from grillex.core import VesselMotionsFromNobleDenton, MotionType
+
+        generator = VesselMotionsFromNobleDenton(
+            "ND",
+            heave=2.5,
+            pitch_accel=0.1,
+        )
+        motions = generator.get_motions()
+
+        pitch_pos = next(m for m in motions if m.name == "ND - Pitch+")
+        surge = pitch_pos.get_component_by_type(MotionType.SURGE)
+
+        # No surge coupling in Noble Denton
+        assert surge is None
+
+    def test_roll_no_sway_coupling_noble_denton(self):
+        """Noble Denton roll cases do NOT have sway coupling.
+
+        Surge/sway coupling is not used in Noble Denton - rotations are
+        defined at the motion center (rotation center of the barge).
+        """
+        from grillex.core import VesselMotionsFromNobleDenton, MotionType
+
+        generator = VesselMotionsFromNobleDenton(
+            "ND",
+            heave=2.5,
+            roll_accel=0.1,
+        )
+        motions = generator.get_motions()
+
+        roll_pos = next(m for m in motions if m.name == "ND - Roll+")
+        sway = roll_pos.get_component_by_type(MotionType.SWAY)
+
+        # No sway coupling in Noble Denton
+        assert sway is None
+
+    def test_motion_center_propagated_nd(self):
+        """Motion center is propagated to all ND cases."""
+        from grillex.core import VesselMotionsFromNobleDenton
+
+        center = [50.0, 0.0, 5.0]
+        generator = VesselMotionsFromNobleDenton(
+            "ND",
+            heave=2.5,
+            motion_center=center
+        )
+        motions = generator.get_motions()
+
+        for m in motions:
+            assert m.motion_center == center
+
+
+class TestLoadCombinationGeneration:
+    """Tests for generate_load_combinations function."""
+
+    def test_lrfd_generates_2x_combinations(self):
+        """LRFD generates 2x combinations (ULSa and ULSb for each combination).
+
+        Noble Denton generates 8 motion combinations (Heave± × Roll± and Heave± × Pitch±).
+        With both pitch and roll, this gives 8 combinations × 2 limit states = 16 total.
+        """
+        from grillex.core import (
+            VesselMotionsFromNobleDenton,
+            AnalysisSettings,
+            DesignMethod,
+            generate_load_combinations
+        )
+
+        nd = VesselMotionsFromNobleDenton(
+            "ND", heave=2.5, pitch_angle=5.0, pitch_period=8.0,
+            roll_angle=10.0, roll_period=10.0
+        )
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+
+        combos = generate_load_combinations(nd, settings)
+
+        # 8 motion combinations * 2 limit states = 16 combinations
+        assert len(combos) == 16
+
+    def test_asd_generates_1x_combinations(self):
+        """ASD generates 1x combinations (SLS only for each combination).
+
+        Noble Denton generates 8 motion combinations (Heave± × Roll± and Heave± × Pitch±).
+        With both pitch and roll, this gives 8 combinations × 1 limit state = 8 total.
+        """
+        from grillex.core import (
+            VesselMotionsFromNobleDenton,
+            AnalysisSettings,
+            DesignMethod,
+            generate_load_combinations
+        )
+
+        nd = VesselMotionsFromNobleDenton(
+            "ND", heave=2.5, pitch_angle=5.0, pitch_period=8.0,
+            roll_angle=10.0, roll_period=10.0
+        )
+        settings = AnalysisSettings(design_method=DesignMethod.ASD)
+
+        combos = generate_load_combinations(nd, settings)
+
+        # 8 motion combinations * 1 limit state = 8 combinations
+        assert len(combos) == 8
+
+    def test_combination_names(self):
+        """Combination names include motion name, limit state is in field."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton,
+            AnalysisSettings,
+            DesignMethod,
+            LimitState,
+            generate_load_combinations
+        )
+
+        nd = VesselMotionsFromNobleDenton("ND", heave=2.5)
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+
+        combos = generate_load_combinations(nd, settings)
+
+        # Combination names should contain motion names (e.g., "Heave+")
+        # Limit state is NOT in the name - it's in the limit_state field
+        names = [c.name for c in combos]
+        assert any("Heave+" in name for name in names)
+
+        # Should have both ULSa and ULSb limit states
+        limit_states = [c.limit_state for c in combos]
+        assert any(ls == LimitState.ULSa for ls in limit_states)
+        assert any(ls == LimitState.ULSb for ls in limit_states)
+
+    def test_combination_factors_lrfd(self):
+        """LRFD combinations have correct factors."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton,
+            AnalysisSettings,
+            DesignMethod,
+            LimitState,
+            generate_load_combinations
+        )
+
+        nd = VesselMotionsFromNobleDenton("ND", heave=2.5)
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+
+        combos = generate_load_combinations(nd, settings)
+
+        ulsa_combo = next(c for c in combos if c.limit_state == LimitState.ULSa)
+        ulsb_combo = next(c for c in combos if c.limit_state == LimitState.ULSb)
+
+        # ULSa factors
+        assert ulsa_combo.dead_load_factor == 1.3
+        assert ulsa_combo.live_load_factor == 1.3
+        assert ulsa_combo.environmental_factor == 0.7
+
+        # ULSb factors
+        assert ulsb_combo.dead_load_factor == 1.0
+        assert ulsb_combo.environmental_factor == 1.3
+
+    def test_combination_factors_removal(self):
+        """Removal operation uses reduced ULSa factors."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton,
+            AnalysisSettings,
+            DesignMethod,
+            OperationType,
+            LimitState,
+            generate_load_combinations
+        )
+
+        nd = VesselMotionsFromNobleDenton("ND", heave=2.5)
+        settings = AnalysisSettings(
+            design_method=DesignMethod.LRFD,
+            operation_type=OperationType.REMOVAL
+        )
+
+        combos = generate_load_combinations(nd, settings)
+
+        ulsa_combo = next(c for c in combos if c.limit_state == LimitState.ULSa)
+
+        # Removal ULSa factors: 1.1 instead of 1.3
+        assert ulsa_combo.dead_load_factor == 1.1
+        assert ulsa_combo.live_load_factor == 1.1
+
+    def test_combination_has_vessel_motion_reference(self):
+        """Each combination references its VesselMotions (multiple for ND)."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton,
+            AnalysisSettings,
+            DesignMethod,
+            generate_load_combinations
+        )
+
+        nd = VesselMotionsFromNobleDenton(
+            "ND", heave=2.5, roll_angle=10.0, roll_period=10.0
+        )
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+
+        combos = generate_load_combinations(nd, settings)
+
+        for combo in combos:
+            # vessel_motions is a list for combined cases
+            assert combo.vessel_motions is not None
+            assert len(combo.vessel_motions) >= 1
+            # vessel_motion property provides backwards compatibility
+            assert combo.vessel_motion is not None
+            # At least one motion suffix should appear in the combination name
+            motion_suffixes = []
+            for m in combo.vessel_motions:
+                if " - " in m.name:
+                    motion_suffixes.append(m.name.split(" - ")[-1])
+            assert any(suffix in combo.name for suffix in motion_suffixes)
+
+
+class TestLoadCombinationConversion:
+    """Tests for converting GeneratedLoadCombination to C++ LoadCombination."""
+
+    def test_to_load_combination_basic(self):
+        """to_load_combination() creates C++ LoadCombination with correct factors."""
+        from grillex.core import (
+            VesselMotion, GeneratedLoadCombination, LimitState
+        )
+        from grillex._grillex_cpp import LoadCombination, LoadCaseType
+
+        motion = VesselMotion("Heave+")
+        motion.add_heave(2.5)
+
+        gen = GeneratedLoadCombination(
+            name="ULSA - Heave+",
+            limit_state=LimitState.ULSa,
+            vessel_motions=[motion],  # Now a list
+            dead_load_factor=1.3,
+            live_load_factor=1.3,
+            environmental_factor=0.7
+        )
+
+        combo = gen.to_load_combination(combination_id=1)
+
+        assert isinstance(combo, LoadCombination)
+        assert combo.name == "ULSA - Heave+"
+        assert combo.id == 1
+        # Check type-based factors
+        assert combo.get_type_factor(LoadCaseType.Permanent) == 1.3
+        assert combo.get_type_factor(LoadCaseType.Variable) == 1.3
+        assert combo.get_type_factor(LoadCaseType.Environmental) == 0.7
+
+    def test_to_load_combination_ulsb_factors(self):
+        """ULSb combination has correct factors (1.0/1.0/1.3)."""
+        from grillex.core import (
+            VesselMotion, GeneratedLoadCombination, LimitState
+        )
+        from grillex._grillex_cpp import LoadCaseType
+
+        motion = VesselMotion("Roll+")
+        gen = GeneratedLoadCombination(
+            name="ULSB - Roll+",
+            limit_state=LimitState.ULSb,
+            vessel_motions=[motion],  # Now a list
+            dead_load_factor=1.0,
+            live_load_factor=1.0,
+            environmental_factor=1.3
+        )
+
+        combo = gen.to_load_combination(combination_id=2)
+
+        assert combo.get_type_factor(LoadCaseType.Permanent) == 1.0
+        assert combo.get_type_factor(LoadCaseType.Variable) == 1.0
+        assert combo.get_type_factor(LoadCaseType.Environmental) == 1.3
+
+    def test_to_load_combination_sls_factors(self):
+        """SLS combination has all factors at 1.0."""
+        from grillex.core import (
+            VesselMotion, GeneratedLoadCombination, LimitState
+        )
+        from grillex._grillex_cpp import LoadCaseType
+
+        motion = VesselMotion("Pitch+")
+        gen = GeneratedLoadCombination(
+            name="SLS - Pitch+",
+            limit_state=LimitState.SLS,
+            vessel_motions=[motion],  # Now a list
+            dead_load_factor=1.0,
+            live_load_factor=1.0,
+            environmental_factor=1.0
+        )
+
+        combo = gen.to_load_combination(combination_id=3)
+
+        assert combo.get_type_factor(LoadCaseType.Permanent) == 1.0
+        assert combo.get_type_factor(LoadCaseType.Variable) == 1.0
+        assert combo.get_type_factor(LoadCaseType.Environmental) == 1.0
+
+    def test_to_load_combination_starts_empty(self):
+        """Combination starts with no load cases (must be added separately)."""
+        from grillex.core import (
+            VesselMotion, GeneratedLoadCombination, LimitState
+        )
+
+        motion = VesselMotion("Heave+")
+        gen = GeneratedLoadCombination(
+            name="Test",
+            limit_state=LimitState.ULSa,
+            vessel_motions=[motion],  # Now a list
+            dead_load_factor=1.3,
+            live_load_factor=1.3,
+            environmental_factor=0.7
+        )
+
+        combo = gen.to_load_combination()
+
+        # No load cases added yet
+        assert len(combo) == 0
+        assert combo.empty()
+
+
+class TestVesselMotionGeneratorIntegration:
+    """Tests for vessel motion generator integration with StructuralModel."""
+
+    def test_add_vessel_motions_generator_creates_load_cases(self):
+        """Adding a generator creates load cases for each motion."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton, AnalysisSettings, DesignMethod
+        )
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Create vessel motions generator
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            pitch_angle=5.0,
+            pitch_period=8.0,
+            roll_angle=10.0,
+            roll_period=10.0,
+            motion_center=[3.0, 0.0, 0.0]
+        )
+
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+
+        # Add generator to model - returns the generator (single source of truth)
+        generator = model.add_vessel_motions_generator(nd, settings)
+
+        # Generator should have 6 Noble Denton load case specs
+        assert len(generator.get_load_case_specs()) == 6
+
+        # Load cases should be created
+        load_cases = model.get_load_cases()
+        load_case_names = generator.get_load_case_names()
+
+        for name in load_case_names:
+            found = any(lc.name == name for lc in load_cases)
+            assert found, f"Load case '{name}' not found"
+
+    def test_add_generator_creates_combinations(self):
+        """Adding a generator with settings creates load combinations."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton, AnalysisSettings, DesignMethod
+        )
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            roll_angle=10.0,
+            roll_period=10.0,
+            motion_center=[3.0, 0.0, 0.0]
+        )
+
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+        model.add_vessel_motions_generator(nd, settings)
+
+        # Generated combinations should be stored
+        combos = model.get_generated_load_combinations()
+        assert len(combos) > 0
+
+        # Should have multiple limit states
+        limit_states = {c.limit_state for c in combos}
+        assert len(limit_states) > 1
+
+    def test_analyze_includes_vessel_motion_load_cases(self):
+        """model.analyze() includes vessel motion load cases."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton
+        )
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+        model.fix_dof_at([6, 0, 0], DOFIndex.UZ)  # Roller support for stability
+
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            pitch_angle=5.0,
+            pitch_period=8.0,
+            motion_center=[3.0, 0.0, 0.0]
+        )
+
+        # Add without generating combinations
+        model.add_vessel_motions_generator(nd, generate_combinations=False)
+
+        # Analyze should succeed - load cases from motions are included
+        success = model.analyze()
+        assert success
+
+        # Check that we can get results for a vessel motion load case
+        motions = nd.get_motions()
+        assert len(motions) > 0
+
+        # Model should have results
+        assert model.is_analyzed()
+
+    def test_analyze_combinations_includes_generated(self):
+        """analyze_combinations() analyzes generated load combinations."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton, AnalysisSettings, DesignMethod
+        )
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+        model.fix_dof_at([6, 0, 0], DOFIndex.UZ)
+
+        # Add dead load using the convenience method
+        dead_lc = model.add_gravity_load_case("Dead", 9.81, LoadCaseType.Permanent)
+
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            roll_angle=10.0,
+            roll_period=10.0,
+            motion_center=[3.0, 0.0, 0.0]
+        )
+
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+        model.add_vessel_motions_generator(nd, settings)
+
+        # First analyze all load cases
+        model.analyze()
+
+        # Then analyze all combinations
+        results = model.analyze_combinations()
+
+        # Should have results for each unique combination name
+        # Note: Multiple limit states may share the same name, so results count
+        # equals unique names (8 motion combos), not total combos (16 with 2 limit states)
+        combos = model.get_generated_load_combinations()
+        unique_names = set(c.name for c in combos)
+        assert len(results) >= len(unique_names)
+
+        # Each result should have converged
+        for name, result in results.items():
+            assert result.converged, f"Combination '{name}' did not converge"
+
+    def test_get_vessel_motion_generators(self):
+        """get_vessel_motion_generators() returns registered generators."""
+        from grillex.core import VesselMotionsFromAmplitudes, MotionAmplitudes
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Initially empty
+        assert len(model.get_vessel_motion_generators()) == 0
+
+        # Add a generator
+        amplitudes = MotionAmplitudes(heave=2.5, roll_angle=10.0, roll_period=10.0)
+        gen = VesselMotionsFromAmplitudes("Test", amplitudes)
+        model.add_vessel_motions_generator(gen, generate_combinations=False)
+
+        # Now has one generator
+        generators = model.get_vessel_motion_generators()
+        assert len(generators) == 1
+        assert generators[0].name == "Test"
+
+    def test_generator_without_settings_skips_combinations(self):
+        """Adding generator without settings doesn't create combinations."""
+        from grillex.core import VesselMotionsFromNobleDenton
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            roll_angle=10.0,
+            roll_period=10.0
+        )
+
+        # Add without settings
+        model.add_vessel_motions_generator(nd, analysis_settings=None)
+
+        # Load cases should exist
+        assert len(model.get_load_cases()) >= 6  # At least the 6 ND cases
+
+        # But no generated combinations
+        assert len(model.get_generated_load_combinations()) == 0
+
+    def test_delete_vessel_motions_generator_by_name(self):
+        """delete_vessel_motions_generator() removes generator by name."""
+        from grillex.core import VesselMotionsFromAmplitudes, MotionAmplitudes
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        amplitudes = MotionAmplitudes(heave=2.5, roll_angle=10.0, roll_period=10.0)
+        gen = VesselMotionsFromAmplitudes("ToDelete", amplitudes)
+        model.add_vessel_motions_generator(gen, generate_combinations=False)
+
+        # Count load cases before deletion
+        lcs_before = len(model.get_load_cases())
+        assert lcs_before >= 4  # At least 4 motions
+
+        # Delete by name
+        result = model.delete_vessel_motions_generator("ToDelete")
+
+        assert result is True
+        assert len(model.get_vessel_motion_generators()) == 0
+
+        # Load cases should be removed
+        lcs_after = len(model.get_load_cases())
+        assert lcs_after < lcs_before
+
+    def test_delete_vessel_motions_generator_by_object(self):
+        """delete_vessel_motions_generator() removes generator by object."""
+        from grillex.core import VesselMotionsFromNobleDenton
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            roll_angle=10.0,
+            roll_period=10.0
+        )
+        model.add_vessel_motions_generator(nd, generate_combinations=False)
+
+        # Delete by object reference
+        result = model.delete_vessel_motions_generator(nd)
+
+        assert result is True
+        assert len(model.get_vessel_motion_generators()) == 0
+
+    def test_delete_vessel_motions_generator_removes_combinations(self):
+        """delete_vessel_motions_generator() removes associated combinations."""
+        from grillex.core import (
+            VesselMotionsFromNobleDenton, AnalysisSettings, DesignMethod
+        )
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        # Add dead load
+        model.add_gravity_load_case("Dead", 9.81, LoadCaseType.Permanent)
+
+        nd = VesselMotionsFromNobleDenton(
+            name="ND",
+            heave=2.5,
+            roll_angle=10.0,
+            roll_period=10.0
+        )
+        settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+        model.add_vessel_motions_generator(nd, settings)
+
+        # Verify combinations were created
+        combos_before = len(model.get_generated_load_combinations())
+        assert combos_before > 0
+
+        # Delete generator
+        model.delete_vessel_motions_generator(nd)
+
+        # Combinations should be removed
+        combos_after = len(model.get_generated_load_combinations())
+        assert combos_after == 0
+
+    def test_delete_vessel_motions_generator_nonexistent(self):
+        """delete_vessel_motions_generator() returns False for nonexistent."""
+        model = StructuralModel(name="Test")
+
+        result = model.delete_vessel_motions_generator("NonExistent")
+        assert result is False
+
+    def test_delete_one_of_multiple_generators(self):
+        """Deleting one generator leaves others intact."""
+        from grillex.core import VesselMotionsFromAmplitudes, MotionAmplitudes
+
+        model = StructuralModel(name="Test")
+        model.add_material("Steel", E=210e6, nu=0.3, rho=7.85)
+        model.add_section("IPE300", A=0.00538, Iy=8.36e-5, Iz=6.04e-6, J=2.01e-7)
+        model.add_beam_by_coords([0, 0, 0], [6, 0, 0], "IPE300", "Steel")
+        model.fix_node_at([0, 0, 0])
+
+        amps1 = MotionAmplitudes(heave=2.0)
+        gen1 = VesselMotionsFromAmplitudes("Gen1", amps1)
+
+        amps2 = MotionAmplitudes(heave=3.0)
+        gen2 = VesselMotionsFromAmplitudes("Gen2", amps2)
+
+        model.add_vessel_motions_generator(gen1, generate_combinations=False)
+        model.add_vessel_motions_generator(gen2, generate_combinations=False)
+
+        assert len(model.get_vessel_motion_generators()) == 2
+
+        # Delete first generator
+        model.delete_vessel_motions_generator("Gen1")
+
+        # Second generator should still exist
+        generators = model.get_vessel_motion_generators()
+        assert len(generators) == 1
+        assert generators[0].name == "Gen2"

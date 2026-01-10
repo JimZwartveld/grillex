@@ -7,15 +7,12 @@ on:
       - master
       - development
       - release
-      - 'feature/**'
     tags:
       - 'v*'
   pull_request:
     branches:
       - main
       - master
-      - development
-      - release
   workflow_dispatch:
     inputs:
       publish_target:
@@ -34,38 +31,52 @@ concurrency:
 
 jobs:
   # =============================================================================
-  # Build wheels for Linux (self-hosted runner - free minutes)
-  # Runs on ALL events (push, PR, tags, workflow_dispatch)
+  # Build wheels for Linux only (self-hosted)
+  # Windows and macOS disabled to save GitHub Actions minutes
   # =============================================================================
-  build_wheels_linux:
+  build_wheels:
     name: Build wheels on Linux
     runs-on: self-hosted
+    # Matrix disabled - only building on self-hosted Linux
+    # strategy:
+    #   fail-fast: false
+    #   matrix:
+    #     # Windows and macOS disabled to save GitHub Actions minutes
+    #     os: [ubuntu-latest]
+    #     # os: [ubuntu-latest, windows-latest, macos-14]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # Needed for setuptools_scm
           submodules: true
 
       - name: Set up Python
+        id: setup-python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Add Python to PATH
+      - name: Install cibuildwheel
         run: |
-          echo "${{ env.pythonLocation }}/bin" >> $GITHUB_PATH
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install cibuildwheel==2.21.0
+          ${{ steps.setup-python.outputs.python-path }} -m pip install --upgrade pip
+          ${{ steps.setup-python.outputs.python-path }} -m pip install cibuildwheel==2.21.0
 
       - name: Build wheels
-        run: python -m cibuildwheel --output-dir wheelhouse
+        run: ${{ steps.setup-python.outputs.python-path }} -m cibuildwheel --output-dir wheelhouse
         env:
+          # Build for Python 3.11, 3.12, 3.13
+          CIBW_BUILD: "cp311-* cp312-* cp313-*"
+          # Skip 32-bit builds and musllinux
+          CIBW_SKIP: "*-win32 *-manylinux_i686 *-musllinux_*"
+          # x86_64 only to save build time
           CIBW_ARCHS_LINUX: x86_64
+          # Test that the package imports correctly
+          CIBW_TEST_COMMAND: >
+            python -c "import grillex; print('Grillex imported successfully')"
+          # Install numpy for testing
+          CIBW_TEST_REQUIRES: numpy
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -75,44 +86,7 @@ jobs:
           retention-days: 7
 
   # =============================================================================
-  # Build wheels for Windows (GitHub-hosted - only on critical branches)
-  # macOS builds removed to save GitHub Actions minutes (10x multiplier)
-  # =============================================================================
-  build_wheels_windows:
-    name: Build wheels on Windows
-    runs-on: windows-latest
-    # Only run Windows builds on push to development/main/release branches or tags
-    # Skip on PRs and feature branches to save GitHub Actions minutes (2x multiplier)
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' &&
-       (github.ref == 'refs/heads/development' ||
-        github.ref == 'refs/heads/main' ||
-        github.ref == 'refs/heads/master' ||
-        github.ref == 'refs/heads/release' ||
-        startsWith(github.ref, 'refs/tags/v')))
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: true
-
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v2.21
-        env:
-          CIBW_ARCHS_WINDOWS: "AMD64"
-
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-windows
-          path: ./wheelhouse/*.whl
-          retention-days: 7
-
-  # =============================================================================
-  # Build source distribution (self-hosted runner - free minutes)
+  # Build source distribution
   # =============================================================================
   build_sdist:
     name: Build source distribution
@@ -125,22 +99,18 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        run: |
-          export PATH="$HOME/.pyenv/bin:$PATH"
-          eval "$(pyenv init -)"
-          pyenv local 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Add Python to PATH
+        run: echo "${{ env.pythonLocation }}/bin" >> $GITHUB_PATH
 
       - name: Install build dependencies
-        run: |
-          export PATH="$HOME/.pyenv/bin:$PATH"
-          eval "$(pyenv init -)"
-          pip install build
+        run: pip install build
 
       - name: Build sdist
-        run: |
-          export PATH="$HOME/.pyenv/bin:$PATH"
-          eval "$(pyenv init -)"
-          python -m build --sdist
+        run: python -m build --sdist
 
       - name: Upload sdist
         uses: actions/upload-artifact@v4
@@ -150,65 +120,12 @@ jobs:
           retention-days: 7
 
   # =============================================================================
-  # Test the built Linux wheels (self-hosted runner - free minutes)
+  # Test the built wheels (Linux only)
   # =============================================================================
-  test_wheels_linux:
-    name: Test Linux wheel / Python ${{ matrix.python }}
-    needs: build_wheels_linux
+  test_wheels:
+    name: Test wheel on Linux / Python ${{ matrix.python }}
+    needs: build_wheels
     runs-on: self-hosted
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ['3.11', '3.12', '3.13']
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        run: |
-          export PATH="$HOME/.pyenv/bin:$PATH"
-          eval "$(pyenv init -)"
-          pyenv install -s ${{ matrix.python }}
-          pyenv local ${{ matrix.python }}
-
-      - name: Download Linux wheels
-        uses: actions/download-artifact@v4
-        with:
-          name: wheels-linux
-          path: wheelhouse
-
-      - name: Install wheel
-        run: |
-          export PATH="$HOME/.pyenv/bin:$PATH"
-          eval "$(pyenv init -)"
-          PYTHON_VERSION=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
-          WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*manylinux*x86_64*.whl" | head -1)
-          echo "Installing: $WHEEL"
-          pip install "${WHEEL}[testing]"
-
-      - name: Run tests
-        run: |
-          export PATH="$HOME/.pyenv/bin:$PATH"
-          eval "$(pyenv init -)"
-          pytest tests/python -v -x --ignore=tests/python/test_gmsh*.py -k "not slow"
-
-  # =============================================================================
-  # Test the built Windows wheels (GitHub-hosted - only on critical branches)
-  # =============================================================================
-  test_wheels_windows:
-    name: Test Windows wheel / Python ${{ matrix.python }}
-    needs: build_wheels_windows
-    runs-on: windows-latest
-    # Only run if Windows wheels were built (same condition)
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' &&
-       (github.ref == 'refs/heads/development' ||
-        github.ref == 'refs/heads/main' ||
-        github.ref == 'refs/heads/master' ||
-        github.ref == 'refs/heads/release' ||
-        startsWith(github.ref, 'refs/tags/v')))
     strategy:
       fail-fast: false
       matrix:
@@ -223,19 +140,31 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Download Windows wheels
+      - name: Add Python to PATH
+        run: echo "${{ env.pythonLocation }}/bin" >> $GITHUB_PATH
+
+      - name: Download wheels
         uses: actions/download-artifact@v4
         with:
-          name: wheels-windows
+          name: wheels-linux
           path: wheelhouse
 
       - name: Install wheel
-        shell: bash
         run: |
           PYTHON_VERSION=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
-          WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*win*amd64*.whl" | head -1)
+          echo "Looking for wheel: Python=$PYTHON_VERSION"
+          ls -la wheelhouse/
+
+          WHEEL=$(find wheelhouse -name "grillex-*${PYTHON_VERSION}*manylinux*x86_64*.whl" | head -1)
+
+          if [[ -z "$WHEEL" ]]; then
+            echo "Error: No compatible wheel found"
+            exit 1
+          fi
+
           echo "Installing: $WHEEL"
-          pip install "${WHEEL}[testing]"
+          pip install "$WHEEL"
+          pip install pytest numpy scipy pyyaml pydantic
 
       - name: Run tests
         run: |
@@ -246,25 +175,19 @@ jobs:
   # =============================================================================
   publish_dev:
     name: Publish to Dev PyPI
-    needs: [build_wheels_linux, build_sdist, test_wheels_linux]
+    needs: [build_wheels, build_sdist, test_wheels]
     runs-on: self-hosted
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/development') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'dev')
 
     steps:
-      - name: Download Linux wheels
+      - name: Download all wheels
         uses: actions/download-artifact@v4
         with:
-          name: wheels-linux
+          pattern: wheels-*
           path: dist
-
-      - name: Download Windows wheels (if available)
-        uses: actions/download-artifact@v4
-        with:
-          name: wheels-windows
-          path: dist
-        continue-on-error: true
+          merge-multiple: true
 
       - name: Download sdist
         uses: actions/download-artifact@v4
@@ -276,24 +199,25 @@ jobs:
         run: ls -la dist/
 
       - name: Install twine
-        run: |
-          export PATH="$HOME/.pyenv/bin:$PATH"
-          eval "$(pyenv init -)"
-          pip install twine
+        run: pip install twine
 
       - name: Publish to Dev PyPI
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          PYPI_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
           echo "Publishing to Dev PyPI (pypi-dev.jimzwartveld.com)"
 
-          # Upload using curl with custom headers for Cloudflare Access
           for file in dist/*; do
             echo "Uploading: $file"
             curl -X POST \
               -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
               -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
+              -u "${PYPI_USERNAME}:${PYPI_PASSWORD}" \
+              -F ":action=file_upload" \
               -F "content=@${file}" \
               "https://pypi-dev.jimzwartveld.com/"
           done
@@ -303,7 +227,7 @@ jobs:
   # =============================================================================
   publish_prod:
     name: Publish to Prod PyPI
-    needs: [build_wheels_linux, build_wheels_windows, build_sdist, test_wheels_linux, test_wheels_windows]
+    needs: [build_wheels, build_sdist, test_wheels]
     runs-on: self-hosted
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/release') ||
@@ -311,17 +235,12 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'prod')
 
     steps:
-      - name: Download Linux wheels
+      - name: Download all wheels
         uses: actions/download-artifact@v4
         with:
-          name: wheels-linux
+          pattern: wheels-*
           path: dist
-
-      - name: Download Windows wheels
-        uses: actions/download-artifact@v4
-        with:
-          name: wheels-windows
-          path: dist
+          merge-multiple: true
 
       - name: Download sdist
         uses: actions/download-artifact@v4
@@ -333,24 +252,44 @@ jobs:
         run: ls -la dist/
 
       - name: Install twine
-        run: |
-          export PATH="$HOME/.pyenv/bin:$PATH"
-          eval "$(pyenv init -)"
-          pip install twine
+        run: pip install twine
 
       - name: Publish to Prod PyPI
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          PYPI_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
           echo "Publishing to Prod PyPI (pypi-prod.jimzwartveld.com)"
 
-          # Upload using curl with custom headers for Cloudflare Access
           for file in dist/*; do
             echo "Uploading: $file"
             curl -X POST \
               -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
               -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
+              -u "${PYPI_USERNAME}:${PYPI_PASSWORD}" \
+              -F ":action=file_upload" \
               -F "content=@${file}" \
               "https://pypi-prod.jimzwartveld.com/"
+          done
+
+      - name: Also publish to Dev PyPI (keep dev aligned with prod)
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          PYPI_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        run: |
+          echo "Publishing to Dev PyPI (pypi-dev.jimzwartveld.com)"
+
+          for file in dist/*; do
+            echo "Uploading: $file"
+            curl -X POST \
+              -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
+              -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
+              -u "${PYPI_USERNAME}:${PYPI_PASSWORD}" \
+              -F ":action=file_upload" \
+              -F "content=@${file}" \
+              "https://pypi-dev.jimzwartveld.com/"
           done

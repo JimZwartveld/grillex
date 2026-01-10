@@ -34,7 +34,7 @@ Usage:
     model.add_cargo(cargo)
 """
 
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional, Union, TYPE_CHECKING
 from dataclasses import dataclass, field
 import numpy as np
 
@@ -158,6 +158,37 @@ class Cargo:
         self._cog_node: Optional["Node"] = None
         self._point_mass: Optional["PointMass"] = None
         self._generated: bool = False
+        self._model: Optional["_CppModel"] = None  # Reference to C++ model for updates
+
+    def _update_cpp_elements(self) -> None:
+        """Update C++ elements when cargo properties change.
+
+        This is called automatically when mass, inertia, or connection
+        stiffnesses are modified after the cargo has been added to a model.
+        """
+        if not self._generated or self._point_mass is None:
+            return
+
+        # Update point mass properties
+        self._point_mass.mass = self.mass
+        self._point_mass.set_full_inertia(
+            self.inertia[0],  # Ixx
+            self.inertia[1],  # Iyy
+            self.inertia[2],  # Izz
+            self.inertia[3],  # Ixy
+            self.inertia[4],  # Ixz
+            self.inertia[5]   # Iyz
+        )
+
+        # Update spring stiffnesses
+        for conn in self.connections:
+            if conn.spring_element is not None:
+                conn.spring_element.kx = conn.stiffness[0]
+                conn.spring_element.ky = conn.stiffness[1]
+                conn.spring_element.kz = conn.stiffness[2]
+                conn.spring_element.krx = conn.stiffness[3]
+                conn.spring_element.kry = conn.stiffness[4]
+                conn.spring_element.krz = conn.stiffness[5]
 
     def set_cog(self, position: List[float]) -> "Cargo":
         """
@@ -168,7 +199,16 @@ class Cargo:
 
         Returns:
             Self for method chaining
+
+        Note:
+            Changing CoG position after elements are generated is not supported
+            as it would require recreating nodes and rigid links.
         """
+        if self._generated:
+            raise RuntimeError(
+                "Cannot change CoG position after cargo has been added to model. "
+                "Remove and re-add the cargo with the new position."
+            )
         if len(position) != 3:
             raise ValueError("CoG position must be a 3-element list [x, y, z]")
         self.cog_position = list(position)
@@ -198,10 +238,15 @@ class Cargo:
 
         Returns:
             Self for method chaining
+
+        Note:
+            If the cargo has been added to a model, the C++ point mass
+            element is automatically updated.
         """
         if mass < 0:
             raise ValueError("Mass must be non-negative")
         self.mass = mass
+        self._update_cpp_elements()
         return self
 
     def set_inertia(
@@ -228,8 +273,13 @@ class Cargo:
 
         Returns:
             Self for method chaining
+
+        Note:
+            If the cargo has been added to a model, the C++ point mass
+            element is automatically updated.
         """
         self.inertia = [Ixx, Iyy, Izz, Ixy, Ixz, Iyz]
+        self._update_cpp_elements()
         return self
 
     def add_connection(
@@ -322,6 +372,85 @@ class Cargo:
         )
         self.connections.append(connection)
         return self
+
+    def set_connection_stiffness(
+        self,
+        connection_index_or_name: Union[int, str],
+        stiffness: List[float]
+    ) -> "Cargo":
+        """
+        Update the stiffness of an existing connection.
+
+        Args:
+            connection_index_or_name: Index (0-based) or name of the connection
+            stiffness: New spring stiffnesses [kx, ky, kz, krx, kry, krz]
+                       Translations in [kN/m], rotations in [kN·m/rad]
+
+        Returns:
+            Self for method chaining
+
+        Raises:
+            ValueError: If connection not found or stiffness has wrong length
+
+        Note:
+            If the cargo has been added to a model, the C++ spring element
+            is automatically updated.
+
+        Example:
+            cargo.set_connection_stiffness(0, [2e6, 2e6, 2e6, 1e4, 1e4, 1e4])
+            cargo.set_connection_stiffness("Pad 1", [0, 0, 1e9, 0, 0, 0])
+        """
+        if len(stiffness) != 6:
+            raise ValueError("Stiffness must be a 6-element list [kx, ky, kz, krx, kry, krz]")
+
+        # Find connection by index or name
+        conn = None
+        if isinstance(connection_index_or_name, int):
+            if 0 <= connection_index_or_name < len(self.connections):
+                conn = self.connections[connection_index_or_name]
+            else:
+                raise ValueError(f"Connection index {connection_index_or_name} out of range")
+        else:
+            for c in self.connections:
+                if c.name == connection_index_or_name:
+                    conn = c
+                    break
+            if conn is None:
+                raise ValueError(f"Connection '{connection_index_or_name}' not found")
+
+        # Update stiffness
+        conn.stiffness = list(stiffness)
+
+        # Update C++ spring if generated
+        if conn.spring_element is not None:
+            conn.spring_element.kx = stiffness[0]
+            conn.spring_element.ky = stiffness[1]
+            conn.spring_element.kz = stiffness[2]
+            conn.spring_element.krx = stiffness[3]
+            conn.spring_element.kry = stiffness[4]
+            conn.spring_element.krz = stiffness[5]
+
+        return self
+
+    def get_connection(self, name_or_index: Union[int, str]) -> Optional[CargoConnection]:
+        """
+        Get a connection by name or index.
+
+        Args:
+            name_or_index: Connection name or index (0-based)
+
+        Returns:
+            CargoConnection if found, None otherwise
+        """
+        if isinstance(name_or_index, int):
+            if 0 <= name_or_index < len(self.connections):
+                return self.connections[name_or_index]
+            return None
+        else:
+            for conn in self.connections:
+                if conn.name == name_or_index:
+                    return conn
+            return None
 
     def generate_elements(self, model: "_CppModel") -> None:
         """
@@ -424,6 +553,7 @@ class Cargo:
 
             conn.spring_element = spring
 
+        self._model = model
         self._generated = True
 
     @property

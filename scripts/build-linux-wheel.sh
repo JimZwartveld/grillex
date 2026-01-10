@@ -26,12 +26,31 @@ echo "=== Building Linux wheel for grillex ==="
 echo "Project root: $PROJECT_ROOT"
 echo "Output dir: $OUTPUT_DIR"
 
-# Get version from git
+# Get version from git (must be PEP 440 compliant)
 cd "$PROJECT_ROOT"
 GIT_DESCRIBE=$(git describe --tags --always 2>/dev/null || echo "")
-if [[ "$GIT_DESCRIBE" =~ ^v?[0-9]+\.[0-9]+ ]]; then
-    # Valid semver tag found
-    VERSION="${GIT_DESCRIBE#v}"
+
+# Convert git describe to PEP 440 format
+# Examples:
+#   v0.1.0          -> 0.1.0
+#   0.1.0           -> 0.1.0
+#   v0.1.0-17-gaf70 -> 0.1.0.dev17+gaf70
+#   0.1.0-17-gaf70  -> 0.1.0.dev17+gaf70
+#   af70da3         -> 0.0.0.dev0+gaf70da3
+
+# Strip leading 'v' if present
+GIT_DESCRIBE="${GIT_DESCRIBE#v}"
+
+if echo "$GIT_DESCRIBE" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    # Exact semver tag (e.g., 0.1.0)
+    VERSION="$GIT_DESCRIBE"
+elif echo "$GIT_DESCRIBE" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-g[a-f0-9]+$'; then
+    # Tag with commits after (e.g., 0.1.0-17-gaf70da3)
+    # Convert to PEP 440: 0.1.0.dev17+gaf70da3
+    BASE_VERSION=$(echo "$GIT_DESCRIBE" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)-[0-9]+-g[a-f0-9]+$/\1/')
+    COMMIT_COUNT=$(echo "$GIT_DESCRIBE" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-([0-9]+)-g[a-f0-9]+$/\1/')
+    COMMIT_HASH=$(echo "$GIT_DESCRIBE" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-g([a-f0-9]+)$/\1/')
+    VERSION="${BASE_VERSION}.dev${COMMIT_COUNT}+g${COMMIT_HASH}"
 else
     # No valid tag, use dev version with commit hash
     COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")

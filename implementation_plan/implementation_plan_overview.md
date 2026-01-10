@@ -141,3 +141,8 @@ The implementation plan is organized into 20 phases:
 
 → [See full Phase 20 details](implementation_plan_phase20_vessel_motions.md)
 
+### Phase 21: SectionBuilder Integration
+**Requirements:** R-MOD-004 (Section Properties), R-LLM-001 (Agent Support) **Dependencies:** Phase 4 **Difficulty:** Medium **Description:** Integration with the `sectionbuilder` library for enhanced steel section building capabilities. Provides an adapter pattern to use sectionbuilder's comprehensive section property calculations (including plastic moduli, shear areas, warping constants) and external section databases (AISC, Eurocode, custom JSON libraries). Includes unit conversion (mm→m), axis convention mapping, and StructuralModel methods for section library management.
+
+→ [See full Phase 21 details](sectionbuilder_integration_plan.md)
+

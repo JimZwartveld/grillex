@@ -14,6 +14,10 @@ The six vessel motion degrees of freedom are:
 - Pitch (RY): Rotation about Y-axis, positive is bow down
 - Yaw (RZ): Rotation about Z-axis, positive is bow to port
 
+For multi-motion generation, use:
+- VesselMotionsFromAmplitudes: Generates +/- motion cases from amplitudes with coupling
+- VesselMotionsFromNobleDenton: Generates 6 standard Noble Denton load cases
+
 Example:
     >>> from grillex.core import VesselMotion
     >>> motion = VesselMotion("Design Heave + Roll")
@@ -24,8 +28,9 @@ Example:
 """
 
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 from enum import Enum
+from abc import ABC, abstractmethod
 import math
 
 import numpy as np
@@ -79,6 +84,25 @@ class LinkedLoadCase:
     load_case: Any  # LoadCase from C++
     sign_multiplier: float = 1.0
     suffix: str = ""
+
+
+@dataclass
+class LoadCaseSpec:
+    """Specification for a load case to be generated from a vessel motions generator.
+
+    This represents the configuration for a single load case that will be
+    created when the generator is added to a model.
+
+    Attributes:
+        name: Load case name (e.g., "Transport - Heave+")
+        accelerations: 6-DOF acceleration field [ax, ay, az, αx, αy, αz]
+            - ax, ay, az: Linear accelerations in m/s²
+            - αx, αy, αz: Angular accelerations in rad/s²
+        motion_center: Reference point [x, y, z] for rotational motions in meters
+    """
+    name: str
+    accelerations: List[float]
+    motion_center: List[float]
 
 
 @dataclass
@@ -669,3 +693,1181 @@ class VesselMotion:
 
         components = ", ".join(comp_strs) if comp_strs else "none"
         return f"VesselMotion('{self.name}', center={self.motion_center}, components=[{components}])"
+
+
+# ============================================================================
+# Design Method and Limit State Enums
+# ============================================================================
+
+
+class DesignMethod(Enum):
+    """Design method for load combinations.
+
+    Attributes:
+        LRFD: Load and Resistance Factor Design - uses ULSa and ULSb factors
+        ASD: Allowable Stress Design - uses SLS factors only
+    """
+    LRFD = "lrfd"
+    ASD = "asd"
+
+
+class LimitState(Enum):
+    """Limit states for load combinations.
+
+    Attributes:
+        ULSa: Ultimate Limit State a - typically 1.3 * DL + 1.3 * LL + 0.7 * EL
+        ULSb: Ultimate Limit State b - typically 1.0 * DL + 1.0 * LL + 1.3 * EL
+        SLS: Serviceability Limit State - typically 1.0 * DL + 1.0 * LL + 1.0 * EL
+    """
+    ULSa = "ulsa"
+    ULSb = "ulsb"
+    SLS = "sls"
+
+
+class OperationType(Enum):
+    """Type of offshore operation.
+
+    Attributes:
+        REMOVAL: Removal/decommissioning condition (uses ULSa_removal factors)
+        TRANSPORT_INSTALL: Transportation and Installation (T&I) condition
+    """
+    REMOVAL = "removal"
+    TRANSPORT_INSTALL = "transport_install"
+
+
+@dataclass
+class LoadCombinationFactors:
+    """Load combination factors for a specific limit state.
+
+    Attributes:
+        dead_load: Factor for permanent/dead loads
+        live_load: Factor for variable/live loads
+        environmental: Factor for environmental loads (vessel motions)
+    """
+    dead_load: float
+    live_load: float
+    environmental: float
+
+
+# Default load factors per limit state
+DEFAULT_LOAD_FACTORS: Dict[LimitState, LoadCombinationFactors] = {
+    LimitState.ULSa: LoadCombinationFactors(
+        dead_load=1.3,
+        live_load=1.3,
+        environmental=0.7
+    ),
+    LimitState.ULSb: LoadCombinationFactors(
+        dead_load=1.0,
+        live_load=1.0,
+        environmental=1.3
+    ),
+    LimitState.SLS: LoadCombinationFactors(
+        dead_load=1.0,
+        live_load=1.0,
+        environmental=1.0
+    ),
+}
+
+# Removal operation uses different ULSa factors
+DEFAULT_REMOVAL_FACTORS: Dict[LimitState, LoadCombinationFactors] = {
+    LimitState.ULSa: LoadCombinationFactors(
+        dead_load=1.1,  # Reduced from 1.3 for removal
+        live_load=1.1,
+        environmental=0.7
+    ),
+    LimitState.ULSb: LoadCombinationFactors(
+        dead_load=1.0,
+        live_load=1.0,
+        environmental=1.3
+    ),
+    LimitState.SLS: LoadCombinationFactors(
+        dead_load=1.0,
+        live_load=1.0,
+        environmental=1.0
+    ),
+}
+
+
+@dataclass
+class AnalysisSettings:
+    """Analysis settings including design method and operation type.
+
+    Controls how load combinations are generated and which limit states
+    are considered.
+
+    Attributes:
+        design_method: LRFD or ASD design approach
+        operation_type: Optional operation type (REMOVAL or TRANSPORT_INSTALL).
+            None means standard/default factors are used.
+        custom_factors: Optional custom load factors (overrides defaults)
+
+    Example:
+        >>> settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+        >>> settings.get_limit_states()
+        [<LimitState.ULSa: 'ulsa'>, <LimitState.ULSb: 'ulsb'>]
+    """
+    design_method: DesignMethod = DesignMethod.LRFD
+    operation_type: Optional[OperationType] = None
+    custom_factors: Optional[Dict[LimitState, LoadCombinationFactors]] = None
+
+    def get_limit_states(self) -> List[LimitState]:
+        """Get the limit states to consider based on design method.
+
+        Returns:
+            List of LimitState enums applicable to this configuration
+        """
+        if self.design_method == DesignMethod.LRFD:
+            return [LimitState.ULSa, LimitState.ULSb]
+        else:  # ASD
+            return [LimitState.SLS]
+
+    def get_factors(self, limit_state: LimitState) -> LoadCombinationFactors:
+        """Get load factors for a specific limit state.
+
+        Args:
+            limit_state: The limit state to get factors for
+
+        Returns:
+            LoadCombinationFactors for the specified limit state
+        """
+        # Custom factors override defaults
+        if self.custom_factors and limit_state in self.custom_factors:
+            return self.custom_factors[limit_state]
+
+        # Use removal factors for removal operation
+        if self.operation_type == OperationType.REMOVAL:
+            return DEFAULT_REMOVAL_FACTORS.get(
+                limit_state,
+                DEFAULT_LOAD_FACTORS[limit_state]
+            )
+
+        # Default factors
+        return DEFAULT_LOAD_FACTORS[limit_state]
+
+
+# ============================================================================
+# VesselMotions Base Class (Plural)
+# ============================================================================
+
+
+class VesselMotions(ABC):
+    """Abstract base class for generating multiple vessel motion load cases.
+
+    Subclasses implement specific strategies for generating motion combinations:
+    - VesselMotionsFromAmplitudes: From amplitude values with coupling rules
+    - VesselMotionsFromNobleDenton: Standard Noble Denton 6-case approach
+
+    The generator is the single source of truth for motion amplitudes. Load cases
+    are generated directly from the generator when added to a model.
+
+    Attributes:
+        name: Descriptive name for this motion set
+        motion_center: Reference point [x, y, z] for rotational motions in meters
+    """
+
+    def __init__(
+        self,
+        name: str,
+        motion_center: Optional[List[float]] = None
+    ):
+        """Initialize vessel motions generator.
+
+        Args:
+            name: Name for this motion set
+            motion_center: Reference point [x, y, z] in meters (default: origin)
+        """
+        self.name = name
+        self.motion_center = motion_center or [0.0, 0.0, 0.0]
+        self._load_case_specs: Optional[List[LoadCaseSpec]] = None
+        # Track linked load cases for auto-update
+        self._linked_load_cases: Dict[str, Any] = {}  # name -> LoadCase
+
+    @abstractmethod
+    def get_load_case_specs(self) -> List[LoadCaseSpec]:
+        """Get specifications for load cases to generate.
+
+        Each spec defines a load case name, acceleration field, and motion center.
+        Subclasses implement this to define their specific load case patterns.
+
+        Returns:
+            List of LoadCaseSpec objects defining load cases to create
+        """
+        pass
+
+    @abstractmethod
+    def get_combination_specs(self) -> List[List[str]]:
+        """Get combinations by load case names.
+
+        Returns a list of combinations, where each combination is a list of
+        load case names that should be combined together.
+
+        Returns:
+            List of lists of load case names
+        """
+        pass
+
+    def get_load_case_names(self) -> List[str]:
+        """Get names of all load cases that will be generated.
+
+        Returns:
+            List of load case names
+        """
+        return [spec.name for spec in self.get_load_case_specs()]
+
+    def link_load_case(self, name: str, load_case: Any) -> None:
+        """Link a load case to this generator for auto-updates.
+
+        When the generator's amplitudes change, linked load cases are
+        automatically updated.
+
+        Args:
+            name: Load case name (must match a spec name)
+            load_case: C++ LoadCase object
+        """
+        self._linked_load_cases[name] = load_case
+
+    def update_linked_load_cases(self) -> None:
+        """Update all linked load cases with current acceleration fields.
+
+        Call this after modifying generator amplitudes.
+        """
+        import numpy as np
+        for spec in self.get_load_case_specs():
+            if spec.name in self._linked_load_cases:
+                lc = self._linked_load_cases[spec.name]
+                lc.set_acceleration_field(
+                    np.array(spec.accelerations),
+                    np.array(spec.motion_center)
+                )
+
+    def get_linked_load_cases(self) -> List[Any]:
+        """Get all load cases linked to this generator.
+
+        Returns:
+            List of C++ LoadCase objects
+        """
+        return list(self._linked_load_cases.values())
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}('{self.name}', n_load_cases={len(self.get_load_case_specs())})"
+
+    # ===== Backwards compatibility =====
+    # These methods maintain compatibility with code that uses the old VesselMotion-based API
+
+    def generate_motions(self) -> List[VesselMotion]:
+        """Generate VesselMotion objects (backwards compatibility).
+
+        DEPRECATED: Use get_load_case_specs() for new code.
+
+        Returns:
+            List of VesselMotion objects
+        """
+        motions = []
+        for spec in self.get_load_case_specs():
+            motion = VesselMotion(spec.name)
+            motion.set_motion_center(spec.motion_center)
+
+            # Parse accelerations back to components
+            ax, ay, az, rx, ry, rz = spec.accelerations
+            if ax != 0.0:
+                motion.add_surge(ax)
+            if ay != 0.0:
+                motion.add_sway(ay)
+            if az != 0.0:
+                motion.add_heave(az)
+            if rx != 0.0:
+                motion.add_roll(rx)
+            if ry != 0.0:
+                motion.add_pitch(ry)
+            if rz != 0.0:
+                motion.add_yaw(rz)
+
+            motions.append(motion)
+        return motions
+
+    def get_motions(self) -> List[VesselMotion]:
+        """Get generated motions (backwards compatibility).
+
+        DEPRECATED: Use get_load_case_specs() for new code.
+
+        Returns:
+            List of VesselMotion objects
+        """
+        return self.generate_motions()
+
+    def get_motion_names(self) -> List[str]:
+        """Get names of all generated motions (backwards compatibility).
+
+        DEPRECATED: Use get_load_case_names() for new code.
+
+        Returns:
+            List of motion names
+        """
+        return self.get_load_case_names()
+
+    def get_motion_combinations(self) -> List[List[VesselMotion]]:
+        """Get motion combinations (backwards compatibility).
+
+        DEPRECATED: Use get_combination_specs() for new code.
+
+        Returns:
+            List of motion lists
+        """
+        motions = self.generate_motions()
+        motion_by_name = {m.name: m for m in motions}
+        combinations = []
+        for combo_names in self.get_combination_specs():
+            combo = [motion_by_name[name] for name in combo_names if name in motion_by_name]
+            combinations.append(combo)
+        return combinations
+
+
+# ============================================================================
+# VesselMotionsFromAmplitudes
+# ============================================================================
+
+
+@dataclass
+class MotionAmplitudes:
+    """Motion amplitudes for generating +/- load cases.
+
+    All angular values can be specified either as direct accelerations (rad/s²)
+    or as angle/period pairs (degrees and seconds).
+
+    Attributes:
+        heave: Heave acceleration in m/s²
+        roll_accel: Roll angular acceleration in rad/s² (direct)
+        roll_angle: Roll amplitude in degrees (with period)
+        roll_period: Roll period in seconds
+        pitch_accel: Pitch angular acceleration in rad/s² (direct)
+        pitch_angle: Pitch amplitude in degrees (with period)
+        pitch_period: Pitch period in seconds
+        yaw_accel: Yaw angular acceleration in rad/s² (direct)
+        yaw_angle: Yaw amplitude in degrees (with period)
+        yaw_period: Yaw period in seconds
+        surge: Surge acceleration in m/s² (if not coupled)
+        sway: Sway acceleration in m/s² (if not coupled)
+    """
+    heave: float = 0.0
+    roll_accel: Optional[float] = None
+    roll_angle: float = 0.0
+    roll_period: float = 10.0
+    pitch_accel: Optional[float] = None
+    pitch_angle: float = 0.0
+    pitch_period: float = 8.0
+    yaw_accel: Optional[float] = None
+    yaw_angle: float = 0.0
+    yaw_period: float = 12.0
+    surge: float = 0.0
+    sway: float = 0.0
+
+    def get_roll_acceleration(self) -> float:
+        """Get roll acceleration, converting from angle/period if needed."""
+        if self.roll_accel is not None:
+            return self.roll_accel
+        if self.roll_angle != 0.0:
+            theta_rad = math.radians(self.roll_angle)
+            omega = 2 * math.pi / self.roll_period
+            return omega * omega * theta_rad
+        return 0.0
+
+    def get_pitch_acceleration(self) -> float:
+        """Get pitch acceleration, converting from angle/period if needed."""
+        if self.pitch_accel is not None:
+            return self.pitch_accel
+        if self.pitch_angle != 0.0:
+            theta_rad = math.radians(self.pitch_angle)
+            omega = 2 * math.pi / self.pitch_period
+            return omega * omega * theta_rad
+        return 0.0
+
+    def get_yaw_acceleration(self) -> float:
+        """Get yaw acceleration, converting from angle/period if needed."""
+        if self.yaw_accel is not None:
+            return self.yaw_accel
+        if self.yaw_angle != 0.0:
+            theta_rad = math.radians(self.yaw_angle)
+            omega = 2 * math.pi / self.yaw_period
+            return omega * omega * theta_rad
+        return 0.0
+
+
+class VesselMotionsFromAmplitudes(VesselMotions):
+    """Generate vessel motion load cases from amplitude values with coupling.
+
+    This generator is the single source of truth for motion amplitudes.
+    Load cases are generated directly from these amplitudes when added to a model.
+
+    Generates +/- variants for each of the 4 independent motions:
+    - Heave+/- (vertical acceleration)
+    - Roll+/- (with sway coupling)
+    - Pitch+/- (with surge coupling)
+    - Yaw+/- (heading change)
+
+    Coupling rules (based on typical vessel motion behavior):
+    - +pitch couples with +surge (bow down -> forward acceleration)
+    - +roll couples with -sway (starboard down -> port acceleration)
+
+    Example:
+        >>> amplitudes = MotionAmplitudes(
+        ...     heave=2.5,
+        ...     pitch_angle=5.0,
+        ...     pitch_period=8.0,
+        ...     roll_angle=10.0,
+        ...     roll_period=10.0,
+        ...     yaw_angle=3.0,
+        ...     yaw_period=12.0
+        ... )
+        >>> motions = VesselMotionsFromAmplitudes(
+        ...     name="Design Motions",
+        ...     amplitudes=amplitudes,
+        ...     motion_center=[50.0, 0.0, 5.0]
+        ... )
+        >>> len(motions.get_load_case_specs())  # heave+/-, pitch+/-, roll+/-, yaw+/-
+        8
+    """
+
+    def __init__(
+        self,
+        name: str,
+        amplitudes: MotionAmplitudes,
+        motion_center: Optional[List[float]] = None,
+        pitch_surge_coupling: float = 1.0,
+        roll_sway_coupling: float = -1.0
+    ):
+        """Initialize motion generator from amplitudes.
+
+        The generator stores the amplitudes and can generate load cases directly.
+
+        Args:
+            name: Name prefix for generated load cases
+            amplitudes: Motion amplitudes (single source of truth)
+            motion_center: Reference point [x, y, z] in meters
+            pitch_surge_coupling: Coupling factor for pitch->surge (+1.0 = +pitch gives +surge)
+            roll_sway_coupling: Coupling factor for roll->sway (-1.0 = +roll gives -sway)
+        """
+        super().__init__(name, motion_center)
+        self._amplitudes = amplitudes
+        self._pitch_surge_coupling = pitch_surge_coupling
+        self._roll_sway_coupling = roll_sway_coupling
+
+    # ===== Properties for amplitude access and modification =====
+
+    @property
+    def amplitudes(self) -> MotionAmplitudes:
+        """Motion amplitudes (single source of truth)."""
+        return self._amplitudes
+
+    @amplitudes.setter
+    def amplitudes(self, value: MotionAmplitudes) -> None:
+        self._amplitudes = value
+        self.update_linked_load_cases()
+
+    @property
+    def pitch_surge_coupling(self) -> float:
+        """Coupling factor for pitch->surge."""
+        return self._pitch_surge_coupling
+
+    @pitch_surge_coupling.setter
+    def pitch_surge_coupling(self, value: float) -> None:
+        self._pitch_surge_coupling = value
+        self.update_linked_load_cases()
+
+    @property
+    def roll_sway_coupling(self) -> float:
+        """Coupling factor for roll->sway."""
+        return self._roll_sway_coupling
+
+    @roll_sway_coupling.setter
+    def roll_sway_coupling(self, value: float) -> None:
+        self._roll_sway_coupling = value
+        self.update_linked_load_cases()
+
+    # ===== Load Case Specification =====
+
+    def get_load_case_specs(self) -> List[LoadCaseSpec]:
+        """Get specifications for load cases (up to 8 total).
+
+        Generates +/- variants for each motion type with non-zero amplitude.
+
+        Returns:
+            List of LoadCaseSpec objects
+        """
+        specs = []
+
+        # Heave +/-
+        if self._amplitudes.heave != 0.0:
+            # Heave+ (upward)
+            specs.append(LoadCaseSpec(
+                name=f"{self.name} - Heave+",
+                accelerations=[0.0, 0.0, self._amplitudes.heave, 0.0, 0.0, 0.0],
+                motion_center=list(self.motion_center)
+            ))
+            # Heave- (downward)
+            specs.append(LoadCaseSpec(
+                name=f"{self.name} - Heave-",
+                accelerations=[0.0, 0.0, -self._amplitudes.heave, 0.0, 0.0, 0.0],
+                motion_center=list(self.motion_center)
+            ))
+
+        # Pitch +/- with surge coupling
+        pitch_accel = self._amplitudes.get_pitch_acceleration()
+        if pitch_accel != 0.0:
+            # Pitch+ with coupled surge
+            surge_coupled_pos = self._amplitudes.surge + (pitch_accel * self._pitch_surge_coupling)
+            specs.append(LoadCaseSpec(
+                name=f"{self.name} - Pitch+",
+                accelerations=[surge_coupled_pos, 0.0, 0.0, 0.0, pitch_accel, 0.0],
+                motion_center=list(self.motion_center)
+            ))
+            # Pitch- with coupled surge
+            surge_coupled_neg = self._amplitudes.surge + (-pitch_accel * self._pitch_surge_coupling)
+            specs.append(LoadCaseSpec(
+                name=f"{self.name} - Pitch-",
+                accelerations=[surge_coupled_neg, 0.0, 0.0, 0.0, -pitch_accel, 0.0],
+                motion_center=list(self.motion_center)
+            ))
+
+        # Roll +/- with sway coupling
+        roll_accel = self._amplitudes.get_roll_acceleration()
+        if roll_accel != 0.0:
+            # Roll+ with coupled sway
+            sway_coupled_pos = self._amplitudes.sway + (roll_accel * self._roll_sway_coupling)
+            specs.append(LoadCaseSpec(
+                name=f"{self.name} - Roll+",
+                accelerations=[0.0, sway_coupled_pos, 0.0, roll_accel, 0.0, 0.0],
+                motion_center=list(self.motion_center)
+            ))
+            # Roll- with coupled sway
+            sway_coupled_neg = self._amplitudes.sway + (-roll_accel * self._roll_sway_coupling)
+            specs.append(LoadCaseSpec(
+                name=f"{self.name} - Roll-",
+                accelerations=[0.0, sway_coupled_neg, 0.0, -roll_accel, 0.0, 0.0],
+                motion_center=list(self.motion_center)
+            ))
+
+        # Yaw +/-
+        yaw_accel = self._amplitudes.get_yaw_acceleration()
+        if yaw_accel != 0.0:
+            # Yaw+
+            specs.append(LoadCaseSpec(
+                name=f"{self.name} - Yaw+",
+                accelerations=[0.0, 0.0, 0.0, 0.0, 0.0, yaw_accel],
+                motion_center=list(self.motion_center)
+            ))
+            # Yaw-
+            specs.append(LoadCaseSpec(
+                name=f"{self.name} - Yaw-",
+                accelerations=[0.0, 0.0, 0.0, 0.0, 0.0, -yaw_accel],
+                motion_center=list(self.motion_center)
+            ))
+
+        return specs
+
+    def get_combination_specs(self) -> List[List[str]]:
+        """Get all load case combinations (up to 16 total).
+
+        Generates all 2^n permutations where n is number of active motion types.
+        If any motion type is not defined (amplitude = 0), it's excluded.
+
+        Returns:
+            List of load case name lists, each representing one combination
+        """
+        from itertools import product
+
+        # Build pairs of load case names for each motion type
+        name_pairs: List[List[str]] = []
+
+        # Heave
+        if self._amplitudes.heave != 0.0:
+            name_pairs.append([
+                f"{self.name} - Heave+",
+                f"{self.name} - Heave-"
+            ])
+
+        # Pitch
+        if self._amplitudes.get_pitch_acceleration() != 0.0:
+            name_pairs.append([
+                f"{self.name} - Pitch+",
+                f"{self.name} - Pitch-"
+            ])
+
+        # Roll
+        if self._amplitudes.get_roll_acceleration() != 0.0:
+            name_pairs.append([
+                f"{self.name} - Roll+",
+                f"{self.name} - Roll-"
+            ])
+
+        # Yaw
+        if self._amplitudes.get_yaw_acceleration() != 0.0:
+            name_pairs.append([
+                f"{self.name} - Yaw+",
+                f"{self.name} - Yaw-"
+            ])
+
+        # Generate all combinations (cartesian product)
+        if not name_pairs:
+            return []
+
+        combinations = []
+        for combo in product(*name_pairs):
+            combinations.append(list(combo))
+
+        return combinations
+
+
+# ============================================================================
+# VesselMotionsFromNobleDenton
+# ============================================================================
+
+
+class VesselMotionsFromNobleDenton(VesselMotions):
+    """Generate 6 vessel motion load cases per Noble Denton guidelines.
+
+    Noble Denton approach for heavy lift and transportation operations:
+    - 2 heave-only cases (heave+ and heave-)
+    - 2 pitch-only cases (pitch+ and pitch-)
+    - 2 roll-only cases (roll+ and roll-)
+
+    This generator is the single source of truth for motion amplitudes.
+    Load cases are generated directly from these amplitudes when added to a model.
+
+    Load cases are standalone (not combined). Heave is combined with pitch/roll
+    in load combinations, not in the load cases themselves.
+
+    Note:
+        Noble Denton does NOT apply surge/sway coupling. Rotations are defined
+        at the motion center (rotation center of the barge), so coupling is
+        handled implicitly through the motion center reference point.
+
+    Load combinations (8 per limit state):
+    - Heave+ & Roll+, Heave+ & Roll-, Heave- & Roll+, Heave- & Roll-
+    - Heave+ & Pitch+, Heave+ & Pitch-, Heave- & Pitch+, Heave- & Pitch-
+
+    Example:
+        >>> nd_motions = VesselMotionsFromNobleDenton(
+        ...     name="Noble Denton",
+        ...     heave=2.5,
+        ...     roll_angle=15.0,
+        ...     roll_period=10.0,
+        ...     pitch_angle=5.0,
+        ...     pitch_period=8.0,
+        ...     motion_center=[50.0, 0.0, 5.0]
+        ... )
+        >>> len(nd_motions.get_load_case_specs())
+        6
+        >>> [spec.name for spec in nd_motions.get_load_case_specs()]  # doctest: +NORMALIZE_WHITESPACE
+        ['Noble Denton - Heave+', 'Noble Denton - Heave-',
+         'Noble Denton - Pitch+', 'Noble Denton - Pitch-',
+         'Noble Denton - Roll+', 'Noble Denton - Roll-']
+    """
+
+    def __init__(
+        self,
+        name: str,
+        heave: float,
+        roll_angle: float = 0.0,
+        roll_period: float = 10.0,
+        roll_accel: Optional[float] = None,
+        pitch_angle: float = 0.0,
+        pitch_period: float = 8.0,
+        pitch_accel: Optional[float] = None,
+        motion_center: Optional[List[float]] = None,
+        heave_amplitude: Optional[float] = None,
+        heave_period: float = 10.0,
+    ):
+        """Initialize Noble Denton motion generator.
+
+        The generator stores the amplitudes and can generate load cases directly.
+
+        Args:
+            name: Name prefix for generated load cases
+            heave: Heave acceleration in m/s²
+            roll_angle: Roll amplitude in degrees
+            roll_period: Roll period in seconds
+            roll_accel: Roll acceleration in rad/s² (overrides angle/period)
+            pitch_angle: Pitch amplitude in degrees
+            pitch_period: Pitch period in seconds
+            pitch_accel: Pitch acceleration in rad/s² (overrides angle/period)
+            motion_center: Reference point [x, y, z] in meters (rotation center)
+            heave_amplitude: Optional heave amplitude in meters (for display purposes)
+            heave_period: Heave period in seconds (for display purposes)
+        """
+        super().__init__(name, motion_center)
+        self._heave = heave
+        self._roll_angle = roll_angle
+        self._roll_period = roll_period
+        self._roll_accel = roll_accel
+        self._pitch_angle = pitch_angle
+        self._pitch_period = pitch_period
+        self._pitch_accel = pitch_accel
+        self._heave_amplitude = heave_amplitude
+        self._heave_period = heave_period
+
+    # ===== Properties for amplitude access and modification =====
+
+    @property
+    def heave(self) -> float:
+        """Heave acceleration in m/s²."""
+        return self._heave
+
+    @heave.setter
+    def heave(self, value: float) -> None:
+        self._heave = value
+        self.update_linked_load_cases()
+
+    @property
+    def heave_amplitude(self) -> Optional[float]:
+        """Heave amplitude in meters (for display purposes)."""
+        return self._heave_amplitude
+
+    @heave_amplitude.setter
+    def heave_amplitude(self, value: Optional[float]) -> None:
+        self._heave_amplitude = value
+
+    @property
+    def heave_period(self) -> float:
+        """Heave period in seconds (for display purposes)."""
+        return self._heave_period
+
+    @heave_period.setter
+    def heave_period(self, value: float) -> None:
+        self._heave_period = value
+
+    @property
+    def roll_angle(self) -> float:
+        """Roll amplitude in degrees."""
+        return self._roll_angle
+
+    @roll_angle.setter
+    def roll_angle(self, value: float) -> None:
+        self._roll_angle = value
+        self._roll_accel = None  # Clear direct accel when angle is set
+        self.update_linked_load_cases()
+
+    @property
+    def roll_period(self) -> float:
+        """Roll period in seconds."""
+        return self._roll_period
+
+    @roll_period.setter
+    def roll_period(self, value: float) -> None:
+        self._roll_period = value
+        self.update_linked_load_cases()
+
+    @property
+    def roll_accel(self) -> Optional[float]:
+        """Roll acceleration in rad/s² (overrides angle/period)."""
+        return self._roll_accel
+
+    @roll_accel.setter
+    def roll_accel(self, value: Optional[float]) -> None:
+        self._roll_accel = value
+        self.update_linked_load_cases()
+
+    @property
+    def pitch_angle(self) -> float:
+        """Pitch amplitude in degrees."""
+        return self._pitch_angle
+
+    @pitch_angle.setter
+    def pitch_angle(self, value: float) -> None:
+        self._pitch_angle = value
+        self._pitch_accel = None  # Clear direct accel when angle is set
+        self.update_linked_load_cases()
+
+    @property
+    def pitch_period(self) -> float:
+        """Pitch period in seconds."""
+        return self._pitch_period
+
+    @pitch_period.setter
+    def pitch_period(self, value: float) -> None:
+        self._pitch_period = value
+        self.update_linked_load_cases()
+
+    @property
+    def pitch_accel(self) -> Optional[float]:
+        """Pitch acceleration in rad/s² (overrides angle/period)."""
+        return self._pitch_accel
+
+    @pitch_accel.setter
+    def pitch_accel(self, value: Optional[float]) -> None:
+        self._pitch_accel = value
+        self.update_linked_load_cases()
+
+    # ===== Computed accelerations =====
+
+    def get_roll_acceleration(self) -> float:
+        """Get roll acceleration, converting from angle/period if needed."""
+        if self._roll_accel is not None:
+            return self._roll_accel
+        if self._roll_angle != 0.0:
+            theta_rad = math.radians(self._roll_angle)
+            omega = 2 * math.pi / self._roll_period
+            return omega * omega * theta_rad
+        return 0.0
+
+    def get_pitch_acceleration(self) -> float:
+        """Get pitch acceleration, converting from angle/period if needed."""
+        if self._pitch_accel is not None:
+            return self._pitch_accel
+        if self._pitch_angle != 0.0:
+            theta_rad = math.radians(self._pitch_angle)
+            omega = 2 * math.pi / self._pitch_period
+            return omega * omega * theta_rad
+        return 0.0
+
+    # ===== Load Case Specification =====
+
+    def get_load_case_specs(self) -> List[LoadCaseSpec]:
+        """Get specifications for the 6 Noble Denton load cases.
+
+        Returns:
+            List of 6 LoadCaseSpec objects:
+            - Heave+, Heave- (heave only)
+            - Pitch+, Pitch- (pitch only, no surge coupling)
+            - Roll+, Roll- (roll only, no sway coupling)
+        """
+        pitch_accel = self.get_pitch_acceleration()
+        roll_accel = self.get_roll_acceleration()
+
+        # Acceleration format: [ax, ay, az, αx, αy, αz]
+        specs = [
+            # 1. Heave+ (heave only, upward)
+            LoadCaseSpec(
+                name=f"{self.name} - Heave+",
+                accelerations=[0.0, 0.0, self._heave, 0.0, 0.0, 0.0],
+                motion_center=list(self.motion_center)
+            ),
+            # 2. Heave- (heave only, downward)
+            LoadCaseSpec(
+                name=f"{self.name} - Heave-",
+                accelerations=[0.0, 0.0, -self._heave, 0.0, 0.0, 0.0],
+                motion_center=list(self.motion_center)
+            ),
+            # 3. Pitch+ (pitch only, NO heave, NO surge coupling)
+            LoadCaseSpec(
+                name=f"{self.name} - Pitch+",
+                accelerations=[0.0, 0.0, 0.0, 0.0, pitch_accel, 0.0],
+                motion_center=list(self.motion_center)
+            ),
+            # 4. Pitch- (pitch only, NO heave, NO surge coupling)
+            LoadCaseSpec(
+                name=f"{self.name} - Pitch-",
+                accelerations=[0.0, 0.0, 0.0, 0.0, -pitch_accel, 0.0],
+                motion_center=list(self.motion_center)
+            ),
+            # 5. Roll+ (roll only, NO heave, NO sway coupling)
+            LoadCaseSpec(
+                name=f"{self.name} - Roll+",
+                accelerations=[0.0, 0.0, 0.0, roll_accel, 0.0, 0.0],
+                motion_center=list(self.motion_center)
+            ),
+            # 6. Roll- (roll only, NO heave, NO sway coupling)
+            LoadCaseSpec(
+                name=f"{self.name} - Roll-",
+                accelerations=[0.0, 0.0, 0.0, -roll_accel, 0.0, 0.0],
+                motion_center=list(self.motion_center)
+            ),
+        ]
+        return specs
+
+    def get_combination_specs(self) -> List[List[str]]:
+        """Get Noble Denton combination specifications (8 total).
+
+        Noble Denton combinations pair heave with roll or pitch:
+        - Heave+ & Roll+, Heave+ & Roll-, Heave- & Roll+, Heave- & Roll-
+        - Heave+ & Pitch+, Heave+ & Pitch-, Heave- & Pitch+, Heave- & Pitch-
+
+        Returns:
+            List of 8 pairs of load case names
+        """
+        heave_pos = f"{self.name} - Heave+"
+        heave_neg = f"{self.name} - Heave-"
+        pitch_pos = f"{self.name} - Pitch+"
+        pitch_neg = f"{self.name} - Pitch-"
+        roll_pos = f"{self.name} - Roll+"
+        roll_neg = f"{self.name} - Roll-"
+
+        return [
+            # Heave × Roll combinations
+            [heave_pos, roll_pos],   # Heave+ Roll+
+            [heave_pos, roll_neg],   # Heave+ Roll-
+            [heave_neg, roll_pos],   # Heave- Roll+
+            [heave_neg, roll_neg],   # Heave- Roll-
+            # Heave × Pitch combinations
+            [heave_pos, pitch_pos],  # Heave+ Pitch+
+            [heave_pos, pitch_neg],  # Heave+ Pitch-
+            [heave_neg, pitch_pos],  # Heave- Pitch+
+            [heave_neg, pitch_neg],  # Heave- Pitch-
+        ]
+
+    # ===== Backwards compatibility =====
+
+    def _get_roll_acceleration(self) -> float:
+        """Get roll acceleration (backwards compatibility)."""
+        return self.get_roll_acceleration()
+
+    def _get_pitch_acceleration(self) -> float:
+        """Get pitch acceleration (backwards compatibility)."""
+        return self.get_pitch_acceleration()
+
+
+# ============================================================================
+# Load Combination Generation
+# ============================================================================
+
+
+@dataclass
+class GeneratedLoadCombination:
+    """A generated load combination with factors.
+
+    Attributes:
+        name: Combination name (e.g., "Heave+ Roll+")
+        limit_state: The limit state this combination represents
+        vessel_motions: List of VesselMotion objects combined in this load combination
+        dead_load_factor: Factor for permanent loads
+        live_load_factor: Factor for variable loads
+        environmental_factor: Factor for environmental loads
+        permanent_load_case_names: Names of permanent load cases to include (e.g., ["Gravity"])
+        variable_load_case_names: Names of variable load cases to include
+    """
+    name: str
+    limit_state: LimitState
+    vessel_motions: List[VesselMotion]
+    dead_load_factor: float
+    live_load_factor: float
+    environmental_factor: float
+    permanent_load_case_names: List[str] = field(default_factory=list)
+    variable_load_case_names: List[str] = field(default_factory=list)
+
+    # Backwards compatibility: single vessel_motion property
+    @property
+    def vessel_motion(self) -> Optional[VesselMotion]:
+        """Get first vessel motion (for backwards compatibility)."""
+        return self.vessel_motions[0] if self.vessel_motions else None
+
+    def to_load_combination(self, combination_id: int = 0) -> "LoadCombination":
+        """Convert to a C++ LoadCombination object with type-based factors.
+
+        Creates a LoadCombination with the correct factors for each load type.
+        Load cases must be added separately using add_load_case().
+
+        The factors are mapped as:
+        - dead_load_factor → permanent_factor
+        - live_load_factor → variable_factor
+        - environmental_factor → environmental_factor
+
+        Args:
+            combination_id: Unique ID for the combination (default: 0)
+
+        Returns:
+            C++ LoadCombination object with factors set, ready for load cases
+
+        Example:
+            >>> combo = generated.to_load_combination(combination_id=1)
+            >>> combo.add_load_case(dead_load)   # Uses dead_load_factor
+            >>> combo.add_load_case(vessel_motion)  # Uses environmental_factor
+        """
+        from grillex._grillex_cpp import LoadCombination
+
+        return LoadCombination(
+            combination_id,
+            self.name,
+            permanent_factor=self.dead_load_factor,
+            variable_factor=self.live_load_factor,
+            environmental_factor=self.environmental_factor,
+            accidental_factor=1.0
+        )
+
+
+def generate_load_combinations(
+    vessel_motions: VesselMotions,
+    settings: AnalysisSettings,
+    permanent_load_case_names: Optional[List[str]] = None,
+    variable_load_case_names: Optional[List[str]] = None
+) -> List[GeneratedLoadCombination]:
+    """Generate load combinations from vessel motions and analysis settings.
+
+    Creates combinations using the vessel motion generator's combination pattern.
+    For Noble Denton, this creates 8 combinations per limit state (Heave × Roll/Pitch).
+    For Amplitudes, this creates up to 16 combinations per limit state (2^4 permutations).
+
+    Args:
+        vessel_motions: VesselMotions generator (e.g., VesselMotionsFromNobleDenton)
+        settings: AnalysisSettings with design method and operation type
+        permanent_load_case_names: Names of permanent load cases to include (e.g., ["Gravity"])
+        variable_load_case_names: Names of variable load cases to include
+
+    Returns:
+        List of GeneratedLoadCombination objects
+
+    Example:
+        >>> nd_motions = VesselMotionsFromNobleDenton(
+        ...     "ND", heave=2.5, pitch_angle=5.0, pitch_period=8.0,
+        ...     roll_angle=10.0, roll_period=10.0
+        ... )
+        >>> settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+        >>> combinations = generate_load_combinations(nd_motions, settings, ["Gravity"])
+        >>> len(combinations)  # 8 combinations * 2 limit states (ULSa, ULSb)
+        16
+    """
+    combinations = []
+    limit_states = settings.get_limit_states()
+    motion_combinations = vessel_motions.get_motion_combinations()
+
+    # Default to empty lists if not provided
+    perm_lc_names = permanent_load_case_names or []
+    var_lc_names = variable_load_case_names or []
+
+    for motion_group in motion_combinations:
+        # Build combination name from motion names
+        motion_names = []
+        for m in motion_group:
+            # Extract the suffix (e.g., "Heave+" from "Name - Heave+")
+            if " - " in m.name:
+                motion_names.append(m.name.split(" - ")[-1])
+            else:
+                motion_names.append(m.name)
+        combo_name = " ".join(motion_names)
+
+        for limit_state in limit_states:
+            factors = settings.get_factors(limit_state)
+            combo = GeneratedLoadCombination(
+                name=combo_name,  # Don't include limit state in name - it's in the type field
+                limit_state=limit_state,
+                vessel_motions=motion_group,
+                dead_load_factor=factors.dead_load,
+                live_load_factor=factors.live_load,
+                environmental_factor=factors.environmental,
+                permanent_load_case_names=perm_lc_names,
+                variable_load_case_names=var_lc_names
+            )
+            combinations.append(combo)
+
+    return combinations
+
+
+def apply_generated_combinations(
+    model: "StructuralModel",
+    generated_combinations: List[GeneratedLoadCombination],
+    dead_load_cases: Optional[List[str]] = None,
+    live_load_cases: Optional[List[str]] = None
+) -> List["LoadCombination"]:
+    """Apply generated load combinations to a model.
+
+    This function:
+    1. Creates vessel motion load cases for each unique VesselMotion
+    2. Creates C++ LoadCombination objects with type-based factors
+    3. Adds all relevant load cases to each combination
+    4. Returns the list of LoadCombinations ready for analysis
+
+    If dead_load_cases or live_load_cases are not provided, they are
+    automatically detected from the model's existing load cases by type.
+
+    Args:
+        model: StructuralModel to apply combinations to
+        generated_combinations: List of GeneratedLoadCombination objects
+        dead_load_cases: Names of permanent load cases (auto-detected if None)
+        live_load_cases: Names of variable load cases (auto-detected if None)
+
+    Returns:
+        List of C++ LoadCombination objects with load cases added
+
+    Example:
+        >>> # Generate combinations
+        >>> nd = VesselMotionsFromNobleDenton(
+        ...     "ND", heave=2.5, pitch_angle=5.0, pitch_period=8.0,
+        ...     roll_angle=10.0, roll_period=10.0
+        ... )
+        >>> settings = AnalysisSettings(design_method=DesignMethod.LRFD)
+        >>> generated = generate_load_combinations(nd, settings)
+        >>>
+        >>> # Apply to model
+        >>> combinations = apply_generated_combinations(model, generated)
+        >>>
+        >>> # Analyze each combination
+        >>> for combo in combinations:
+        ...     result = model.analyze_load_combination(combo)
+    """
+    from grillex._grillex_cpp import LoadCaseType
+
+    # Get all load cases from model
+    all_load_cases = {lc.name: lc for lc in model.get_load_cases()}
+
+    # Auto-detect load case types if not provided
+    if dead_load_cases is None:
+        dead_load_cases = [
+            lc.name for lc in model.get_load_cases()
+            if lc.type == LoadCaseType.Permanent
+        ]
+
+    if live_load_cases is None:
+        live_load_cases = [
+            lc.name for lc in model.get_load_cases()
+            if lc.type == LoadCaseType.Variable
+        ]
+
+    # Track which vessel motions have load cases created
+    motion_load_cases: Dict[str, Any] = {}  # motion name -> LoadCase object
+
+    # Create vessel motion load cases for each unique motion across all combinations
+    for gen in generated_combinations:
+        for motion in gen.vessel_motions:
+            if motion.name not in motion_load_cases:
+                # Check if load case already exists
+                existing = model.get_vessel_motion(motion.name)
+                if existing is not None:
+                    # Use existing vessel motion's linked load case
+                    motion_load_cases[motion.name] = all_load_cases.get(motion.name)
+                else:
+                    # Create new vessel motion load case
+                    vm = model.add_vessel_motion_load_case(
+                        name=motion.name,
+                        heave=_get_motion_component(motion, MotionType.HEAVE),
+                        pitch=_get_motion_component(motion, MotionType.PITCH),
+                        roll=_get_motion_component(motion, MotionType.ROLL),
+                        surge=_get_motion_component(motion, MotionType.SURGE),
+                        sway=_get_motion_component(motion, MotionType.SWAY),
+                        yaw=_get_motion_component(motion, MotionType.YAW),
+                        motion_center=motion.motion_center
+                    )
+                    # Refresh load cases dict and get the new one
+                    all_load_cases = {lc.name: lc for lc in model.get_load_cases()}
+                    motion_load_cases[motion.name] = all_load_cases.get(motion.name)
+
+    # Convert to C++ LoadCombination objects with load cases added
+    result = []
+    for i, gen in enumerate(generated_combinations):
+        # Create combination with type-based factors
+        combo = gen.to_load_combination(combination_id=i + 1)
+
+        # Add dead load cases (uses permanent_factor automatically)
+        for lc_name in dead_load_cases:
+            lc = all_load_cases.get(lc_name)
+            if lc is not None:
+                combo.add_load_case(lc)
+
+        # Add live load cases (uses variable_factor automatically)
+        for lc_name in live_load_cases:
+            lc = all_load_cases.get(lc_name)
+            if lc is not None:
+                combo.add_load_case(lc)
+
+        # Add all environmental load cases for this combination
+        for motion in gen.vessel_motions:
+            env_lc = motion_load_cases.get(motion.name)
+            if env_lc is not None:
+                combo.add_load_case(env_lc)
+
+        result.append(combo)
+
+    return result
+
+
+def _get_motion_component(motion: VesselMotion, motion_type: MotionType) -> float:
+    """Get the amplitude of a specific motion component."""
+    comp = motion.get_component_by_type(motion_type)
+    return comp.amplitude if comp else 0.0

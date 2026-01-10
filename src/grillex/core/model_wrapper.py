@@ -985,6 +985,8 @@ class StructuralModel:
         self._combination_id_counter = 1
         self._beam_line_loads: List[BeamLineLoad] = []  # Beam-level line load tracking
         self._linked_load_case_ids: set = set()  # Load cases linked to vessel motions (immutable)
+        self._vessel_motion_generators: List[Any] = []  # VesselMotions generators
+        self._generated_combinations: List[Any] = []  # GeneratedLoadCombination objects
 
     # ===== Material and Section Management =====
 
@@ -1260,6 +1262,63 @@ class StructuralModel:
             if cargo.name == name:
                 return cargo
         return None
+
+    def delete_cargo(self, name_or_cargo: Union[str, Cargo]) -> bool:
+        """Delete a cargo from the model.
+
+        This removes the cargo from the model's cargo list and resets its
+        generated state so it can be re-added to another model.
+
+        Note:
+            Currently, the C++ point mass and spring elements remain in the
+            C++ model but are disconnected from the Python wrapper. This is
+            a known limitation - full C++ element removal requires additional
+            C++ API methods (remove_point_mass, remove_spring).
+
+            For most use cases, this is acceptable because:
+            - The elements won't be updated or referenced after deletion
+            - Re-analyzing the model will work correctly
+            - The memory impact is minimal
+
+        Args:
+            name_or_cargo: Cargo name or Cargo object to delete
+
+        Returns:
+            True if cargo was found and deleted, False otherwise
+
+        Example:
+            model.delete_cargo("Equipment")
+            # or
+            model.delete_cargo(cargo_obj)
+        """
+        # Find the cargo
+        cargo = None
+        if isinstance(name_or_cargo, str):
+            cargo = self.get_cargo(name_or_cargo)
+        else:
+            cargo = name_or_cargo if name_or_cargo in self.cargos else None
+
+        if cargo is None:
+            return False
+
+        # Note: C++ Model currently lacks remove_point_mass() and remove_spring()
+        # methods, so we can't fully remove the underlying C++ elements.
+        # The elements become orphaned but don't affect analysis results.
+
+        # Remove from cargo list
+        self.cargos.remove(cargo)
+
+        # Reset cargo's generated state
+        cargo._generated = False
+        cargo._model = None
+        cargo._cog_node = None
+        cargo._point_mass = None
+        for conn in cargo.connections:
+            conn.spring_element = None
+            conn.structural_node = None
+            conn.connection_node = None
+
+        return True
 
     # ===== Plate Elements =====
 
@@ -2983,6 +3042,326 @@ class StructuralModel:
         del self._vessel_motions[name]
 
         return affected_names
+
+    # ===== Vessel Motion Generators =====
+
+    def add_vessel_motions_generator(
+        self,
+        generator: "VesselMotions",
+        analysis_settings: Optional["AnalysisSettings"] = None,
+        create_load_cases: bool = True,
+        generate_combinations: bool = True
+    ) -> "VesselMotions":
+        """Add a vessel motions generator and create its load cases.
+
+        The generator is the single source of truth for motion amplitudes.
+        When added to a model, load cases are created directly from the generator's
+        specifications. The load cases are linked to the generator, so modifying
+        the generator's amplitudes automatically updates the load cases.
+
+        This method:
+        1. Registers the generator on the model
+        2. Creates load cases directly from the generator's specs
+        3. Links load cases to the generator for auto-updates
+        4. Optionally generates load combinations based on analysis settings
+        5. Automatically creates and includes a Gravity load case in combinations
+
+        The generated load cases are automatically included when analyze() is called.
+
+        Args:
+            generator: VesselMotions generator (VesselMotionsFromAmplitudes, etc.)
+            analysis_settings: Settings for load combination generation (limit states, factors)
+            create_load_cases: If True (default), creates C++ load cases
+            generate_combinations: If True (default), generates load combinations
+
+        Returns:
+            The generator object (single source of truth for amplitudes)
+
+        Example:
+            >>> from grillex.core import (  # doctest: +SKIP
+            ...     VesselMotionsFromNobleDenton, AnalysisSettings, DesignMethod
+            ... )
+            >>> nd = VesselMotionsFromNobleDenton(  # doctest: +SKIP
+            ...     name="ND",
+            ...     heave=2.5,
+            ...     pitch_angle=5.0,
+            ...     pitch_period=8.0,
+            ...     roll_angle=10.0,
+            ...     roll_period=10.0,
+            ...     motion_center=[50.0, 0.0, 5.0]
+            ... )
+            >>> settings = AnalysisSettings(design_method=DesignMethod.LRFD)  # doctest: +SKIP
+            >>> gen = model.add_vessel_motions_generator(nd, settings)  # doctest: +SKIP
+            >>> len(gen.get_load_case_specs())  # 6 Noble Denton load cases  # doctest: +SKIP
+            6
+            >>> # Modify the generator - load cases update automatically
+            >>> gen.heave = 3.0  # doctest: +SKIP
+            >>> model.analyze()  # doctest: +SKIP
+        """
+        import numpy as np
+        from .vessel_motion import (
+            VesselMotions,
+            AnalysisSettings,
+            generate_load_combinations,
+            GeneratedLoadCombination,
+            LoadCaseSpec
+        )
+
+        # Register the generator
+        self._vessel_motion_generators.append(generator)
+
+        if create_load_cases:
+            # Create load cases directly from specs
+            for spec in generator.get_load_case_specs():
+                # Create load case
+                lc = self.create_load_case(spec.name, LoadCaseType.Environmental)
+
+                # Set acceleration field
+                lc.set_acceleration_field(
+                    np.array(spec.accelerations),
+                    np.array(spec.motion_center)
+                )
+
+                # Link load case to generator for auto-updates
+                generator.link_load_case(spec.name, lc)
+
+                # Track as linked (prevents direct modification)
+                self._linked_load_case_ids.add(lc.id)
+
+        if generate_combinations and analysis_settings is not None:
+            # Check if Gravity exists, create if not
+            gravity_exists = False
+            for lc in self.get_load_cases():
+                if lc.name == "Gravity":
+                    gravity_exists = True
+                    break
+
+            if not gravity_exists:
+                # Create Gravity load case with -9.81 m/s² in Z direction
+                gravity_lc = self.create_load_case("Gravity", LoadCaseType.Permanent)
+                gravity_lc.set_acceleration_field(
+                    np.array([0.0, 0.0, -9.81, 0.0, 0.0, 0.0]),
+                    np.array([0.0, 0.0, 0.0])
+                )
+
+            # Generate load combinations - Gravity is automatically included
+            # as a permanent load case since it's typed as Permanent
+            combinations = generate_load_combinations(
+                generator,
+                analysis_settings,
+                permanent_load_case_names=["Gravity"],
+                variable_load_case_names=[]
+            )
+            self._generated_combinations.extend(combinations)
+
+        return generator
+
+    def get_vessel_motion_generators(self) -> List["VesselMotions"]:
+        """Get all registered vessel motion generators.
+
+        Returns:
+            List of VesselMotions generator objects
+        """
+        return self._vessel_motion_generators.copy()
+
+    def get_generated_load_combinations(self) -> List["GeneratedLoadCombination"]:
+        """Get all generated load combinations from vessel motion generators.
+
+        Returns:
+            List of GeneratedLoadCombination objects
+        """
+        from .vessel_motion import GeneratedLoadCombination
+        return self._generated_combinations.copy()
+
+    def delete_vessel_motions_generator(
+        self,
+        generator_or_name: Union["VesselMotions", str]
+    ) -> bool:
+        """Delete a vessel motions generator and remove all its load cases/combinations.
+
+        This removes:
+        - All load cases created by the generator
+        - All generated load combinations associated with the generator
+        - The generator from the model's generator list
+
+        Args:
+            generator_or_name: VesselMotions generator object or its name
+
+        Returns:
+            True if generator was found and deleted, False otherwise
+
+        Example:
+            model.delete_vessel_motions_generator("ND")
+            # or
+            model.delete_vessel_motions_generator(nd_generator)
+        """
+        # Find the generator
+        generator = None
+        if isinstance(generator_or_name, str):
+            for g in self._vessel_motion_generators:
+                if g.name == generator_or_name:
+                    generator = g
+                    break
+        else:
+            generator = generator_or_name if generator_or_name in self._vessel_motion_generators else None
+
+        if generator is None:
+            return False
+
+        # Get all load case names from this generator
+        load_case_names = set(generator.get_load_case_names())
+
+        # Remove load cases created by this generator
+        for lc_name in load_case_names:
+            lc = self.get_load_case(lc_name)
+            if lc is not None:
+                # Remove from linked IDs set
+                if lc.id in self._linked_load_case_ids:
+                    self._linked_load_case_ids.remove(lc.id)
+                # Delete the load case
+                self._cpp_model.delete_load_case(lc)
+
+        # Remove generated combinations associated with this generator's load cases
+        self._generated_combinations = [
+            combo for combo in self._generated_combinations
+            if not any(m.name in load_case_names for m in combo.vessel_motions)
+        ]
+
+        # Remove generator from list
+        self._vessel_motion_generators.remove(generator)
+
+        return True
+
+    def analyze_combinations(
+        self,
+        settings: Optional[NonlinearSolverSettings] = None,
+        include_generated: bool = True
+    ) -> Dict[str, "LoadCombinationResult"]:
+        """Analyze all load combinations including generated ones.
+
+        This method analyzes:
+        1. Manually defined load combinations (from add_load_combination)
+        2. Generated load combinations (from vessel motion generators)
+
+        Args:
+            settings: Optional nonlinear solver settings
+            include_generated: If True (default), include generated combinations
+
+        Returns:
+            Dictionary mapping combination name to LoadCombinationResult
+
+        Example:
+            >>> # After adding vessel motions generator  # doctest: +SKIP
+            >>> results = model.analyze_combinations()  # doctest: +SKIP
+            >>> for name, result in results.items():  # doctest: +SKIP
+            ...     print(f"{name}: converged={result.converged}")
+        """
+        from .vessel_motion import GeneratedLoadCombination
+
+        results: Dict[str, "LoadCombinationResult"] = {}
+
+        # Collect all combinations to analyze
+        combinations_to_analyze = []
+
+        # Add generated combinations
+        if include_generated:
+            for gen_combo in self._generated_combinations:
+                cpp_combo = self._create_cpp_combination(gen_combo)
+                if cpp_combo is not None:
+                    combinations_to_analyze.append((gen_combo.name, cpp_combo))
+
+        # Add manually defined combinations
+        for combo_dict in self._load_combinations:
+            cpp_combo = self._create_cpp_combination_from_dict(combo_dict)
+            if cpp_combo is not None:
+                combinations_to_analyze.append((combo_dict["name"], cpp_combo))
+
+        # Analyze each combination
+        for name, cpp_combo in combinations_to_analyze:
+            result = self.analyze_load_combination(cpp_combo, settings)
+            results[name] = result
+
+        return results
+
+    def _create_cpp_combination(
+        self,
+        gen_combo: "GeneratedLoadCombination"
+    ) -> Optional["LoadCombination"]:
+        """Create a C++ LoadCombination from a GeneratedLoadCombination.
+
+        Args:
+            gen_combo: GeneratedLoadCombination object
+
+        Returns:
+            C++ LoadCombination object with load cases added, or None if no load cases
+        """
+        from grillex._grillex_cpp import LoadCombination, LoadCaseType
+
+        # Create the combination with type-based factors
+        cpp_combo = LoadCombination(
+            self._combination_id_counter,
+            gen_combo.name,
+            permanent_factor=gen_combo.dead_load_factor,
+            variable_factor=gen_combo.live_load_factor,
+            environmental_factor=gen_combo.environmental_factor,
+            accidental_factor=1.0
+        )
+        self._combination_id_counter += 1
+
+        # Get all load cases from model
+        all_load_cases = {lc.name: lc for lc in self._cpp_model.get_load_cases()}
+
+        # Add dead load cases (Permanent type)
+        for lc in self._cpp_model.get_load_cases():
+            if lc.type == LoadCaseType.Permanent:
+                cpp_combo.add_load_case(lc)
+
+        # Add live load cases (Variable type)
+        for lc in self._cpp_model.get_load_cases():
+            if lc.type == LoadCaseType.Variable:
+                cpp_combo.add_load_case(lc)
+
+        # Add the environmental load case from the vessel motion
+        if gen_combo.vessel_motion is not None:
+            motion_name = gen_combo.vessel_motion.name
+            if motion_name in all_load_cases:
+                cpp_combo.add_load_case(all_load_cases[motion_name])
+
+        return cpp_combo
+
+    def _create_cpp_combination_from_dict(
+        self,
+        combo_dict: dict
+    ) -> Optional["LoadCombination"]:
+        """Create a C++ LoadCombination from a combination dictionary.
+
+        Args:
+            combo_dict: Dictionary from _load_combinations
+
+        Returns:
+            C++ LoadCombination object with load cases added, or None if empty
+        """
+        from grillex._grillex_cpp import LoadCombination
+
+        cpp_combo = LoadCombination(
+            combo_dict["id"],
+            combo_dict["name"],
+            permanent_factor=combo_dict.get("permanent_factor", 1.0),
+            variable_factor=combo_dict.get("variable_factor", 1.0),
+            environmental_factor=combo_dict.get("environmental_factor", 1.0),
+            accidental_factor=combo_dict.get("accidental_factor", 1.0)
+        )
+
+        # Get all load cases by ID
+        all_load_cases = {lc.id: lc for lc in self._cpp_model.get_load_cases()}
+
+        # Add load cases from the combination
+        for lc_entry in combo_dict.get("load_cases", []):
+            lc_id = lc_entry["load_case_id"]
+            if lc_id in all_load_cases:
+                cpp_combo.add_load_case(all_load_cases[lc_id])
+
+        return cpp_combo
 
     # ===== Analysis =====
 

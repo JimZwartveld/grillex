@@ -1228,3 +1228,255 @@ class TestCargoWithElevatedCog:
         # Sum of Z reactions should be approximately zero (no net vertical force)
         sum_rz = r1[DOFIndex.UZ] + r2[DOFIndex.UZ] + r3[DOFIndex.UZ] + r4[DOFIndex.UZ]
         np.testing.assert_almost_equal(sum_rz, 0.0, decimal=0)
+
+
+class TestCargoAutoUpdate:
+    """
+    Tests for automatic propagation of cargo property changes to C++ elements.
+
+    These tests verify that when Python cargo properties are modified,
+    the underlying C++ elements (point mass, springs) are automatically updated.
+    """
+
+    def test_set_mass_updates_cpp_point_mass(self):
+        """Test that set_mass() updates the C++ point mass element."""
+        model = StructuralModel(name="Mass Update Test")
+
+        cargo = (
+            Cargo("Test")
+            .set_cog([0, 0, 0])
+            .set_mass(10.0)
+            .add_connection([0, 0, 0], [1e6] * 6)
+        )
+        model.add_cargo(cargo)
+
+        # Verify initial mass
+        assert cargo.point_mass.mass == 10.0
+
+        # Update mass
+        cargo.set_mass(25.0)
+
+        # Verify C++ point mass was updated
+        assert cargo.mass == 25.0
+        assert cargo.point_mass.mass == 25.0
+
+    def test_set_inertia_updates_cpp_point_mass(self):
+        """Test that set_inertia() updates the C++ point mass element."""
+        model = StructuralModel(name="Inertia Update Test")
+
+        cargo = (
+            Cargo("Test")
+            .set_cog([0, 0, 0])
+            .set_mass(10.0)
+            .set_inertia(Ixx=10, Iyy=20, Izz=30)
+            .add_connection([0, 0, 0], [1e6] * 6)
+        )
+        model.add_cargo(cargo)
+
+        # Verify initial inertia
+        assert cargo.point_mass.Ixx == 10
+        assert cargo.point_mass.Iyy == 20
+        assert cargo.point_mass.Izz == 30
+
+        # Update inertia
+        cargo.set_inertia(Ixx=100, Iyy=200, Izz=300, Ixy=5, Ixz=10, Iyz=15)
+
+        # Verify C++ point mass was updated
+        assert cargo.point_mass.Ixx == 100
+        assert cargo.point_mass.Iyy == 200
+        assert cargo.point_mass.Izz == 300
+        assert cargo.point_mass.Ixy == 5
+        assert cargo.point_mass.Ixz == 10
+        assert cargo.point_mass.Iyz == 15
+
+    def test_set_connection_stiffness_updates_cpp_spring(self):
+        """Test that set_connection_stiffness() updates the C++ spring element."""
+        model = StructuralModel(name="Stiffness Update Test")
+
+        cargo = (
+            Cargo("Test")
+            .set_cog([0, 0, 0])
+            .set_mass(10.0)
+            .add_connection([0, 0, 0], [1e6, 2e6, 3e6, 1e4, 2e4, 3e4])
+            .add_connection([1, 0, 0], [1e6] * 6)
+        )
+        model.add_cargo(cargo)
+
+        # Verify initial stiffness of first connection
+        spring = cargo.connections[0].spring_element
+        assert spring.kx == 1e6
+        assert spring.ky == 2e6
+        assert spring.kz == 3e6
+
+        # Update stiffness by index
+        cargo.set_connection_stiffness(0, [5e6, 6e6, 7e6, 5e4, 6e4, 7e4])
+
+        # Verify C++ spring was updated
+        assert spring.kx == 5e6
+        assert spring.ky == 6e6
+        assert spring.kz == 7e6
+        assert spring.krx == 5e4
+        assert spring.kry == 6e4
+        assert spring.krz == 7e4
+
+    def test_set_connection_stiffness_invalid_index(self):
+        """Test that set_connection_stiffness() raises error for invalid index."""
+        model = StructuralModel(name="Invalid Index Test")
+
+        cargo = (
+            Cargo("Test")
+            .set_cog([0, 0, 0])
+            .set_mass(10.0)
+            .add_connection([0, 0, 0], [1e6] * 6)
+        )
+        model.add_cargo(cargo)
+
+        with pytest.raises(ValueError, match="out of range"):
+            cargo.set_connection_stiffness(5, [1e6] * 6)
+
+    def test_set_cog_raises_error_if_generated(self):
+        """Test that set_cog() raises error if cargo is already generated."""
+        model = StructuralModel(name="COG Error Test")
+
+        cargo = (
+            Cargo("Test")
+            .set_cog([0, 0, 0])
+            .set_mass(10.0)
+            .add_connection([0, 0, 0], [1e6] * 6)
+        )
+        model.add_cargo(cargo)
+
+        # Cannot change COG after generation (would require moving nodes)
+        with pytest.raises(RuntimeError, match="Cannot change CoG"):
+            cargo.set_cog([1, 1, 1])
+
+    def test_get_connection_by_index(self):
+        """Test that get_connection() returns the correct connection."""
+        cargo = (
+            Cargo("Test")
+            .set_cog([0, 0, 0])
+            .set_mass(10.0)
+            .add_connection([0, 0, 0], [1e6] * 6)
+            .add_connection([1, 0, 0], [2e6] * 6)
+        )
+
+        conn0 = cargo.get_connection(0)
+        conn1 = cargo.get_connection(1)
+
+        assert conn0.structural_position == [0, 0, 0]
+        assert conn1.structural_position == [1, 0, 0]
+
+    def test_get_connection_invalid_index(self):
+        """Test that get_connection() returns None for invalid index."""
+        cargo = (
+            Cargo("Test")
+            .set_cog([0, 0, 0])
+            .set_mass(10.0)
+            .add_connection([0, 0, 0], [1e6] * 6)
+        )
+
+        assert cargo.get_connection(5) is None
+
+
+class TestCargoDelete:
+    """
+    Tests for cargo deletion functionality.
+
+    These tests verify that delete_cargo() properly removes the cargo
+    from the model and resets its state.
+    """
+
+    def test_delete_cargo_by_name(self):
+        """Test deleting cargo by name."""
+        model = StructuralModel(name="Delete Test")
+
+        cargo = (
+            Cargo("ToDelete")
+            .set_cog([0, 0, 0])
+            .set_mass(10.0)
+            .add_connection([0, 0, 0], [1e6] * 6)
+        )
+        model.add_cargo(cargo)
+
+        assert len(model.cargos) == 1
+        assert cargo.is_generated
+
+        # Delete by name
+        result = model.delete_cargo("ToDelete")
+
+        assert result is True
+        assert len(model.cargos) == 0
+        assert not cargo.is_generated
+
+    def test_delete_cargo_by_object(self):
+        """Test deleting cargo by object reference."""
+        model = StructuralModel(name="Delete Test")
+
+        cargo = (
+            Cargo("ToDelete")
+            .set_cog([0, 0, 0])
+            .set_mass(10.0)
+            .add_connection([0, 0, 0], [1e6] * 6)
+        )
+        model.add_cargo(cargo)
+
+        # Delete by object
+        result = model.delete_cargo(cargo)
+
+        assert result is True
+        assert len(model.cargos) == 0
+        assert not cargo.is_generated
+
+    def test_delete_cargo_nonexistent(self):
+        """Test deleting nonexistent cargo returns False."""
+        model = StructuralModel(name="Delete Test")
+
+        result = model.delete_cargo("NonExistent")
+
+        assert result is False
+
+    def test_delete_cargo_multiple(self):
+        """Test deleting one cargo from multiple."""
+        model = StructuralModel(name="Delete Test")
+
+        cargo1 = Cargo("First").set_cog([0, 0, 0]).set_mass(10.0).add_connection([0, 0, 0], [1e6] * 6)
+        cargo2 = Cargo("Second").set_cog([1, 0, 0]).set_mass(20.0).add_connection([1, 0, 0], [1e6] * 6)
+        cargo3 = Cargo("Third").set_cog([2, 0, 0]).set_mass(30.0).add_connection([2, 0, 0], [1e6] * 6)
+
+        model.add_cargo(cargo1)
+        model.add_cargo(cargo2)
+        model.add_cargo(cargo3)
+
+        assert len(model.cargos) == 3
+
+        # Delete the middle one
+        result = model.delete_cargo("Second")
+
+        assert result is True
+        assert len(model.cargos) == 2
+        assert model.get_cargo("First") is not None
+        assert model.get_cargo("Second") is None
+        assert model.get_cargo("Third") is not None
+
+    def test_deleted_cargo_can_be_readded(self):
+        """Test that a deleted cargo can be added again to a model."""
+        model = StructuralModel(name="Readd Test")
+
+        cargo = (
+            Cargo("Reusable")
+            .set_cog([0, 0, 0])
+            .set_mass(10.0)
+            .add_connection([0, 0, 0], [1e6] * 6)
+        )
+
+        # Add, delete, and re-add
+        model.add_cargo(cargo)
+        model.delete_cargo(cargo)
+
+        assert not cargo.is_generated
+
+        # Should be able to add again
+        model.add_cargo(cargo)
+
+        assert cargo.is_generated
+        assert len(model.cargos) == 1
