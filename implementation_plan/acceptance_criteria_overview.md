@@ -2,7 +2,7 @@
 
 This document provides a comprehensive overview of all acceptance criteria across implementation phases. It is automatically updated when tasks are completed.
 
-**Last Updated:** 2026-01-03 (Phase 20 Vessel Motions added)
+**Last Updated:** 2026-01-10 (Phase 21 SectionBuilder Integration added)
 
 ## Summary Statistics
 
@@ -28,7 +28,8 @@ This document provides a comprehensive overview of all acceptance criteria acros
 | 17 | Web Application Interface | - | - | - | Moved to grillex-webapp |
 | 19 | Plate Meshing | 12 | 12 | 0 | 100% |
 | 20 | Vessel Motions | 35 | 0 | 35 | 0% |
-| **Total** | | **446** | **374** | **72** | **84%** |
+| 21 | SectionBuilder Integration | 28 | 0 | 28 | 0% |
+| **Total** | | **474** | **374** | **100** | **79%** |
 
 ---
 
@@ -837,6 +838,60 @@ This document provides a comprehensive overview of all acceptance criteria acros
 - [ ] User documentation explains all concepts
 - [ ] Doctest examples pass
 - [ ] Analysis workflow documentation updated
+
+---
+
+## Phase 21: SectionBuilder Integration
+
+### Task 21.1: Create Module Structure
+- [ ] `src/grillex/sections/` directory structure created
+- [ ] Module imports work correctly (`from grillex.sections import ...`)
+- [ ] `sectionbuilder` is an optional dependency (graceful fallback)
+
+### Task 21.2: Implement Unit Conversion Utilities
+- [ ] MM_TO_M, MM2_TO_M2, MM4_TO_M4, MM6_TO_M6 constants defined
+- [ ] Length conversions correct (1000mm = 1m)
+- [ ] Area conversions correct (1e6 mm² = 1 m²)
+- [ ] Second moment conversions correct (1e12 mm⁴ = 1 m⁴)
+- [ ] Warping constant conversions correct (1e18 mm⁶ = 1 m⁶)
+- [ ] Unit tests verify all conversions
+
+### Task 21.3: Implement Axis Convention Mapping
+- [ ] Ixx (sectionbuilder) maps to Iz (grillex strong axis)
+- [ ] Iyy (sectionbuilder) maps to Iy (grillex weak axis)
+- [ ] Avy (sectionbuilder) maps to Asy (grillex)
+- [ ] Avx (sectionbuilder) maps to Asz (grillex)
+- [ ] y_top/y_bottom map to zy_top/zy_bot
+- [ ] x_left/x_right map to zz_top/zz_bot
+- [ ] Unit tests with known I-section values
+
+### Task 21.4: Implement GrillexSectionAdapter
+- [ ] Adapter wraps any SectionLibraryAdapter
+- [ ] `get_grillex_section_params()` returns dict for `add_section()`
+- [ ] `search()` delegates to underlying adapter
+- [ ] `list_categories()` delegates to underlying adapter
+- [ ] Handles missing optional properties gracefully
+- [ ] Unit tests with mock adapter
+
+### Task 21.5: Implement omega_max Calculation
+- [ ] omega_max computed for doubly-symmetric I-sections
+- [ ] Approximation formula: `omega_max = (h - tf) * bf / 4`
+- [ ] Warning logged for unsupported section types
+- [ ] `requires_warping` flag inferred from section type
+
+### Task 21.6: Add StructuralModel Integration Methods
+- [ ] `register_section_library()` accepts path, adapter, or GrillexSectionAdapter
+- [ ] `search_sections()` searches registered libraries
+- [ ] `add_section_from_library()` creates section from designation
+- [ ] `add_section_from_properties()` creates section from SectionProperties
+- [ ] Integration tests with JSON library
+
+### Task 21.7: Documentation and Examples
+- [ ] User documentation explains library registration workflow
+- [ ] API reference for all new methods
+- [ ] Example: Load section from Eurocode library
+- [ ] Example: Build composite section with sectionbuilder
+- [ ] CLAUDE.md updated with sectionbuilder integration guidance
 
 ---
 
