@@ -9,6 +9,8 @@ This phase implements the conversion of vessel geometry to a Grillex `Structural
 - **Offset beams**: Stiffeners modeled as beam elements offset from plate
 - **Bottom support**: Vertical supports at bottom for water-supported vessels
 - **Node merging**: Automatic connection at component intersections
+- **Bracket plate elements**: Brackets modeled as plate elements for shear capacity
+- **Plate-to-beam coupling**: Rigid links connecting plate nodes to beam nodes
 
 **Dependencies:** Phase 21-24, Grillex core (StructuralModel, plate elements, beam elements)
 
@@ -612,6 +614,274 @@ Create comprehensive tests for vessel to FEM conversion.
 
 ---
 
+### Task 25.8: Implement Bracket Conversion with Plate-to-Beam Coupling
+
+**Requirements:** New feature
+**Dependencies:** Tasks 25.3, 25.5
+**Difficulty:** High
+
+**Description:**
+Implement bracket conversion as plate elements with proper coupling to girder beam elements. Brackets are critical for shear capacity at girder-webframe connections and must be modeled with plate elements for accurate stress distribution.
+
+**Background:**
+Brackets increase the effective shear area at connections. Unlike stiffeners (which can be modeled as beams), brackets have complex stress distributions that require plate element modeling. The challenge is connecting plate element nodes to the girder beam element nodes.
+
+**Steps:**
+
+1. Add bracket conversion method:
+   ```python
+   def _convert_brackets(self, segment: "CargoSegment") -> None:
+       """
+       Convert brackets to plate elements with beam coupling.
+
+       Brackets require:
+       1. Plate elements for the bracket itself
+       2. Beam element for flange (if present)
+       3. Rigid links connecting bracket plate nodes to girder beam nodes
+       """
+       # Collect all brackets from girders
+       for girder in segment.get_longitudinal_girders():
+           for bracket in girder.get_brackets():
+               self._convert_single_bracket(bracket, girder)
+
+       for girder in segment.get_transverse_girders():
+           for bracket in girder.get_brackets():
+               self._convert_single_bracket(bracket, girder)
+
+   def _convert_single_bracket(
+       self,
+       bracket: "Bracket",
+       girder: Union["LongitudinalGirder", "TransverseGirder"]
+   ) -> None:
+       """
+       Convert a single bracket to plate element(s) with coupling.
+
+       The bracket geometry creates a triangular or trapezoidal region
+       that connects the girder web to the transverse structure.
+       """
+       # Get bracket vertices
+       vertices = bracket.get_vertices()
+       material = bracket.material or "S355"
+
+       # Create plate element for bracket
+       self._model.add_plate(
+           corners=vertices,
+           thickness=bracket.thickness,
+           material=material,
+           mesh_size=None  # Single element initially
+       )
+
+       # Add flange beam if bracket has flange
+       if bracket.has_flange and bracket.flange_section:
+           self._add_bracket_flange(bracket, vertices)
+
+       # Create rigid links from bracket plate nodes to girder beam
+       self._add_bracket_to_girder_coupling(bracket, girder, vertices)
+
+   def _add_bracket_flange(
+       self,
+       bracket: "Bracket",
+       vertices: List[Tuple[float, float, float]]
+   ) -> None:
+       """Add flange beam element along bracket free edge."""
+       # The flange runs along the free (outer) edge of the bracket
+       # For trapezoidal bracket: along the sloped edge
+       # For triangular bracket: along the hypotenuse
+
+       # Determine flange start/end from bracket geometry
+       if bracket.type == BracketType.TRAPEZOIDAL:
+           # Outer edge is vertices[1] to vertices[2] typically
+           start = list(vertices[1])
+           end = list(vertices[2])
+       else:
+           # Triangular: hypotenuse from heel to toe
+           start = list(vertices[0])
+           end = list(vertices[2])
+
+       self._model.add_beam_by_coords(
+           start_position=start,
+           end_position=end,
+           section=bracket.flange_section,
+           material=bracket.material or "S355"
+       )
+
+   def _add_bracket_to_girder_coupling(
+       self,
+       bracket: "Bracket",
+       girder: Union["LongitudinalGirder", "TransverseGirder"],
+       bracket_vertices: List[Tuple[float, float, float]]
+   ) -> None:
+       """
+       Create rigid links between bracket plate nodes and girder beam.
+
+       This ensures proper load transfer between the plate elements
+       (bracket) and beam elements (girder).
+
+       Strategy:
+       1. Identify bracket vertices that lie on the girder line
+       2. Find corresponding nodes on the girder beam
+       3. Create rigid links (MPCs) connecting them
+       """
+       # Determine which bracket vertices are on the girder
+       # (vertices at the heel of the bracket, where it meets girder web)
+
+       girder_connection_vertices = []
+
+       if isinstance(girder, LongitudinalGirder):
+           # Girder runs in X at y=girder.y, z=girder.z
+           for v in bracket_vertices:
+               if abs(v[1] - girder.y) < self.options.node_merge_tolerance:
+                   girder_connection_vertices.append(v)
+       else:
+           # TransverseGirder runs in Y at x=girder.x, z=girder.z
+           for v in bracket_vertices:
+               if abs(v[0] - girder.x) < self.options.node_merge_tolerance:
+                   girder_connection_vertices.append(v)
+
+       # Create rigid links for these vertices
+       for vertex in girder_connection_vertices:
+           # Find or create node at vertex position
+           plate_node = self._get_or_create_node(*vertex)
+
+           # Find closest point on girder beam
+           beam_point = self._project_to_girder(vertex, girder)
+           beam_node = self._get_or_create_node(*beam_point)
+
+           # Create rigid link (all DOFs)
+           if plate_node != beam_node:
+               self._model.add_rigid_link(
+                   master_node=beam_node,
+                   slave_node=plate_node,
+                   dofs=[True, True, True, True, True, True]  # All 6 DOFs
+               )
+
+   def _project_to_girder(
+       self,
+       point: Tuple[float, float, float],
+       girder: Union["LongitudinalGirder", "TransverseGirder"]
+   ) -> Tuple[float, float, float]:
+       """Project a point onto the girder line."""
+       x, y, z = point
+
+       if isinstance(girder, LongitudinalGirder):
+           # Project to y=girder.y, z=girder.z (x unchanged)
+           return (x, girder.y, girder.z)
+       else:
+           # Project to x=girder.x, z=girder.z (y unchanged)
+           return (girder.x, y, girder.z)
+   ```
+
+2. Update `_convert_segment` to call bracket conversion:
+   ```python
+   def _convert_segment(self, segment: "CargoSegment") -> None:
+       """Convert a cargo segment to FEM elements."""
+       # ... existing conversions ...
+
+       # Convert brackets (must be after girders)
+       self._convert_brackets(segment)
+   ```
+
+3. Handle bracket meshing options:
+   ```python
+   @dataclass
+   class VesselConversionOptions:
+       # ... existing options ...
+
+       # Bracket options
+       bracket_mesh_size: Optional[float] = None  # None = single element
+       bracket_coupling: str = "rigid_links"  # "rigid_links" or "shared_nodes"
+   ```
+
+**Plate-to-Beam Coupling Notes:**
+
+The coupling between bracket plate elements and girder beam elements is critical:
+
+1. **Rigid Links (Recommended)**
+   - Create MPC constraints linking plate nodes to beam nodes
+   - All 6 DOFs coupled (translations and rotations)
+   - Works with offset beams
+   - Preserves correct load distribution
+
+2. **Shared Nodes (Alternative)**
+   - Plate element nodes directly on beam line
+   - Simpler but requires beam and plate to share exact coordinates
+   - May have issues with plate element quality
+
+3. **Existing Grillex Constraints**
+   - Grillex already supports rigid links (Phase 6)
+   - Use `add_rigid_link(master, slave, dofs)` method
+   - Master node on beam, slave node on plate
+
+**Acceptance Criteria:**
+- [ ] Brackets converted to plate elements
+- [ ] Bracket vertices computed correctly for triangular/trapezoidal shapes
+- [ ] Bracket flanges converted to beam elements (if has_flange=True)
+- [ ] Rigid links created between bracket plates and girder beams
+- [ ] Coupling preserves all 6 DOFs
+- [ ] Mesh refinement in bracket region supported
+- [ ] Test: bracket stress distribution matches expected pattern
+- [ ] Test: load transfer through bracket connection verified
+
+---
+
+### Task 25.9: Implement Refined Meshing for High-Stress Regions
+
+**Requirements:** New feature
+**Dependencies:** Tasks 25.2-25.8
+**Difficulty:** Medium
+
+**Description:**
+Implement adaptive meshing that uses finer elements in high-stress regions (brackets, girder-webframe connections).
+
+**Background:**
+The initial single-element-per-panel approach is efficient for global response but insufficient for accurate stress analysis in connection regions. This task adds:
+1. Option to refine mesh in bracket regions
+2. Post-analysis identification of high-stress panels for refinement
+
+**Steps:**
+
+1. Add mesh refinement options:
+   ```python
+   @dataclass
+   class VesselConversionOptions:
+       # ... existing options ...
+
+       # Mesh refinement
+       refine_bracket_regions: bool = True
+       bracket_mesh_size: float = 0.1  # meters
+       refine_regions: List[Tuple[float, float, float, float, float]] = None
+       # Each tuple: (x_min, y_min, x_max, y_max, mesh_size)
+   ```
+
+2. Implement region-based meshing:
+   ```python
+   def _get_mesh_size_at(self, x: float, y: float, z: float) -> Optional[float]:
+       """Get target mesh size at a point."""
+       # Check if in refined region
+       for region in (self.options.refine_regions or []):
+           x_min, y_min, x_max, y_max, size = region
+           if x_min <= x <= x_max and y_min <= y <= y_max:
+               return size
+
+       # Check if near bracket
+       if self.options.refine_bracket_regions:
+           for segment in self.vessel.get_cargo_segments():
+               for girder in segment.get_longitudinal_girders():
+                   for bracket in girder.get_brackets():
+                       if self._point_near_bracket(x, y, z, bracket):
+                           return self.options.bracket_mesh_size
+
+       return None  # Use default (single element)
+   ```
+
+**Acceptance Criteria:**
+- [ ] Bracket regions automatically refined when option enabled
+- [ ] Custom refinement regions supported via refine_regions option
+- [ ] Mesh size transitions smoothly between regions
+- [ ] Refinement does not break plate-to-beam coupling
+
+---
+
 ### Summary
 
 | Task | Description | Difficulty | Status |
@@ -623,8 +893,10 @@ Create comprehensive tests for vessel to FEM conversion.
 | 25.5 | Node merging and connections | High | Pending |
 | 25.6 | Bottom supports | Medium | Pending |
 | 25.7 | Conversion tests | Medium | Pending |
+| 25.8 | Bracket conversion with plate-to-beam coupling | High | Pending |
+| 25.9 | Refined meshing for high-stress regions | Medium | Pending |
 
-**Total Acceptance Criteria:** 30 items
+**Total Acceptance Criteria:** 42 items
 
 ---
 

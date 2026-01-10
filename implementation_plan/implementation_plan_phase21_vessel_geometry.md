@@ -7,9 +7,10 @@ This phase implements the core data structures for defining vessel geometry, foc
 **Key Concepts:**
 - **Vessel**: Top-level container with frame numbering system
 - **CargoSegment**: Bounded region for cargo loading (between transverse bulkheads)
-- **Components**: Bulkheads, side shells, decks, webframes, girders, stiffeners
+- **Components**: Bulkheads, side shells, decks, webframes, girders, stiffeners, brackets
 - **PlateField**: Reusable plate definition with thickness regions
 - **Stiffener**: Beam element with auto-derived direction
+- **Bracket**: Triangular/trapezoidal connection plate for shear transfer
 
 **Scope:**
 - Barges and vessels (cargo deck segment focus)
@@ -1579,6 +1580,535 @@ Ensure all vessel geometry classes are properly exported from the package.
 
 ---
 
+### Task 21.8: Create Bracket Class
+
+**Requirements:** New feature
+**Dependencies:** Task 21.5
+**Difficulty:** Medium
+
+**Description:**
+Create the `Bracket` class to represent connection brackets between girders and transverse structure. Brackets are critical for shear capacity and must be modeled as plate elements in FEM.
+
+**Background:**
+Brackets are triangular or trapezoidal plates that:
+- Connect longitudinal girders to transverse bulkheads/webframes
+- Connect transverse girders to longitudinal bulkheads
+- Increase effective shear area at connections
+- Are typically flanged (have an edge stiffener)
+
+**Steps:**
+
+1. Add to `src/grillex/vessel/geometry/components.py`:
+   ```python
+   from enum import Enum
+
+   class BracketType(Enum):
+       """Type of bracket geometry."""
+       TRIANGULAR = "triangular"      # Simple triangle
+       TRAPEZOIDAL = "trapezoidal"    # Truncated triangle
+       CURVED = "curved"              # Curved edge (softer stress concentration)
+
+   class BracketOrientation(Enum):
+       """Orientation of bracket in the connection."""
+       HORIZONTAL = "horizontal"  # Bracket lies in horizontal plane (deck level)
+       VERTICAL = "vertical"      # Bracket lies in vertical plane
+
+   @dataclass
+   class Bracket:
+       """
+       A connection bracket between girder and transverse structure.
+
+       Brackets increase shear capacity at girder connections and must be
+       modeled as plate elements (not beams) for accurate stress analysis.
+
+       Attributes:
+           girder: Parent girder (longitudinal or transverse)
+           connection_x: X-coordinate of connection (for longitudinal girder)
+           connection_frame: Frame number of connection
+           type: Bracket geometry type
+           arm_length: Length of bracket arm along girder in meters
+           depth: Depth of bracket (height for vertical, width for horizontal)
+           thickness: Bracket plate thickness in meters
+           material: Material name
+           has_flange: Whether bracket has edge flange
+           flange_section: Flange section (if has_flange)
+
+       Example:
+           >>> girder = segment.add_longitudinal_girder(y=0, z=6.0, section="T500x200")
+           >>> bracket = girder.add_bracket(
+           ...     connection_frame=15,
+           ...     type="trapezoidal",
+           ...     arm_length=0.8,
+           ...     depth=0.5,
+           ...     thickness=0.012,
+           ...     has_flange=True,
+           ...     flange_section="FB100x12"
+           ... )
+       """
+       girder: Union["LongitudinalGirder", "TransverseGirder"]
+       connection_x: float
+       type: BracketType = BracketType.TRAPEZOIDAL
+       orientation: BracketOrientation = BracketOrientation.VERTICAL
+       arm_length: float = 0.5          # Length along girder
+       depth: float = 0.4               # Depth perpendicular to girder
+       toe_width: float = 0.1           # Width at toe (for trapezoidal)
+       thickness: float = 0.010         # Plate thickness
+       material: Optional[str] = None
+       has_flange: bool = True
+       flange_section: Optional[str] = None  # e.g., "FB100x12"
+
+       id: UUID = field(default_factory=uuid4)
+
+       @property
+       def connection_frame(self) -> int:
+           """Frame number at connection."""
+           return self.girder.segment.vessel.x_to_frame(self.connection_x)
+
+       @property
+       def requires_plate_elements(self) -> bool:
+           """Whether this bracket requires plate element modeling."""
+           return True  # Brackets always need plate elements for accurate analysis
+
+       def get_vertices(self) -> List[Tuple[float, float, float]]:
+           """
+           Get bracket corner vertices in global coordinates.
+
+           Returns list of (x, y, z) tuples defining the bracket outline.
+           """
+           # Implementation depends on girder orientation and bracket type
+           # This will be used by FEM conversion
+           pass
+   ```
+
+2. Add bracket methods to `LongitudinalGirder`:
+   ```python
+   @dataclass
+   class LongitudinalGirder:
+       # ... existing attributes ...
+       _brackets: List["Bracket"] = field(default_factory=list)
+
+       def add_bracket(
+           self,
+           connection_x: float = None,
+           connection_frame: int = None,
+           type: str = "trapezoidal",
+           arm_length: float = 0.5,
+           depth: float = 0.4,
+           thickness: float = 0.010,
+           material: str = None,
+           has_flange: bool = True,
+           flange_section: str = None
+       ) -> "Bracket":
+           """
+           Add a bracket at a connection point.
+
+           Args:
+               connection_x: X-coordinate of connection (or use connection_frame)
+               connection_frame: Frame number of connection
+               type: "triangular", "trapezoidal", or "curved"
+               arm_length: Length along girder in meters
+               depth: Depth perpendicular to girder in meters
+               thickness: Plate thickness in meters
+               material: Material name (defaults to girder material)
+               has_flange: Whether bracket has edge flange
+               flange_section: Flange section name
+           """
+           if connection_frame is not None:
+               connection_x = self.segment.vessel.frame_to_x(connection_frame)
+
+           bracket = Bracket(
+               girder=self,
+               connection_x=connection_x,
+               type=BracketType(type),
+               arm_length=arm_length,
+               depth=depth,
+               thickness=thickness,
+               material=material or self.segment.vessel._materials.get("S355"),
+               has_flange=has_flange,
+               flange_section=flange_section
+           )
+           self._brackets.append(bracket)
+           return bracket
+
+       def add_brackets_at_webframes(
+           self,
+           type: str = "trapezoidal",
+           arm_length: float = 0.5,
+           depth: float = 0.4,
+           thickness: float = 0.010,
+           has_flange: bool = True,
+           flange_section: str = None
+       ) -> List["Bracket"]:
+           """
+           Add brackets at all webframe intersections.
+
+           Convenience method for typical construction where every
+           girder-webframe intersection has a bracket.
+           """
+           brackets = []
+           for wf in self.segment.get_webframes():
+               bracket = self.add_bracket(
+                   connection_x=wf.x,
+                   type=type,
+                   arm_length=arm_length,
+                   depth=depth,
+                   thickness=thickness,
+                   has_flange=has_flange,
+                   flange_section=flange_section
+               )
+               brackets.append(bracket)
+           return brackets
+
+       def get_brackets(self) -> List["Bracket"]:
+           """Get all brackets on this girder."""
+           return list(self._brackets)
+   ```
+
+3. Similar methods for `TransverseGirder` (brackets at longitudinal bulkhead intersections).
+
+**Acceptance Criteria:**
+- [ ] BracketType enum with TRIANGULAR, TRAPEZOIDAL, CURVED
+- [ ] BracketOrientation enum with HORIZONTAL, VERTICAL
+- [ ] Bracket class with all geometry attributes
+- [ ] Bracket.requires_plate_elements returns True
+- [ ] Bracket.get_vertices() returns corner coordinates
+- [ ] LongitudinalGirder.add_bracket() creates bracket at connection
+- [ ] LongitudinalGirder.add_brackets_at_webframes() bulk method
+- [ ] TransverseGirder.add_bracket() creates bracket at connection
+- [ ] Bracket has_flange and flange_section attributes
+- [ ] UUID is auto-generated
+
+---
+
+### Task 21.9: LLM-Friendly Helper Methods
+
+**Requirements:** LLM/Agent support
+**Dependencies:** Tasks 21.1-21.8
+**Difficulty:** Medium
+
+**Description:**
+Add bulk operations, validation, and typical pattern methods to make the API more suitable for LLM-assisted modeling from drawings.
+
+**Steps:**
+
+1. Add bulk operations to `CargoSegment`:
+   ```python
+   # In cargo_segment.py
+
+   def add_webframes_at_frames(
+       self,
+       frames: List[int],
+       type: str = "beam",
+       section: str = None
+   ) -> List["WebFrame"]:
+       """
+       Add webframes at multiple frame locations.
+
+       Convenience method for LLM-generated code from drawings
+       where webframe locations are listed.
+
+       Args:
+           frames: List of frame numbers
+           type: "beam" or "plate"
+           section: Section name for beam type
+
+       Example:
+           >>> segment.add_webframes_at_frames(
+           ...     frames=[12, 14, 16, 18, 20],
+           ...     section="T300x150x10x14"
+           ... )
+       """
+       webframes = []
+       for frame in frames:
+           wf = self.add_webframe(frame=frame, type=type, section=section)
+           webframes.append(wf)
+       return webframes
+
+   def add_webframes_every_n_frames(
+       self,
+       n: int,
+       section: str,
+       type: str = "beam",
+       start_offset: int = 0
+   ) -> List["WebFrame"]:
+       """
+       Add webframes at regular frame intervals.
+
+       Args:
+           n: Interval (every n frames)
+           section: Section name
+           type: "beam" or "plate"
+           start_offset: Offset from segment start frame
+
+       Example:
+           >>> # Webframe every 2 frames
+           >>> segment.add_webframes_every_n_frames(n=2, section="T300x150")
+       """
+       webframes = []
+       frame = self.frame_start + start_offset + n
+       while frame < self.frame_end:
+           wf = self.add_webframe(frame=frame, type=type, section=section)
+           webframes.append(wf)
+           frame += n
+       return webframes
+   ```
+
+2. Add typical stiffening patterns to `Deck`:
+   ```python
+   # In components.py, Deck class
+
+   def apply_typical_stiffening(
+       self,
+       longitudinal_spacing: float,
+       longitudinal_section: str,
+       transverse_spacing: float = None,
+       transverse_section: str = None
+   ) -> dict:
+       """
+       Apply typical deck stiffening pattern.
+
+       Common pattern: longitudinal stiffeners with optional transverse
+       stiffeners at webframe locations.
+
+       Args:
+           longitudinal_spacing: Spacing of longitudinal stiffeners in meters
+           longitudinal_section: Section for longitudinal stiffeners
+           transverse_spacing: Spacing of transverse stiffeners (optional)
+           transverse_section: Section for transverse stiffeners
+
+       Returns:
+           Dict with counts of created stiffeners
+
+       Example:
+           >>> deck.apply_typical_stiffening(
+           ...     longitudinal_spacing=0.6,
+           ...     longitudinal_section="HP200x10"
+           ... )
+       """
+       result = {"longitudinal": 0, "transverse": 0}
+
+       # Add longitudinal stiffeners
+       long_stiffs = self.add_stiffeners(
+           direction="longitudinal",
+           spacing=longitudinal_spacing,
+           section=longitudinal_section
+       )
+       result["longitudinal"] = len(long_stiffs)
+
+       # Add transverse stiffeners if specified
+       if transverse_spacing and transverse_section:
+           trans_stiffs = self.add_stiffeners(
+               direction="transverse",
+               spacing=transverse_spacing,
+               section=transverse_section
+           )
+           result["transverse"] = len(trans_stiffs)
+
+       return result
+   ```
+
+3. Add validation to `Vessel`:
+   ```python
+   # In vessel.py
+
+   from dataclasses import dataclass
+   from typing import List
+   from enum import Enum
+
+   class ValidationSeverity(Enum):
+       ERROR = "error"
+       WARNING = "warning"
+       INFO = "info"
+
+   @dataclass
+   class ValidationIssue:
+       """A validation issue found in the vessel model."""
+       severity: ValidationSeverity
+       component: str
+       message: str
+       suggestion: Optional[str] = None
+
+   # In Vessel class:
+
+   def validate(self) -> List[ValidationIssue]:
+       """
+       Validate vessel geometry for common issues.
+
+       Returns list of validation issues. Empty list means no issues.
+
+       Checks:
+       - Frame spacing within typical range (1.5m - 4.0m)
+       - Stiffener spacing within limits (< 0.8m typical)
+       - Plate thickness reasonable (6mm - 30mm typical)
+       - All segments have deck defined
+       - Girders have brackets at connections
+
+       Example:
+           >>> issues = vessel.validate()
+           >>> for issue in issues:
+           ...     print(f"{issue.severity}: {issue.message}")
+       """
+       issues = []
+
+       # Check frame spacing
+       if self.frame_spacing < 1.5:
+           issues.append(ValidationIssue(
+               severity=ValidationSeverity.WARNING,
+               component="vessel",
+               message=f"Frame spacing {self.frame_spacing}m is unusually small (typical: 1.5-4.0m)",
+               suggestion="Verify frame spacing from General Arrangement drawing"
+           ))
+       elif self.frame_spacing > 4.0:
+           issues.append(ValidationIssue(
+               severity=ValidationSeverity.WARNING,
+               component="vessel",
+               message=f"Frame spacing {self.frame_spacing}m is unusually large (typical: 1.5-4.0m)",
+               suggestion="Verify frame spacing from General Arrangement drawing"
+           ))
+
+       # Check each cargo segment
+       for segment in self.get_cargo_segments():
+           issues.extend(self._validate_segment(segment))
+
+       return issues
+
+   def _validate_segment(self, segment: "CargoSegment") -> List[ValidationIssue]:
+       """Validate a cargo segment."""
+       issues = []
+
+       # Check for deck
+       if not segment.get_decks():
+           issues.append(ValidationIssue(
+               severity=ValidationSeverity.ERROR,
+               component=f"segment:{segment.name}",
+               message="Cargo segment has no deck defined",
+               suggestion="Add deck with segment.add_deck(z=..., name='main_deck')"
+           ))
+
+       # Check deck stiffener spacing
+       for deck in segment.get_decks():
+           stiffeners = deck.plate_field.get_stiffeners()
+           if stiffeners:
+               # Calculate average spacing
+               positions = sorted([s.position for s in stiffeners])
+               if len(positions) > 1:
+                   avg_spacing = (positions[-1] - positions[0]) / (len(positions) - 1)
+                   if avg_spacing > 0.8:
+                       issues.append(ValidationIssue(
+                           severity=ValidationSeverity.WARNING,
+                           component=f"deck:{deck.name}",
+                           message=f"Stiffener spacing ~{avg_spacing:.2f}m exceeds typical 0.8m limit",
+                           suggestion="Verify stiffener spacing from Midship Section"
+                       ))
+
+       # Check girders have brackets
+       for girder in segment.get_longitudinal_girders():
+           if not girder.get_brackets():
+               webframes = segment.get_webframes()
+               if webframes:
+                   issues.append(ValidationIssue(
+                       severity=ValidationSeverity.INFO,
+                       component=f"girder:y={girder.y}",
+                       message="Longitudinal girder has no brackets defined",
+                       suggestion="Consider adding brackets with girder.add_brackets_at_webframes()"
+                   ))
+
+       return issues
+
+   def get_validation_summary(self) -> str:
+       """
+       Get human-readable validation summary.
+
+       Returns:
+           Multi-line string with validation results
+       """
+       issues = self.validate()
+
+       if not issues:
+           return "✓ Vessel geometry validation passed - no issues found"
+
+       errors = [i for i in issues if i.severity == ValidationSeverity.ERROR]
+       warnings = [i for i in issues if i.severity == ValidationSeverity.WARNING]
+       infos = [i for i in issues if i.severity == ValidationSeverity.INFO]
+
+       lines = [f"Validation found {len(issues)} issue(s):"]
+       lines.append(f"  Errors: {len(errors)}, Warnings: {len(warnings)}, Info: {len(infos)}")
+       lines.append("")
+
+       for issue in issues:
+           prefix = {"error": "✗", "warning": "⚠", "info": "ℹ"}[issue.severity.value]
+           lines.append(f"{prefix} [{issue.component}] {issue.message}")
+           if issue.suggestion:
+               lines.append(f"    → {issue.suggestion}")
+
+       return "\n".join(lines)
+   ```
+
+4. Add component count summary:
+   ```python
+   # In Vessel class
+
+   def get_summary(self) -> dict:
+       """
+       Get summary of vessel components.
+
+       Useful for LLM to verify model completeness.
+
+       Returns:
+           Dict with component counts and key dimensions
+       """
+       summary = {
+           "name": self.name,
+           "dimensions": {
+               "length": self.length,
+               "beam": self.beam,
+               "depth": self.depth,
+               "frame_spacing": self.frame_spacing
+           },
+           "segments": len(self._cargo_segments),
+           "components": {
+               "decks": 0,
+               "webframes": 0,
+               "longitudinal_girders": 0,
+               "transverse_girders": 0,
+               "longitudinal_bulkheads": 0,
+               "brackets": 0,
+               "stiffeners": 0
+           }
+       }
+
+       for segment in self.get_cargo_segments():
+           summary["components"]["decks"] += len(segment.get_decks())
+           summary["components"]["webframes"] += len(segment.get_webframes())
+           summary["components"]["longitudinal_girders"] += len(segment.get_longitudinal_girders())
+           summary["components"]["transverse_girders"] += len(segment._transverse_girders)
+           summary["components"]["longitudinal_bulkheads"] += len(segment._longitudinal_bulkheads)
+
+           # Count brackets
+           for girder in segment.get_longitudinal_girders():
+               summary["components"]["brackets"] += len(girder.get_brackets())
+
+           # Count stiffeners
+           for deck in segment.get_decks():
+               summary["components"]["stiffeners"] += len(deck.plate_field.get_stiffeners())
+
+       return summary
+   ```
+
+**Acceptance Criteria:**
+- [ ] add_webframes_at_frames() creates webframes at listed frames
+- [ ] add_webframes_every_n_frames() creates webframes at regular intervals
+- [ ] Deck.apply_typical_stiffening() applies common pattern
+- [ ] Vessel.validate() returns list of ValidationIssue
+- [ ] Validation checks frame spacing range
+- [ ] Validation checks stiffener spacing
+- [ ] Validation checks for missing decks
+- [ ] Validation checks for missing brackets (info level)
+- [ ] Vessel.get_validation_summary() returns readable text
+- [ ] Vessel.get_summary() returns component counts
+
+---
+
 ### Summary
 
 | Task | Description | Difficulty | Status |
@@ -1590,8 +2120,10 @@ Ensure all vessel geometry classes are properly exported from the package.
 | 21.5 | Component classes | High | Pending |
 | 21.6 | Reference vessel for testing | Low | Pending |
 | 21.7 | Package exports | Low | Pending |
+| 21.8 | Bracket class | Medium | Pending |
+| 21.9 | LLM-friendly helper methods | Medium | Pending |
 
-**Total Acceptance Criteria:** 47 items
+**Total Acceptance Criteria:** 67 items
 
 ---
 
