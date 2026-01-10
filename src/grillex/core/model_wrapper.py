@@ -3133,11 +3133,32 @@ class StructuralModel:
                 self._linked_load_case_ids.add(lc.id)
 
         if generate_combinations and analysis_settings is not None:
-            # Generate load combinations with optional permanent/variable load cases
+            # Ensure Gravity load case exists and collect all permanent load cases
+            perm_lc_names = list(permanent_load_case_names) if permanent_load_case_names else []
+
+            # Check if Gravity exists, create if not
+            gravity_exists = False
+            for lc in self.get_load_cases():
+                if lc.name == "Gravity":
+                    gravity_exists = True
+                    if "Gravity" not in perm_lc_names:
+                        perm_lc_names.append("Gravity")
+                    break
+
+            if not gravity_exists:
+                # Create Gravity load case with -9.81 m/s² in Z direction
+                gravity_lc = self.create_load_case("Gravity", LoadCaseType.Permanent)
+                gravity_lc.set_acceleration_field(
+                    np.array([0.0, 0.0, -9.81, 0.0, 0.0, 0.0]),
+                    np.array([0.0, 0.0, 0.0])
+                )
+                perm_lc_names.append("Gravity")
+
+            # Generate load combinations with permanent/variable load cases
             combinations = generate_load_combinations(
                 generator,
                 analysis_settings,
-                permanent_load_case_names=permanent_load_case_names,
+                permanent_load_case_names=perm_lc_names,
                 variable_load_case_names=variable_load_case_names
             )
             self._generated_combinations.extend(combinations)
