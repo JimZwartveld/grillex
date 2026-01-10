@@ -940,6 +940,14 @@ class VesselMotions(ABC):
                     np.array(spec.motion_center)
                 )
 
+    def get_linked_load_cases(self) -> List[Any]:
+        """Get all load cases linked to this generator.
+
+        Returns:
+            List of C++ LoadCase objects
+        """
+        return list(self._linked_load_cases.values())
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}('{self.name}', n_load_cases={len(self.get_load_case_specs())})"
 
@@ -1366,6 +1374,8 @@ class VesselMotionsFromNobleDenton(VesselMotions):
         pitch_period: float = 8.0,
         pitch_accel: Optional[float] = None,
         motion_center: Optional[List[float]] = None,
+        heave_amplitude: Optional[float] = None,
+        heave_period: float = 10.0,
     ):
         """Initialize Noble Denton motion generator.
 
@@ -1381,6 +1391,8 @@ class VesselMotionsFromNobleDenton(VesselMotions):
             pitch_period: Pitch period in seconds
             pitch_accel: Pitch acceleration in rad/s² (overrides angle/period)
             motion_center: Reference point [x, y, z] in meters (rotation center)
+            heave_amplitude: Optional heave amplitude in meters (for display purposes)
+            heave_period: Heave period in seconds (for display purposes)
         """
         super().__init__(name, motion_center)
         self._heave = heave
@@ -1390,6 +1402,8 @@ class VesselMotionsFromNobleDenton(VesselMotions):
         self._pitch_angle = pitch_angle
         self._pitch_period = pitch_period
         self._pitch_accel = pitch_accel
+        self._heave_amplitude = heave_amplitude
+        self._heave_period = heave_period
 
     # ===== Properties for amplitude access and modification =====
 
@@ -1402,6 +1416,24 @@ class VesselMotionsFromNobleDenton(VesselMotions):
     def heave(self, value: float) -> None:
         self._heave = value
         self.update_linked_load_cases()
+
+    @property
+    def heave_amplitude(self) -> Optional[float]:
+        """Heave amplitude in meters (for display purposes)."""
+        return self._heave_amplitude
+
+    @heave_amplitude.setter
+    def heave_amplitude(self, value: Optional[float]) -> None:
+        self._heave_amplitude = value
+
+    @property
+    def heave_period(self) -> float:
+        """Heave period in seconds (for display purposes)."""
+        return self._heave_period
+
+    @heave_period.setter
+    def heave_period(self, value: float) -> None:
+        self._heave_period = value
 
     @property
     def roll_angle(self) -> float:
